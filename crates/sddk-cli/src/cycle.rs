@@ -15,7 +15,7 @@ use sddk_engine::{
     authority::{AuthorityContext, infer_actor_kind},
     cycle_narrative::{
         CycleNarrative, CycleNarrativeWriter, DefaultCycleNarrativeWriter, NarrativeAudience,
-        NarrativeTone,
+        NarrativeFacts, NarrativeLease, NarrativeTone, derive_claims,
     },
     cycle_summary::derive_cycle_summary,
     event_bus::{self, OutcomeEventInput, PhaseEventInput},
@@ -1606,38 +1606,109 @@ fn artifacts_dir_text(output: &ArtifactsDirOutput) -> String {
     format!("{}\n", output.path.display())
 }
 
-fn run_cycle_narrative(args: CycleNarrativeArgs, _environment: &CliEnvironment) -> CommandOutput {
-    let cycle_id = args.cycle.clone().unwrap_or_else(|| "unknown".to_string());
-    let title = args
-        .title
-        .clone()
-        .unwrap_or_else(|| format!("Cycle {cycle_id}"));
-    let what_was_done = args
-        .what_was_done
-        .clone()
-        .unwrap_or_else(|| "Cycle completed.".to_string());
-    let generated_at = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
+fn run_cycle_narrative(args: CycleNarrativeArgs, environment: &CliEnvironment) -> CommandOutput {
+    // The operator view reads the cycle or it says nothing at all.
+    //
+    // It used to take the `--cycle` string, never open the store (the
+    // `environment` parameter was literally unused), and render "Cycle
+    // completed." for every input — including a cycle id that does not
+    // exist, with exit 0. A view that fabricates a completion claim about a
+    // non-existent object is not a weak view; it is a false one, and it
+    // fails open in the direction that hides work.
+    //
+    // Resolution and storage errors are propagated rather than defaulted:
+    // INC-DEBT-043 established the same rule for the context envelope, and
+    // two surfaces that resolve references differently are worse than one
+    // that refuses.
+    let resolved = match resolve_cycle_context(&args.runtime, environment, args.cycle.as_deref()) {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
+    };
+    let result = (|| -> anyhow::Result<String> {
+        let context = RuntimeContext::open(&resolved.runtime, environment, false)?;
+        let cycle_id = resolved
+            .cycle_id
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("cycle inference failed: no cycle_id resolved"))?;
+        // Fails closed with the typed STORAGE_NOT_FOUND when the cycle is
+        // not in the ledger. No narrative is emitted for it.
+        let record = context.storage.get_cycle(cycle_id)?;
+        let lease = context.storage.get_cycle_lease(cycle_id).ok();
+        let summary = derive_cycle_summary(&context.storage, cycle_id).ok();
 
-    let audience: NarrativeAudience = args.audience.into();
-    let tone: NarrativeTone = args.tone.into();
-    let mut narrative = CycleNarrative::new(
-        cycle_id.clone(),
-        "H13 (Narration)",
-        "operator",
-        audience,
-        tone,
-        title,
-        what_was_done,
-        generated_at,
-    );
-    narrative.sort_suggestions();
+        // Lease liveness is judged at the same instant the narrative stamps
+        // itself, so the two cannot disagree about "now".
+        let now = OffsetDateTime::now_utc();
+        let now_ms = (now.unix_timestamp_nanos() / 1_000_000) as i64;
+        let lease_facts = match &lease {
+            Some(l) if l.expires_at_ms > now_ms => NarrativeLease::Live {
+                owner: l.owner.clone(),
+                expires_at_ms: l.expires_at_ms,
+            },
+            Some(l) => NarrativeLease::Expired {
+                owner: l.owner.clone(),
+                expired_at_ms: l.expires_at_ms,
+            },
+            None => NarrativeLease::Absent,
+        };
 
-    let writer = DefaultCycleNarrativeWriter::new();
-    let rendered = match writer.write(&narrative, 500) {
-        Ok(s) => s,
-        Err(e) => return crate::failure(format!("narrative render failed: {e}")),
+        let facts = NarrativeFacts {
+            status: record.manifest.status,
+            phase: wire(&record.manifest.phase),
+            runtime_state: summary
+                .as_ref()
+                .map(|s| s.derived_state.clone())
+                .unwrap_or_default(),
+            approval_waiting_on: summary
+                .as_ref()
+                .map(|s| s.approval_waiting_on.clone())
+                .unwrap_or_default(),
+            lease: lease_facts,
+            now_ms,
+        };
+        let claims = derive_claims(&facts);
+
+        let title = args
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("Cycle {cycle_id}"));
+        let generated_at = now
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
+
+        let audience: NarrativeAudience = args.audience.into();
+        let tone: NarrativeTone = args.tone.into();
+        let mut narrative = CycleNarrative::new(
+            cycle_id.clone(),
+            "H13 (Narration)",
+            "operator",
+            audience,
+            tone,
+            title,
+            // Provisional: replaced by `apply_claims` below, which is the
+            // single place the sentence is derived.
+            String::new(),
+            generated_at,
+        );
+        // Claims first, override second. The other order silently discards
+        // the override -- `apply_claims` assigns `what_was_done`
+        // unconditionally -- and the command would then ignore what the
+        // operator explicitly asked to say.
+        narrative.apply_claims(&claims);
+        if let Some(text) = &args.what_was_done {
+            narrative.override_what_was_done(text);
+        }
+        narrative.sort_suggestions();
+
+        let writer = DefaultCycleNarrativeWriter::new();
+        writer
+            .write(&narrative, 500)
+            .map_err(|e| anyhow::anyhow!("narrative render failed: {e}"))
+    })();
+
+    let rendered = match result {
+        Ok(r) => r,
+        Err(e) => return crate::failure(e.to_string()),
     };
 
     if let Some(path) = &args.output {
@@ -4306,11 +4377,77 @@ mod tests {
     }
 
     // ── S-NARRATIVE-CLI: narrative subcommand wiring ────────────────────
+    //
+    // Estos cinco tests USABAN `CliEnvironment::default()` con un id de ciclo
+    // que nunca existió, y afirmaban `status == 0`. Eso no era un test flojo:
+    // era el defecto de INC-DEBT-067 escrito como contrato. La narrativa no
+    // abria el store, asi que cualquier id —incluido uno inexistente—
+    // renderizaba "Cycle completed." con exito, y estos tests en verde eran la
+    // prueba de que funcionaba. Arreglar el defecto los dejo rojos, que es lo
+    // que tenia que pasar: **un suite que exige el defecto no puede sobrevivir
+    // a que se corrija**, y si estos tests se hubieran behaviouralizado para
+    // seguir verdes, el arreglo habria sido un giro de guion, no una correccion.
+    //
+    // Ahora siembran un ciclo REAL en el ledger y verifican lo que cada uno
+    // pretendia verificar (render a stdout, variantes de audience/tone, titulo
+    // por defecto, escritura a fichero), ya no el fallo abierto.
+
+    /// Seeds a real OPEN cycle in the ledger and returns the env and the
+    /// `RuntimeArgs` that resolve to it. Same construction as
+    /// `seed_cycle_with_gate_requirement`: the narrative needs a cycle that
+    /// EXISTS, and these tests are about rendering, not gate requirements.
+    ///
+    /// The `RuntimeArgs` are NOT `Default::default()`. They have to name the
+    /// temp project explicitly, like every other ledger-reading fixture in
+    /// this module, because resolution asks the runtime where the project is
+    /// before it ever looks at the store — and with a default root it looks
+    /// somewhere else, reports `cycle not found`, and the test fails for a
+    /// reason that has nothing to do with the narrative.
+    ///
+    /// The cycle is stored under its BARE id (`manifest.cycle_id`), which is
+    /// what the other fixtures pass. Prefixing it with the project id would
+    /// look equivalent and is not: the lookup is by primary key, so a
+    /// qualified id against a bare row is `cycle not found`.
+    fn seed_narrative_cycle(
+        project_root: &std::path::Path,
+        cycle_id: &str,
+    ) -> (CliEnvironment, RuntimeArgs) {
+        let state_home = project_root.join(".local").join("state");
+        // UUID v4, because the CLI's identity layer validates the seed as one
+        // even though `stable_fallback_project_id` hashes any string. A
+        // non-UUID seed is rejected during resolution, long before the store
+        // is consulted, and the failure reads as a missing cycle.
+        let fallback_seed = "9f2b1c40-3a7d-4e51-9b62-0c1d8e4f5a73";
+        let scope = ".";
+        let project_id = stable_fallback_project_id(fallback_seed, scope);
+
+        seed_cycle_with_gate_requirement(
+            &state_home,
+            project_root,
+            &project_id,
+            cycle_id,
+            fallback_seed,
+            scope,
+        )
+        .expect("narrative fixture seeds");
+
+        let runtime = RuntimeArgs {
+            root: Some(project_root.to_path_buf()),
+            scope: Some(scope.to_string()),
+            remote: None,
+            fallback_seed: Some(fallback_seed.to_string()),
+            no_infer: false,
+        };
+        (make_env(project_root), runtime)
+    }
 
     #[test]
     fn s_narrative_cli_minimal_renders_to_stdout() {
+        let proj = temp_project();
+        let (env, runtime) = seed_narrative_cycle(proj.path(), "narr-cli-min");
+
         let args = CycleNarrativeArgs {
-            runtime: Default::default(),
+            runtime,
             cycle: Some("narr-cli-min".to_string()),
             audience: NarrativeArgAudience::Maintainer,
             tone: NarrativeArgTone::Explanatory,
@@ -4318,7 +4455,6 @@ mod tests {
             title: None,
             what_was_done: None,
         };
-        let env = CliEnvironment::default();
         let output = run_cycle_narrative(args, &env);
         assert_eq!(output.status, 0, "stderr: {}", output.stderr);
         assert!(
@@ -4340,6 +4476,9 @@ mod tests {
 
     #[test]
     fn s_narrative_cli_respects_audience_tone_variants() {
+        let proj = temp_project();
+        let (env, runtime) = seed_narrative_cycle(proj.path(), "variant");
+
         for (aud, label) in [
             (NarrativeArgAudience::Self_, "audience=self"),
             (NarrativeArgAudience::Maintainer, "audience=maintainer"),
@@ -4351,7 +4490,7 @@ mod tests {
                 (NarrativeArgTone::Socratic, "tone=socratic"),
             ] {
                 let args = CycleNarrativeArgs {
-                    runtime: Default::default(),
+                    runtime: runtime.clone(),
                     cycle: Some("variant".to_string()),
                     audience: aud,
                     tone,
@@ -4359,7 +4498,6 @@ mod tests {
                     title: None,
                     what_was_done: None,
                 };
-                let env = CliEnvironment::default();
                 let output = run_cycle_narrative(args, &env);
                 assert_eq!(output.status, 0, "stderr: {}", output.stderr);
                 assert!(
@@ -4378,8 +4516,11 @@ mod tests {
 
     #[test]
     fn s_narrative_cli_uses_default_title_when_omitted() {
+        let proj = temp_project();
+        let (env, runtime) = seed_narrative_cycle(proj.path(), "ttl-default");
+
         let args = CycleNarrativeArgs {
-            runtime: Default::default(),
+            runtime,
             cycle: Some("ttl-default".to_string()),
             audience: NarrativeArgAudience::Maintainer,
             tone: NarrativeArgTone::Concise,
@@ -4387,7 +4528,6 @@ mod tests {
             title: None,
             what_was_done: Some("first sentence".to_string()),
         };
-        let env = CliEnvironment::default();
         let output = run_cycle_narrative(args, &env);
         assert_eq!(output.status, 0, "stderr: {}", output.stderr);
         assert!(
@@ -4404,11 +4544,12 @@ mod tests {
 
     #[test]
     fn s_narrative_cli_writes_to_file_when_output_set() {
-        let tmp =
-            std::env::temp_dir().join(format!("sddk-narrative-test-{}.md", std::process::id()));
-        let _ = std::fs::remove_file(&tmp);
+        let proj = temp_project();
+        let (env, runtime) = seed_narrative_cycle(proj.path(), "file-out");
+        let tmp = proj.path().join("narrative-out.md");
+
         let args = CycleNarrativeArgs {
-            runtime: Default::default(),
+            runtime,
             cycle: Some("file-out".to_string()),
             audience: NarrativeArgAudience::Stakeholder,
             tone: NarrativeArgTone::Explanatory,
@@ -4416,7 +4557,6 @@ mod tests {
             title: Some("File-out title".to_string()),
             what_was_done: Some("Body sentence.".to_string()),
         };
-        let env = CliEnvironment::default();
         let output = run_cycle_narrative(args, &env);
         assert_eq!(output.status, 0, "stderr: {}", output.stderr);
         assert!(
@@ -4427,11 +4567,21 @@ mod tests {
         let body = std::fs::read_to_string(&tmp).expect("file written");
         assert!(body.contains("File-out title"));
         assert!(body.contains("file-out"));
-        let _ = std::fs::remove_file(&tmp);
     }
 
+    /// The old `s_narrative_cli_falls_back_when_cycle_id_absent` asserted a
+    /// "Cycle unknown" fallback for a MISSING cycle id. That fallback WAS the
+    /// defect: a narrative about a cycle nobody passed, about a cycle the
+    /// ledger has never heard of, rendered with exit 0. There is no
+    /// acceptable "fallback" identity to invent for an object that does not
+    /// exist, so the test is now the property: it fails closed and says so.
     #[test]
-    fn s_narrative_cli_falls_back_when_cycle_id_absent() {
+    fn s_narrative_cli_fails_closed_when_cycle_id_absent() {
+        let proj = temp_project();
+        // Seed nothing: this is the point of the test. The env is real, the
+        // ledger exists, and the cycle was never created.
+        let env = make_env(proj.path());
+
         let args = CycleNarrativeArgs {
             runtime: Default::default(),
             cycle: None,
@@ -4441,12 +4591,19 @@ mod tests {
             title: None,
             what_was_done: None,
         };
-        let env = CliEnvironment::default();
         let output = run_cycle_narrative(args, &env);
-        assert_eq!(output.status, 0, "stderr: {}", output.stderr);
+        assert_ne!(
+            output.status, 0,
+            "a narrative with no cycle to describe must fail, not render"
+        );
         assert!(
-            output.stdout.contains("Cycle unknown"),
-            "fallback title missing, got: {}",
+            !output.stdout.contains("Cycle unknown"),
+            "no invented identity may be narrated: {}",
+            output.stdout
+        );
+        assert!(
+            !output.stdout.contains("Cycle completed."),
+            "nothing may be claimed as done: {}",
             output.stdout
         );
     }
