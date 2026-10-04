@@ -252,12 +252,22 @@ s = s.replace("            tail -10 \"$p_log\" >&2", "            true")
 open(p, "w").write(s)
 '
 
+mutar "M13 un caso hereda el marcador que dejo el anterior" "$TEST" "$TEST" C4 \
+    "sin limpiar el marcador, la idempotencia hace que el segundo caso no imprima: caia SOLO dentro del release." \
+'
+import os
+p = os.environ["MUT_FILE"]; lines = open(p).read().split("\n")
+i = next(i for i, l in enumerate(lines) if l.strip() == "limpiar_marcador")
+del lines[i]
+open(p, "w").write("\n".join(lines))
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las doce comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las trece comprobaciones tienen dientes, y el arbol quedo intacto.\n'
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then

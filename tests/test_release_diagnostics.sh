@@ -73,6 +73,43 @@ STUBS="$TMPROOT/stubs"
 FAKE_CARGO_PIDS=()
 mkdir -p "$STUBS"
 
+# El marcador de "ya diagnostique" se FIJA AQUI, antes del primer caso, y al
+# temporal de ESTE test. MEDIDO, y solo se ve dentro de un release:
+#
+#   * el release exporta `RELEASE_DIAGNOSED_FILE` apuntando a SU scratch;
+#   * C4 corre `release_diagnose_exit 1` y, como el marcador aun no existe,
+#     lo CREA;
+#   * C5 corre `release_diagnose_exit 137`, el marcador ya existe, y la
+#     idempotencia —que en produccion es exactamente lo correcto— hace que no
+#     imprima nada. Tres aserciones cae, y solo dentro del release.
+#
+# Fuera del release el test pasa 4 de 4 porque `RELEASE_DIAGNOSED_FILE` no esta
+# exportada y la guardia cae a la variable de shell, que un subshell reinicia.
+# O sea: el defecto es invisible fuera del entorno que lo produce, que es la
+# forma mas dificil de encontrar y la que mas dano hace.
+#
+# La leccion no es "el marcador esta mal" —esta bien, es lo que hace que el
+# bloque del fallo salga una vez—. Es que **un caso no puede depender del
+# estado que deja el caso anterior**, ni del estado que el entorno le impone.
+# Cada caso parte de un entorno limpio, y eso hay que FIJARLO, no suponerlo.
+RELEASE_DIAGNOSED_FILE="$TMPROOT/.diagnosed"
+export RELEASE_DIAGNOSED_FILE
+# Cada caso que llama a `release_diagnose_exit` arranca con el marcador BORRADO.
+# Es la parte EJECUTABLE del principio de las lineas de arriba: la idempotencia
+# es una propiedad de un PROCESO, no de un caso de test, asi que un caso no
+# puede heredar el estado que dejo el anterior —ni el que le impone el
+# entorno—. Fijarlo aqui es lo que hace que el caso sea el mismo dentro y
+# fuera del release.
+limpiar_marcador() { rm -f "$RELEASE_DIAGNOSED_FILE"; }
+
+# Y el test arranca SIEMPRE con el marcador YA CREADO, que es el peor caso.
+# No es una elegancia: es lo que hace que el defecto sea detectable sin tener
+# que estar dentro de un release. MEDIDO: sin esta linea el test pasaba 4 de 4
+# fuera del release y caia dentro, y el falsador —que corre fuera— no lo
+# detectaba nunca. Un fixture que solo reproduce el fallo dentro del entorno
+# que lo produce es un fixture a medias; este lo reproduce siempre.
+: > "$RELEASE_DIAGNOSED_FILE"
+
 cleanup() {
     local pid
     for pid in "${FAKE_CARGO_PIDS[@]:-}"; do
@@ -132,6 +169,7 @@ caso_termina C3
 
 # --- C4: el diagnostico nombra el paso en curso -----------------------------
 caso_empieza
+limpiar_marcador
 RELEASE_DIAGNOSED=0
 RELEASE_CURRENT_STEP="1/15 - cargo fmt + clippy + test (workspace)"
 RELEASE_SCRATCH="$TMPROOT"
@@ -146,6 +184,7 @@ caso_termina C4
 
 # --- C5: el diagnostico imprime la medicion que respalda la causa ------------
 caso_empieza
+limpiar_marcador
 export RELEASE_DIAGNOSED=0
 RELEASE_CURRENT_STEP="paso medido"
 out="$(release_diagnose_exit 137 2>&1)"
@@ -164,6 +203,7 @@ caso_termina C5
 # una variable de shell como guardia, el bloque saldria dos veces. Se mide desde
 # subshells justamente para que eso sea lo que se ejercita.
 caso_empieza
+limpiar_marcador
 RELEASE_DIAGNOSED_FILE="$TMPROOT/.diagnosed"
 export RELEASE_DIAGNOSED_FILE
 rm -f "$RELEASE_DIAGNOSED_FILE"

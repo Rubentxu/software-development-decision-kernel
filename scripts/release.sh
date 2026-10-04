@@ -1097,7 +1097,7 @@ if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1
 else
     tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
     die "la autofalsacion del diagnostico de release no pasa. Eso significa que una de
-         las doce comprobaciones no tienen dientes, o que el release vuelve a morir
+         las trece comprobaciones no tienen dientes, o que el release vuelve a morir
          sin decir por que —que es exactamente el defecto que este paso existe para
          cerrar. Un gate que puede quedarse mudo y seguir contando como verde no
          es un gate.
