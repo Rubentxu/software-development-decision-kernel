@@ -112,4 +112,106 @@ mod tests {
         // a6-static-enhanced-readiness/slices/s4-durability).
         assert_eq!(registry.len(), 27);
     }
+
+    /// `backlog.item.discarded` must validate **membership** in the
+    /// closed set, not merely that `reason` is a string.
+    ///
+    /// This is the gate for payloads that reach the log without passing
+    /// through the typed `BacklogEvent` — a replay, an import, a hand-
+    /// written row. Before, the schema accepted any string, so a closed
+    /// set enforced only by clap was one `String` away from being a
+    /// suggestion.
+    #[test]
+    fn discarded_schema_admits_every_member_and_nothing_else() {
+        use crate::backlog::BacklogDiscardReason;
+
+        let registry = std_registry();
+        let schema = registry
+            .get("backlog.item.discarded", 1)
+            .expect("backlog.item.discarded v1 must be registered");
+
+        let payload = |reason: &str| {
+            serde_json::json!({
+                "item_id": "B-001",
+                "reason": reason,
+                "discarded_at": "2026-10-04T00:00:00Z",
+            })
+        };
+
+        for r in BacklogDiscardReason::ALL {
+            let p = payload(&r.to_string());
+            assert!(
+                schema.validate_payload(&p).is_ok(),
+                "member {r:?} must validate: {:?}",
+                schema.validate_payload(&p)
+            );
+        }
+
+        for bad in [
+            "",
+            "won't fix",
+            "done",
+            "x",
+            "banana",
+            "Resolved",
+            "RESOLVED",
+            " resolved",
+        ] {
+            let p = payload(bad);
+            assert!(
+                schema.validate_payload(&p).is_err(),
+                "{bad:?} must NOT validate, but it did"
+            );
+        }
+    }
+
+    /// The reason member list and the schema's notion of it cannot be
+    /// two different sets. A member added to the enum that the schema
+    /// would reject would make the type unwritable; one the schema would
+    /// accept but the enum lacks would reopen the hole.
+    #[test]
+    fn discarded_schema_and_the_domain_enum_describe_the_same_set() {
+        use crate::backlog::BacklogDiscardReason;
+
+        let registry = std_registry();
+        let schema = registry
+            .get("backlog.item.discarded", 1)
+            .expect("backlog.item.discarded v1 must be registered");
+
+        // Anything the schema admits must parse back to a member...
+        for candidate in [
+            "superseded",
+            "wontfix",
+            "duplicate",
+            "resolved",
+            "done",
+            "x",
+            "",
+            "banana",
+        ] {
+            let p = serde_json::json!({
+                "item_id": "B-001",
+                "reason": candidate,
+                "discarded_at": "2026-10-04T00:00:00Z",
+            });
+            if schema.validate_payload(&p).is_ok() {
+                assert!(
+                    candidate.parse::<BacklogDiscardReason>().is_ok(),
+                    "the schema admits {candidate:?} but the domain parser refuses it"
+                );
+            }
+        }
+        // ...and the schema's description must point at the authority
+        // rather than transcribe it. Demanding that the description
+        // enumerate the members would force a hand-written second copy
+        // of the set back into the source — the very defect the typed
+        // reason removed from the error message — so the assertion is
+        // that the description *names the type*, not the values.
+        let described = format!("{:?}", schema.info()).to_lowercase();
+        assert!(
+            described.contains("backlogdiscardreason"),
+            "the schema description must name the authority type instead of \
+             listing the set by hand: {described}"
+        );
+    }
 }

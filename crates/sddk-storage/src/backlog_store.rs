@@ -15,8 +15,8 @@
 //! `roadmap render`) will all read from and write to.
 
 use sddk_domain::backlog::{
-    BacklogError, BacklogEventLogEntry, BacklogItemId, BacklogItemRow, BacklogPriority,
-    BacklogStatus,
+    BacklogDiscardReason, BacklogError, BacklogEventLogEntry, BacklogItemId, BacklogItemRow,
+    BacklogPriority, BacklogStatus,
 };
 
 // Local helper: convert a rusqlite error into a BacklogError::Storage.
@@ -83,8 +83,16 @@ pub enum BacklogEvent {
     Discarded {
         /// Stable item id.
         item_id: BacklogItemId,
-        /// Discard reason (non-empty per schema validation).
-        reason: String,
+        /// Discard reason, drawn from the closed set defined by
+        /// [`BacklogDiscardReason`].
+        ///
+        /// Typed rather than `String` on purpose: an out-of-set reason
+        /// becomes unconstructible instead of merely rejected. The
+        /// storage's own tests used to append `"won't fix"`, `"done"`
+        /// and `"x"`, which is what a `String` field permits and what
+        /// a closed set that only the CLI's argument parser enforced
+        /// looks like from the inside.
+        reason: BacklogDiscardReason,
         /// RFC3339 timestamp.
         discarded_at: String,
         /// Actor reference.
@@ -163,7 +171,7 @@ impl BacklogEvent {
                 actor_ref,
             } => serde_json::json!({
                 "item_id": item_id,
-                "reason": reason,
+                "reason": reason.to_string(),
                 "discarded_at": discarded_at,
                 "actor_ref": actor_ref,
             }),
@@ -587,6 +595,51 @@ mod tests {
         assert_eq!(row.current_status, BacklogStatus::Triaged);
     }
 
+    /// The `reason` field must be the closed-set type, not a bare
+    /// `String`. This is a *compile-time* property, so on its own it
+    /// could not be watched failing — a test suite that only compiles
+    /// is indistinguishable from a test suite that was never run.
+    ///
+    /// The sealed trait makes it observable: `String` does not
+    /// implement [`NotABareString`], so if the field reverts to
+    /// `String` this file stops compiling and the guard is seen to
+    /// fire. `String` is not excluded by a blanket "everything except
+    /// String" impl, which Rust cannot express; it is excluded by the
+    /// seal, which is the standard way to get a closed set of
+    /// implementors.
+    mod not_a_bare_string {
+        pub trait Sealed {}
+
+        /// Blanket-implemented for every sealed type, and therefore not
+        /// for `String`, which is never sealed.
+        pub trait NotABareString: Sealed {}
+
+        impl<T: Sealed> NotABareString for T {}
+
+        impl Sealed for sddk_domain::backlog::BacklogDiscardReason {}
+    }
+
+    use not_a_bare_string::NotABareString;
+
+    fn assert_closed_set<T: NotABareString>(_v: &T) {}
+
+    #[test]
+    fn the_discarded_reason_field_is_not_a_bare_string() {
+        let ev = BacklogEvent::Discarded {
+            item_id: "B-001".to_string(),
+            reason: BacklogDiscardReason::Wontfix,
+            discarded_at: "2026-09-12T13:00:00Z".to_string(),
+            actor_ref: None,
+        };
+        let BacklogEvent::Discarded { reason, .. } = &ev else {
+            unreachable!()
+        };
+        // Binding `reason` and pushing it through the bound ties the
+        // assertion to the field's actual type rather than to a type
+        // the test names itself.
+        assert_closed_set(reason);
+    }
+
     #[test]
     fn append_discarded_ends_lifecycle() {
         let mut conn = fresh_db();
@@ -595,7 +648,7 @@ mod tests {
         store
             .append_event(&BacklogEvent::Discarded {
                 item_id: "B-001".to_string(),
-                reason: "won't fix".to_string(),
+                reason: BacklogDiscardReason::Wontfix,
                 discarded_at: "2026-09-12T13:00:00Z".to_string(),
                 actor_ref: None,
             })
@@ -604,6 +657,45 @@ mod tests {
         assert_eq!(row.current_status, BacklogStatus::Discarded);
         // live_items excludes discarded
         assert_eq!(store.live_items().unwrap().len(), 0);
+    }
+
+    /// The payload written to the log spells the member, and reads back
+    /// as one of the closed set. A member that serialised to anything
+    /// else would be a closed set with a hole in the round trip.
+    #[test]
+    fn every_member_round_trips_through_the_stored_payload() {
+        for reason in BacklogDiscardReason::ALL {
+            let mut conn = fresh_db();
+            let mut store = SqliteBacklogStore::new(&mut conn);
+            store.append_event(&reg_event("B-001", "x")).unwrap();
+            store
+                .append_event(&BacklogEvent::Discarded {
+                    item_id: "B-001".to_string(),
+                    reason,
+                    discarded_at: "2026-09-12T13:00:00Z".to_string(),
+                    actor_ref: None,
+                })
+                .unwrap();
+            let log = store.events(&"B-001".to_string()).unwrap();
+            let stored = log
+                .last()
+                .expect("the discard event must be in the log")
+                .payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .expect("reason must be a string in the payload")
+                .to_string();
+            assert_eq!(
+                stored,
+                reason.to_string(),
+                "member {reason:?} was stored as {stored:?}"
+            );
+            assert_eq!(
+                stored.parse::<BacklogDiscardReason>().unwrap(),
+                reason,
+                "member {reason:?} did not read back out of the ledger"
+            );
+        }
     }
 
     #[test]
@@ -654,7 +746,7 @@ mod tests {
         store
             .append_event(&BacklogEvent::Discarded {
                 item_id: "B-001".to_string(),
-                reason: "done".to_string(),
+                reason: BacklogDiscardReason::Resolved,
                 discarded_at: "2026-09-12T14:00:00Z".to_string(),
                 actor_ref: None,
             })
@@ -696,7 +788,7 @@ mod tests {
         store
             .append_event(&BacklogEvent::Discarded {
                 item_id: "B-004".to_string(),
-                reason: "x".to_string(),
+                reason: BacklogDiscardReason::Duplicate,
                 discarded_at: "2026-09-12T13:00:00Z".to_string(),
                 actor_ref: None,
             })

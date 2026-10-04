@@ -41,20 +41,29 @@ pub(crate) enum BacklogCommand {
     Render(BacklogRenderArgs),
 }
 
-/// Closed-set discard reasons (REQ-Backlog-Item-Promote-Discard).
+/// Thin clap adapter over [`sddk_domain::backlog::BacklogDiscardReason`].
+///
+/// The domain enum is the authority for the closed set; this one exists
+/// only because clap's `ValueEnum` derive cannot reach across the crate
+/// boundary. It must therefore map onto the domain's members
+/// bijectively — `discard_reason_maps_bijectively_onto_the_domain_set`
+/// is what catches a one-sided addition, in either direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum CliDiscardReason {
     Superseded,
     Wontfix,
     Duplicate,
+    Resolved,
 }
 
-impl From<CliDiscardReason> for String {
+impl From<CliDiscardReason> for sddk_domain::backlog::BacklogDiscardReason {
     fn from(r: CliDiscardReason) -> Self {
+        use sddk_domain::backlog::BacklogDiscardReason as D;
         match r {
-            CliDiscardReason::Superseded => "superseded".to_string(),
-            CliDiscardReason::Wontfix => "wontfix".to_string(),
-            CliDiscardReason::Duplicate => "duplicate".to_string(),
+            CliDiscardReason::Superseded => D::Superseded,
+            CliDiscardReason::Wontfix => D::Wontfix,
+            CliDiscardReason::Duplicate => D::Duplicate,
+            CliDiscardReason::Resolved => D::Resolved,
         }
     }
 }
@@ -163,7 +172,7 @@ pub(crate) struct BacklogDiscardArgs {
     /// Existing triaged item id.
     #[arg(long)]
     pub(crate) item_id: BacklogItemId,
-    /// Closed-set reason (superseded|wontfix|duplicate).
+    /// Closed-set reason (superseded|wontfix|duplicate|resolved).
     #[arg(long, value_enum)]
     pub(crate) reason: CliDiscardReason,
     /// Actor responsible for the discard.
@@ -172,6 +181,8 @@ pub(crate) struct BacklogDiscardArgs {
     /// Replacing item id, required when `--reason superseded`. The successor
     /// must exist; discarding without a traceable successor loses the
     /// findings that lived only in this item (agent-secretless report D3).
+    /// No other reason asks for one — see
+    /// [`sddk_domain::backlog::BacklogDiscardReason::requires_successor`].
     #[arg(long)]
     pub(crate) superseded_by: Option<BacklogItemId>,
     #[command(flatten)]
@@ -547,14 +558,16 @@ fn discard_text(o: &DiscardOutput) -> String {
 
 fn run_backlog_discard(args: BacklogDiscardArgs, environment: &CliEnvironment) -> CommandOutput {
     let format = args.format;
+    let reason: sddk_domain::backlog::BacklogDiscardReason = args.reason.into();
     let result = (|| -> anyhow::Result<DiscardOutput> {
         // Lineage guard (agent-secretless report D3): superseding without a
         // successor loses every finding that lived only in the discarded
-        // item. The successor must be named and must exist.
-        if args.reason == CliDiscardReason::Superseded {
+        // item. The successor must be named and must exist. Which reasons
+        // ask for one is the domain's decision, not this command's.
+        if reason.requires_successor() {
             let successor = args.superseded_by.as_ref().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "--reason superseded requires --superseded-by <item-id>; discarding without a successor loses findings that lived only in this item"
+                    "--reason {reason} requires --superseded-by <item-id>; discarding without a successor loses findings that lived only in this item"
                 )
             })?;
             if successor == &args.item_id {
@@ -577,11 +590,11 @@ fn run_backlog_discard(args: BacklogDiscardArgs, environment: &CliEnvironment) -
             }
         }
         require_transitionable(&mut store, &args.item_id)?;
-        let reason: String = args.reason.into();
+        let reason_str = reason.to_string();
         let discarded_at = now_rfc3339();
         let event = BacklogEvent::Discarded {
             item_id: args.item_id.clone(),
-            reason: reason.clone(),
+            reason,
             discarded_at: discarded_at.clone(),
             actor_ref: Some(args.actor_ref),
         };
@@ -591,7 +604,7 @@ fn run_backlog_discard(args: BacklogDiscardArgs, environment: &CliEnvironment) -
         Ok(DiscardOutput {
             item_id: args.item_id,
             event_id,
-            reason,
+            reason: reason_str,
             discarded_at,
         })
     })();
@@ -767,5 +780,68 @@ mod tests {
         let md = render_projection(BacklogRenderKind::Backlog, &[]);
         assert!(md.contains("# BACKLOG"));
         assert!(!md.contains("[["));
+    }
+
+    /// The clap enum and the domain's closed set must be the *same*
+    /// set. Divergence has two directions and both are defects:
+    ///
+    /// - a CLI member with no domain counterpart cannot be written, and
+    ///   the command offers a value it silently refuses;
+    /// - a domain member with no CLI counterpart cannot be reached from
+    ///   the command line, which is precisely how `resolved` would
+    ///   have been born — defined in the domain, unreachable in
+    ///   practice, and therefore still inexpressible.
+    ///
+    /// The length comparison is the one that bites: it is the check a
+    /// reviewer skips, and it is the one that turns a one-sided
+    /// addition into a command that lies.
+    #[test]
+    fn discard_reason_maps_bijectively_onto_the_domain_set() {
+        use sddk_domain::backlog::BacklogDiscardReason as D;
+
+        let cli = [
+            CliDiscardReason::Superseded,
+            CliDiscardReason::Wontfix,
+            CliDiscardReason::Duplicate,
+            CliDiscardReason::Resolved,
+        ];
+
+        assert_eq!(
+            cli.len(),
+            D::ALL.len(),
+            "the CLI offers {} reasons and the domain defines {}: a member was added to one side only",
+            cli.len(),
+            D::ALL.len()
+        );
+
+        for c in cli {
+            let d: D = c.into();
+            let cli_spelling = ValueEnum::to_possible_value(&c)
+                .expect("every CLI reason must be a clap value")
+                .get_name()
+                .to_string();
+            assert_eq!(
+                d.to_string(),
+                cli_spelling,
+                "CLI spelling and domain spelling disagree for {c:?}"
+            );
+        }
+
+        // Injectivity: two CLI members must not collapse onto one domain
+        // member, which would pass the length check above while still
+        // hiding a member.
+        let mut seen = std::collections::HashSet::new();
+        for c in cli {
+            let d: D = c.into();
+            assert!(seen.insert(d), "two CLI members collapse onto {d:?}");
+        }
+
+        // Surjectivity: every domain member must be reachable from the CLI.
+        for d in D::ALL {
+            assert!(
+                seen.contains(&d),
+                "domain member {d:?} is unreachable from the command line"
+            );
+        }
     }
 }

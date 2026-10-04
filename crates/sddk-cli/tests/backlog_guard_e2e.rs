@@ -233,6 +233,119 @@ fn wontfix_does_not_require_successor() {
     assert!(out.status.success(), "wontfix: {}", both(&out));
 }
 
+/// The member this block exists for: a concern that was real and has
+/// been fixed, closed without a successor because nothing replaced it.
+/// Before `resolved` there was no honest verb for that — `wontfix`
+/// would have asserted a refusal that never happened, and
+/// `superseded` would have demanded a successor that does not exist.
+#[test]
+fn resolved_closes_an_item_without_a_successor() {
+    let root = scratch_dir("resolved");
+    git_init(&root);
+    let id = capture(&root, "already fixed upstream");
+
+    let out = sddk(
+        &root,
+        &[
+            "backlog",
+            "discard",
+            "--item-id",
+            &id,
+            "--reason",
+            "resolved",
+            "--actor-ref",
+            "agent:test",
+        ],
+    );
+    assert!(out.status.success(), "resolved: {}", both(&out));
+    assert_eq!(live_count(&root), 0, "a resolved item is not live");
+}
+
+/// The reason must reach the ledger spelled as the member, not as
+/// whatever the caller happened to type. Checked through `backlog show`
+/// so it reads the event log back, not the command's own echo.
+#[test]
+fn the_persisted_reason_is_the_member_not_the_echoed_input() {
+    for reason in ["superseded", "wontfix", "duplicate", "resolved"] {
+        let root = scratch_dir(&format!("persist-{reason}"));
+        git_init(&root);
+        let id = capture(&root, "reason persistence probe");
+        // Captured unconditionally so the binding outlives `args`; only
+        // the superseded branch names it.
+        let successor = capture(&root, "the replacement");
+
+        let args: Vec<&str> = if reason == "superseded" {
+            vec![
+                "backlog",
+                "discard",
+                "--item-id",
+                &id,
+                "--reason",
+                reason,
+                "--superseded-by",
+                &successor,
+                "--actor-ref",
+                "agent:test",
+            ]
+        } else {
+            vec![
+                "backlog",
+                "discard",
+                "--item-id",
+                &id,
+                "--reason",
+                reason,
+                "--actor-ref",
+                "agent:test",
+            ]
+        };
+        let out = sddk(&root, &args);
+        assert!(out.status.success(), "discard {reason}: {}", both(&out));
+
+        let show = sddk(&root, &["backlog", "show", &id]);
+        assert!(show.status.success(), "show {reason}: {}", both(&show));
+        let text = both(&show);
+        assert!(
+            text.contains(&format!("\"reason\":\"{reason}\"")),
+            "ledger does not carry {reason:?} for {id}: {text}"
+        );
+    }
+}
+
+/// A reason outside the closed set is refused by the command, and the
+/// refusal is not a raw clap error but the domain's message — which
+/// lists the set as the domain defines it.
+#[test]
+fn a_reason_outside_the_closed_set_is_refused() {
+    let root = scratch_dir("out-of-set");
+    git_init(&root);
+    let id = capture(&root, "out of set probe");
+
+    for bad in ["done", "x", "won't fix", "banana", "RESOLVED"] {
+        let out = sddk(
+            &root,
+            &[
+                "backlog",
+                "discard",
+                "--item-id",
+                &id,
+                "--reason",
+                bad,
+                "--actor-ref",
+                "agent:test",
+            ],
+        );
+        assert!(
+            !out.status.success(),
+            "{bad:?} must be refused, but the command succeeded: {}",
+            both(&out)
+        );
+    }
+
+    // The item is untouched: every refusal left the backlog alone.
+    assert_eq!(live_count(&root), 1, "refusals must not consume the item");
+}
+
 #[test]
 fn render_check_detects_drift_and_passes_when_clean() {
     let root = scratch_dir("render-check");

@@ -58,6 +58,106 @@ impl std::fmt::Display for BacklogPriority {
     }
 }
 
+/// Backlog item discard reason — the **single authority** for the closed
+/// set of reasons a `backlog.item.discarded` event may carry
+/// ([[REQ-Backlog-Item-Promote-Discard]]).
+///
+/// This enum, not the CLI, defines what the set *is*. The CLI's clap
+/// enum is a thin adapter that must map onto these variants
+/// bijectively; the schema validates membership against
+/// [`BacklogDiscardReason::ALL`]; and the message rendered by
+/// [`BacklogError::InvalidDiscardReason`] is produced from [`Self::ALL`]
+/// rather than written out by hand. Before this type existed the set was
+/// enforced in exactly one place — the CLI's `ValueEnum` — while the
+/// domain declared an `InvalidDiscardReason` error it never raised, the
+/// schema accepted any string, and the storage's own tests wrote
+/// `"won't fix"`, `"done"` and `"x"`. A closed set that only one argument
+/// parser enforces is not a property of the ledger.
+///
+/// [`resolved`](Self::Resolved) is the member that lets the authority
+/// record "this was real, and it is now fixed" without lying: `wontfix`
+/// would assert a refusal that never happened, and `superseded` would
+/// require an existing successor, manufacturing lineage that does not
+/// exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BacklogDiscardReason {
+    /// Replaced by another item, which must be named and must exist.
+    Superseded,
+    /// Reviewed and deliberately not acted on.
+    Wontfix,
+    /// Restates an item already tracked elsewhere.
+    Duplicate,
+    /// The concern was real and has been addressed. The work is done;
+    /// the item is closed without a successor because nothing replaced
+    /// it — the original code or process did.
+    Resolved,
+}
+
+impl BacklogDiscardReason {
+    /// Every member of the closed set, in declaration order.
+    ///
+    /// This is what the set *is*: membership checks, CLI bijection
+    /// guards and the error message all read from here, so a member
+    /// added to the enum cannot be forgotten by any of them.
+    pub const ALL: [Self; 4] = [
+        Self::Superseded,
+        Self::Wontfix,
+        Self::Duplicate,
+        Self::Resolved,
+    ];
+
+    /// Whether discarding under this reason requires naming a successor.
+    ///
+    /// Only [`Superseded`](Self::Superseded) does. Superseding without a
+    /// successor loses every finding that lived only in the discarded
+    /// item; the other three reasons close the item without handing its
+    /// content to a replacement, so demanding a successor would force
+    /// fabricated lineage (agent-secretless report D3).
+    pub const fn requires_successor(self) -> bool {
+        matches!(self, Self::Superseded)
+    }
+}
+
+impl std::str::FromStr for BacklogDiscardReason {
+    type Err = BacklogError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "superseded" => Ok(Self::Superseded),
+            "wontfix" => Ok(Self::Wontfix),
+            "duplicate" => Ok(Self::Duplicate),
+            "resolved" => Ok(Self::Resolved),
+            other => Err(BacklogError::InvalidDiscardReason(other.to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for BacklogDiscardReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Superseded => "superseded",
+            Self::Wontfix => "wontfix",
+            Self::Duplicate => "duplicate",
+            Self::Resolved => "resolved",
+        })
+    }
+}
+
+/// Renders the closed set of discard reasons for diagnostics.
+///
+/// Exists so the member list is read from [`BacklogDiscardReason::ALL`]
+/// rather than transcribed into an error message, which is how the old
+/// hand-written message came to name three members while the set it
+/// claimed to describe was enforced nowhere.
+pub fn expected_discard_reasons() -> String {
+    BacklogDiscardReason::ALL
+        .iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// Backlog item current status (derived from latest event kind).
 ///
 /// This is a **projection** over the event log per ADR-0095 (Object state
@@ -224,8 +324,15 @@ pub enum BacklogError {
     #[error("backlog item already promoted: {0}")]
     AlreadyPromoted(BacklogItemId),
     /// Discard called with a reason outside the closed set
-    /// {superseded, wontfix, duplicate}.
-    #[error("invalid discard reason: {0}; expected one of superseded|wontfix|duplicate")]
+    /// defined by [`BacklogDiscardReason`].
+    ///
+    /// The expected list is rendered from [`BacklogDiscardReason::ALL`],
+    /// so this message cannot drift away from the set it describes.
+    #[error(
+        "invalid discard reason: {found}; expected one of {expected}",
+        found = .0,
+        expected = expected_discard_reasons()
+    )]
     InvalidDiscardReason(String),
     /// Render/promote called on an item that never had a triage
     /// (priority is a mandatory renderer column per the projection spec).
@@ -342,6 +449,95 @@ pub fn format_rfc3339_from_secs(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every member of the closed set must survive a
+    /// `Display` -> `FromStr` round trip. A member whose wire spelling
+    /// differs from its parse spelling would be writable but
+    /// unreadable, and the ledger would silently stop round-tripping.
+    #[test]
+    fn discard_reason_round_trip_for_every_member() {
+        for r in BacklogDiscardReason::ALL {
+            let s = r.to_string();
+            let back: BacklogDiscardReason = s.parse().unwrap_or_else(|e| {
+                panic!("member {r:?} prints as {s:?} but does not parse back: {e}")
+            });
+            assert_eq!(r, back, "member {r:?} did not round-trip through {s:?}");
+        }
+    }
+
+    /// `ALL` is the definition of the set, so a value the parser accepts
+    /// but `ALL` omits is a member the rest of the system cannot see.
+    #[test]
+    fn every_parseable_reason_is_listed_in_all() {
+        for s in [
+            "superseded",
+            "wontfix",
+            "duplicate",
+            "resolved",
+            "",
+            "won't fix",
+            "done",
+            "x",
+            "Resolved",
+            "RESOLVED",
+            " resolved",
+        ] {
+            let parsed: Result<BacklogDiscardReason, _> = s.parse();
+            if let Ok(r) = parsed {
+                assert!(
+                    BacklogDiscardReason::ALL.contains(&r),
+                    "{s:?} parses to {r:?} but ALL does not list it"
+                );
+            }
+        }
+    }
+
+    /// Values outside the set are refused, and the refusal names the
+    /// set rendered from `ALL` — including the members the old
+    /// hand-written message omitted.
+    #[test]
+    fn reasons_outside_the_set_are_refused_and_the_message_lists_every_member() {
+        for s in ["won't fix", "done", "x", "", "banana"] {
+            let err = match s.parse::<BacklogDiscardReason>() {
+                Ok(r) => panic!("{s:?} must be refused, but it parsed to {r:?}"),
+                Err(e) => e,
+            };
+            let msg = err.to_string();
+            for r in BacklogDiscardReason::ALL {
+                assert!(
+                    msg.contains(&r.to_string()),
+                    "refusal message {msg:?} omits member {r}"
+                );
+            }
+        }
+    }
+
+    /// Only `superseded` hands content to a replacement. Demanding a
+    /// successor from any other reason would force fabricated lineage.
+    #[test]
+    fn only_superseded_requires_a_successor() {
+        assert!(BacklogDiscardReason::Superseded.requires_successor());
+        for r in BacklogDiscardReason::ALL {
+            if r != BacklogDiscardReason::Superseded {
+                assert!(!r.requires_successor(), "{r:?} must not demand a successor");
+            }
+        }
+    }
+
+    /// The set is what the error message says it is, checked through
+    /// the rendered text rather than through the helper that built it.
+    #[test]
+    fn expected_reasons_string_matches_the_members() {
+        assert_eq!(
+            expected_discard_reasons(),
+            "superseded|wontfix|duplicate|resolved"
+        );
+        assert_eq!(
+            BacklogDiscardReason::ALL.len(),
+            expected_discard_reasons().split('|').count(),
+            "the rendered list and the member list disagree in length"
+        );
+    }
 
     #[test]
     fn backlog_priority_round_trip() {

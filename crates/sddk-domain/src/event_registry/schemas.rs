@@ -380,12 +380,21 @@ schema_struct!(
     BacklogItemDiscardedSchema,
     "backlog.item.discarded",
     1,
-    "backlog item discarded — payload must contain item_id (string), reason (string), discarded_at (string)",
+    "backlog item discarded — payload must contain item_id (string), reason (one of the closed set defined by BacklogDiscardReason), discarded_at (string)",
     |p: &serde_json::Value| {
         is_object(p)
             && has_string_field(p, "item_id")
             && has_string_field(p, "reason")
             && has_string_field(p, "discarded_at")
+            // Membership, not mere presence. This schema used to accept
+            // any string for `reason`, so the closed set lived only in
+            // the CLI's argument parser. Membership is read from
+            // `BacklogDiscardReason` so the schema and the type cannot
+            // describe different sets.
+            && p.get("reason")
+                .and_then(|v| v.as_str())
+                .map(|s| s.parse::<crate::backlog::BacklogDiscardReason>().is_ok())
+                .unwrap_or(false)
     }
 );
 
