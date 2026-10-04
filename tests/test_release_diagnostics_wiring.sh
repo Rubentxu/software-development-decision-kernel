@@ -436,6 +436,125 @@ asert "E6: la propiedad se comprueba por codigo y no relanzando el test (una aut
     "$(printf '%s' "$CODIGO_WIRE" | grep -qE 'bash "\$\{BASH_SOURCE\[0\]\}"' && echo 0 || echo 1)"
 caso_termina E6
 
+# --- E7: el codigo que se diagnostica es el del comando, no el de `die` -------
+#
+# MEDIDO en el noveno intento de 2.9.0: el `cargo test --workspace` salio
+# no-cero SIN imprimir un solo `FAILED` y el bloque de "por que fallo el
+# release" dijo `codigo : 1`. Ese 1 era el `exit 1` de `die`, no el de cargo.
+# `die` es la UNICA via de salida no-cero de release.sh, luego con un `exit 1`
+# fijo las ramas 137/139/134/135 de `cause_of_exit_code` -- las unicas que
+# separan "el comando fallo" de "el proceso murio" -- eran INALCANZABLES POR
+# CONSTRUCCION. La tabla estaba escrita y probada unitariamente, y no podia
+# activarse nunca: un asert sobre una rama inalcanzable no mide que la rama
+# exista, mide que la tabla tiene texto.
+#
+# Este caso compone el camino REAL -- `die`, el trap y la libreria, extraidas
+# del release.sh de verdad -- y exige la PROPIEDAD, no la presencia de un
+# bloque: que la causa nombrada sea la del comando que fallo, y que dos muertes
+# por senal DISTINTAS se distingan. Un caso que solo comprobara "sale algo"
+# pasaria con el defecto puesto, que es el fallo de instrumento mas caro.
+#
+# El codigo de PROCESO se comprueba aparte a proposito: el arreglo no lo cambia,
+# porque `die` sigue saliendo con 1 y ese es el contrato que el resto espera.
+# Fijarlo aqui es lo que impide que un arreglo futuro "propague el codigo" y
+# rompa en silencio a quien dependa del 1.
+caso_empieza E7
+E7_BLOQUE=""
+E7_RC=""
+E7_N=0
+componer_camino_real() {
+    local comando="$1" salida="$WIRE_TMPDIR/e7-bloque.txt" marcador
+    E7_N=$((E7_N + 1))
+    marcador="$WIRE_TMPDIR/e7-marcador-$E7_N"
+    # MEDIDO, y es la MISMA clase que E6 un caso mas abajo: la primera version
+    # de este helper heredaba el `RELEASE_DIAGNOSED_FILE` que el propio test
+    # exporta para sus dry-runs, luego la idempotencia de `release_diagnose_exit`
+    # -- que es CORRECTA -- suprimia el bloque en la segunda, tercera y cuarta
+    # invocacion. Dos casos de E7 caian y la causa no era el producto sino que el
+    # sujeto heredaba estado del entorno: leer eso como "el arreglo no funciona"
+    # habria hecho tirar el arreglo bueno. El caso es dueno de su marcador, y lo
+    # limpia ANTES de cada invocacion.
+    rm -f "$marcador" 2>/dev/null
+    {
+        printf '%s\n' ". \"$LIB\""
+        sed -n '/^die()/,/^}/p' "$RELEASE"
+        sed -n '/^release_on_exit()/,/^}/p' "$RELEASE"
+    } | RELEASE_DIAGNOSED_FILE="$marcador" RELEASE_CURRENT_STEP="paso de prueba" bash -c '
+        cleanup_release_scratch() { :; }
+        trap release_on_exit EXIT
+        source /dev/stdin
+        eval "$1"
+        die "el comando fallo"
+    ' _ "$comando" >/dev/null 2>"$salida"
+    E7_RC=$?
+    E7_BLOQUE="$(cat "$salida" 2>/dev/null)"
+}
+
+# El sujeto tiene que EXISTIR: si el comando de ejemplo no hubiera muerto por
+# senal, el caso pasaria por vacuidad y estaria probando un `die` sin causa.
+componer_camino_real 'sh -c "kill -SEGV \$\$"'
+E7_SEGV="$E7_BLOQUE"
+componer_camino_real 'sh -c "kill -KILL \$\$"'
+E7_KILL="$E7_BLOQUE"
+
+# El antidispositivo de vacuidad va primero, y es la asercion que mas dice: si
+# el comando no muere por la senal que se le pidio, todo lo de abajo es teatro.
+case "$E7_SEGV" in
+    *"codigo   : 139"*) E7_SUJETO_VIVO=1 ;;
+    *)                  E7_SUJETO_VIVO=0 ;;
+esac
+asert "E7: el sujeto EXISTE - el comando muere por SIGSEGV y el bloque lo registra como 139" \
+    "$E7_SUJETO_VIVO" "bloque: $(printf '%s' "$E7_SEGV" | tr -d '\n' | cut -c1-70)"
+
+# La propiedad: la causa nombrada es la del comando, no la constante de `die`.
+case "$E7_SEGV" in
+    *"causa    : SIGSEGV"*) E7_NOMBRA_SEGV=1 ;;
+    *)                      E7_NOMBRA_SEGV=0 ;;
+esac
+asert "E7: nombra SIGSEGV, la causa real, y no el 'fallo declarado por release.sh'" \
+    "$E7_NOMBRA_SEGV" "causa: $(printf '%s' "$E7_SEGV" | grep 'causa' | cut -c1-70)"
+case "$E7_SEGV" in
+    *"fallo declarado por release.sh"*) E7_CONSTANTE=1 ;;
+    *)                                 E7_CONSTANTE=0 ;;
+esac
+asert "E7: y el texto constante de 'un die' ya no aparece cuando hay causa real" \
+    "$([ "$E7_CONSTANTE" = "0" ] && echo 1 || echo 0)"
+
+# Dos muertes distintas NO pueden dar el mismo texto: si la causa fuera una
+# constante elegida al azar, esto pasaria con un `echo SIGSEGV` en `die`.
+case "$E7_KILL" in
+    *"causa    : SIGKILL"*) E7_DISTINTA=1 ;;
+    *)                      E7_DISTINTA=0 ;;
+esac
+asert "E7: una muerte distinta (SIGKILL) produce una causa distinta: lee el codigo, no lo inventa" \
+    "$E7_DISTINTA" "causa: $(printf '%s' "$E7_KILL" | grep 'causa' | cut -c1-70)"
+
+# El arreglo cambia lo que se DIAGNOSTICA, no lo que el proceso devuelve.
+asert "E7: el proceso sigue exiting 1, que es el contrato que el resto espera" \
+    "$([ "$E7_RC" = "1" ] && echo 1 || echo 0)" "rc real: '$E7_RC'"
+
+# Y ambos codigos se dicen, porque un 139 sin el 1 al lado hace pensar que el
+# release se estrello en vez de que el COMANDO se estrello.
+case "$E7_SEGV" in
+    *"proceso  : 1"*) E7_AMBOS=1 ;;
+    *)                E7_AMBOS=0 ;;
+esac
+asert "E7: el bloque dice el codigo de la causa Y el de proceso, que no son lo mismo" \
+    "$E7_AMBOS"
+
+# El borde que el arreglo introduce: `die` desatado tras un comando que SI
+# funciono no tiene causa que publicar. Si publicara ese 0, el bloque entero
+# desapareceria y el release se pararia sin decir por que: el fallo mas caro de
+# todos, y el que este arreglo podia crear sin querer.
+componer_camino_real 'true'
+case "$E7_BLOQUE" in
+    *"causa    : fallo declarado por release.sh"*) E7_SIN_CAUSA=1 ;;
+    *)                                             E7_SIN_CAUSA=0 ;;
+esac
+asert "E7: un die sin comando fallido sigue dando diagnostico (publicar un 0 lo borraria)" \
+    "$E7_SIN_CAUSA" "bloque: $(printf '%s' "$E7_BLOQUE" | tr -d '\n' | cut -c1-70)"
+caso_termina E7
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then

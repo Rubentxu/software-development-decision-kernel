@@ -338,12 +338,47 @@ s = s.replace(viejo, nuevo, 1)
 open(p, "w").write(s)
 '
 
+# M18: `die` deja de PUBLICAR el codigo del comando, que es el defecto MEDIDO
+# del noveno intento de 2.9.0 -- con `exit 1` fijo, el bloque de "por que fallo
+# el release" decia SIEMPRE `codigo : 1` y las ramas 137/139/134/135 de
+# `cause_of_exit_code` eran inalcanzables por construccion. Se quita la
+# publicacion: E7 debe caer en la asercion que exige el 139 y en la que exige la
+# causa nombrada, y en las dos de "dos muertes distintas".
+mutar "M18 die deja de publicar el codigo real y el diagnostico vuelve a la constante" "$RELEASE" "$WIRE" E7 \
+    "sin la publicacion, el bloque solo puede decir 'fallo declarado por release.sh', que es el defecto medido: un instrumento que solo reporta una constante no informa." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "    local cause=$?\n    if [ \"$cause\" != \"0\" ]; then\n        RELEASE_DIE_CODE=\"$cause\"\n    fi\n"
+nuevo = "    local cause=$?\n"
+assert viejo in s, "la publicacion del codigo en die no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
+# M19: el BORDE que el arreglo de M18 introduce. `die` desatado tras un comando
+# que SI funciono no tiene causa; si se publica ese 0, `release_diagnose_exit 0`
+# returns calladamente y el release se para SIN decir por que -- el fallo mas
+# caro de todos, y el que el arreglo podia crear sin querer. Se quita la
+# normalizacion a "solo si no es cero" y la ultima asercion de E7 debe caer.
+mutar "M19 die publica tambien el 0 de un comando que funciono, y el bloque desaparece" "$RELEASE" "$WIRE" E7 \
+    "publicar un 0 hace que release_diagnose_exit salga sin imprimir nada: el release se para sin diagnostico." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "    local cause=$?\n    if [ \"$cause\" != \"0\" ]; then\n        RELEASE_DIE_CODE=\"$cause\"\n    fi\n"
+nuevo = "    local cause=$?\n    RELEASE_DIE_CODE=\"$cause\"\n"
+assert viejo in s, "la normalizacion de die no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las dieciseis comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las %d comprobaciones tienen dientes, y el arbol quedo intacto.\n' "$PASS"
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then

@@ -159,6 +159,14 @@ release_diagnose_exit() {
         printf '\n\033[1;31m  ✗ por que fallo el release\033[0m\n'
         printf '    paso     : %s\n' "${RELEASE_CURRENT_STEP:-<sin paso registrado: el fallo ocurrio antes de announce uno>}"
         printf '    codigo   : %s\n' "$code"
+        # El codigo de proceso y el codigo de la causa NO son lo mismo, y
+        # confundirlos fue el defecto MEDIDO del noveno intento de 2.9.0: el
+        # bloque decia `codigo : 1` y ese 1 era el `exit 1` de `die`, no el del
+        # comando. Cuando difieren se dicen los dos, porque un 139 leido sin
+        # contexto hace pensar que el release se estrello.
+        [ -n "${RELEASE_PROCESS_CODE:-}" ] && [ "${RELEASE_PROCESS_CODE:-}" != "$code" ] \
+            && printf '    proceso  : %s (el release sale asi siempre; la causa es la linea de arriba)\n' \
+                "${RELEASE_PROCESS_CODE}"
         printf '    causa    : %s\n' "$(cause_of_exit_code "$code")"
         [ -n "$context" ] && printf '    contexto : %s\n' "$context"
         _diag_measure "${RELEASE_SCRATCH:-}"

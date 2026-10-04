@@ -98,7 +98,22 @@ cleanup_release_scratch() { rm -rf "$RELEASE_SCRATCH"; }
 # EXIT, la segunda pisa a la primera y el scratch se queda en disco.
 release_on_exit() {
     local code=$?
-    release_diagnose_exit "$code" || true
+    # MEDIDO en el noveno intento de 2.9.0: `cargo test --workspace` salio
+    # no-cero SIN imprimir un solo `FAILED`, y el bloque de "por que fallo el
+    # release" dijo `codigo : 1`. Ese 1 era el `exit 1` de `die`, NO el de cargo:
+    # `die` es la UNICA via de salida no-cero de este script, luego con un
+    # `exit 1` fijo las ramas 137/139/134/135 de `cause_of_exit_code` -- las
+    # unicas que separan "el comando fallo" de "el proceso murio" -- eran
+    # INALCANZABLES POR CONSTRUCCION. Un instrumento que solo puede reportar una
+    # constante no informa, y este es el motivo por el que aquel fallo quedo sin
+    # diagnosticar. El diagnostico usa el codigo real; el codigo de PROCESO sigue
+    # siendo el de siempre y no lo cambia nadie.
+    local diag="$code"
+    if [ "$code" != "0" ] && [ -n "${RELEASE_DIE_CODE:-}" ]; then
+        diag="$RELEASE_DIE_CODE"
+    fi
+    RELEASE_PROCESS_CODE="$code"
+    release_diagnose_exit "$diag" || true
     cleanup_release_scratch
     return "$code"
 }
@@ -140,7 +155,27 @@ warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
 # que el manejador de salida añada el paso, el codigo y la causa. La idempotencia
 # la garantiza el marcador del scratch, asi que el bloque sale una sola vez
 # aunque el `exit` de aqui y el trap se ejecuten los dos.
-die()  { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
+# `die` imprime su frase (que es lo que el release QUIERE decir) y despues deja
+# que el manejador de salida añada el paso, el codigo y la causa. La idempotencia
+# la garantiza el marcador del scratch, asi que el bloque sale una sola vez
+# aunque el `exit` de aqui y el trap se ejecuten los dos.
+#
+# Lo que `die` PUBLICA es lo que decide lo que el diagnostico puede ver. Al
+# entrar, `$?` es el codigo del comando que acaba de fallar, porque todos los
+# sitios la invocan como `cmd || die "..."`. Solo se publica si no es cero: un
+# `die` desatado tras un comando que si funciono no tiene causa que nombrar, y
+# publicar ese 0 haria que el bloque entero no se imprimiera.
+#
+# El codigo de PROCESO sigue siendo 1 y no se toca: eso no lo cambia nadie y no
+# hace falta. Lo que cambia es lo que el operador puede leer.
+die()  {
+    local cause=$?
+    if [ "$cause" != "0" ]; then
+        RELEASE_DIE_CODE="$cause"
+    fi
+    printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2
+    exit 1
+}
 
 # --- la clase de gates que faltaba en el guard ---
 #
