@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-069
 title: "/tmp es un tmpfs con tope de 48 GB que los sandboxes de los tests llenan, y cuando se llena la suite y la release mueren con ENOSPC sin decir que el disco es la causa"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "tmpfs_full_breaks_suite_and_release_without_saying_why"
@@ -18,6 +18,10 @@ related: [INC-DEBT-068, INC-RELEASE-TAG-FIX]
 references:
   - tests/test_release_state_pointer.sh
   - crates/sddk-cli/tests/cycle_attention_enumeration.rs
+  - scripts/lib/release_diagnostics.sh
+  - tests/test_release_diagnostics.sh
+  - tests/test_release_diagnostics_mutation.sh
+  - tests/test_release_diagnostics_wiring.sh
 ---
 
 ## Que es
@@ -122,3 +126,54 @@ Cierra cuando (1) los sandboxes que fugan limpien al terminar —con la poblacio
 medida antes, no supuesta— **o** (2) el paso 1 nombre la causa antes de empezar
 a compilar. **No cierra por antiguedad**: cierra con un comportamiento, y en ese
 momento un `os error 122` en la suite habra dejado de ser un misterio.
+
+## RESUELTA — session-80, por el criterio (2) que la propia deuda declaraba
+
+Se implemento el camino 2. **No es una reinterpretacion del criterio**: el
+documento decia "o (2) el paso 1 nombre la causa antes de empezar a compilar", y
+eso es exactamente lo que ahora hace el paso 0.
+
+`scripts/lib/release_diagnostics.sh` + el cableado en `release.sh`:
+
+- **El margen se mide antes de gastar.** `release_check_resources` mira el disco
+  del scratch y la memoria disponible, y si no dan **falla cerrado nombrando el
+  recurso, el punto de montaje y las dos cifras** (la que hay y la que se
+  exige). Fail-closed porque seguir sin margen solo convierte un fallo en un
+  fallo distinto.
+- **La causa tiene nombre.** `cause_of_exit_code` traduce el codigo a su causa:
+  122 es ENOSPC, 137 es SIGKILL/OOM, 126/127 es "no encontrado", y un codigo
+  **desconocido declara que no se conoce** en vez de inventar una — una causa
+  inventada dirige la investigacion a un sitio falso.
+- **El bloque sale aunque el fallo no pase por `die`.** Un unico manejador de
+  salida (`release_on_exit`) diagnostica y limpia, con marcador de idempotencia
+  en disco porque `die` y el manejador viven en shell distinto y con una
+  variable el bloque salia dos veces.
+
+**MEDIDO, no supuesto:**
+
+| Medida | Valor |
+|---|---|
+| Casos del guard de la libreria | **42**, `PASS=42 FAIL=0` |
+| Casos del guard de cableado (release real) | **24**, `PASS=24 FAIL=0` |
+| Mutaciones que tienen que caer | **9**, `PASS=9 FAIL=0 SKIP=0` |
+| `die` que ahora pasan por el diagnostico | los **73** (antes 32 sin causa) |
+
+El caso E1 del guard de cableado **ejecuta `release.sh --dry-run` de verdad** con
+un margen imposible y comprueba que el release para nombrando el recurso; E2 lo
+ejecuta con margen y comprueba que el preflight se supera. E2 es lo que hace que
+E1 no sea una puerta trasera.
+
+### Lo que NO cierra esto, escrito para que no se lea al reves
+
+1. **Los sandboxes siguen sin limpiarse solos.** El camino (1) no se ha tocado:
+   sigue sin medirse que poblacion exacta fuga. Ya no bloquea, porque (2) se
+   cumple, pero la causa de origen —el `Drop` que no corre tras un panic o un
+   `exit`— sigue viva y volvera a llenar el tmpfs.
+2. **La suite suelta tampoco lo dice.** Correr `cargo test --workspace` sin
+   pasar por `release.sh` sigue sin preflight. Este arreglo vive en el release,
+   que es donde estaba el hueco del release.
+3. **Un SIGKILL del proceso padre sigue sin diagnosticar.** No hay manejador que
+   se ejecute. Lo que se sabe es que el log **si** dice en que paso fue
+   (MEDIDO: `step()` escribe con `printf` directo a fd 1 y bash no bufferiza, luego
+   el marker esta en disco), y que (2) evita llegar a esa situacion por falta de
+   espacio. Lo que no se puede es diagnosticar la muerte en si.
