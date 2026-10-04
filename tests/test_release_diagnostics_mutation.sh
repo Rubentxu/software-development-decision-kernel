@@ -389,6 +389,24 @@ s = s.replace(viejo, nuevo, 1)
 open(p, "w").write(s)
 '
 
+# M21: el gate de recursos se convierte en puerta trasera. E1 y E2, juntos, son
+# los que dicen que es un UMBRAL y no una puerta: con margen insuficiente se
+# para (E1), con margen suficiente no se para por recursos (E2). Si el gate
+# parase SIEMPRE, E1 seguiria verde —para por la razon que el caso espera— y
+# E2 caeria, que es justo la asercion que distingue un umbral de una puerta.
+# Se cambia la comparacion de disco por `false` solo cuando hay margen de sobra.
+mutar "M21 el preflight de recursos se para siempre y el gate deja de ser un umbral" "$LIB" "$WIRE" E2 \
+    "si el gate para tambien con margen de sobra, E1 no lo nota —para por la razon que espera— y E2 cae: un gate que nunca deja pasar nada no es un gate." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "if [ -n \"$free_mb\" ] && [ \"$free_mb\" -lt \"$SDDK_RELEASE_MIN_FREE_MB\" ]; then"
+nuevo = "if [ -n \"$free_mb\" ]; then"
+assert viejo in s, "la rama de disco del preflight no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'

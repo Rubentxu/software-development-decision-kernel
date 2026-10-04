@@ -329,14 +329,33 @@ caso_termina E1
 caso_empieza
 #
 # LO QUE E2 AFIRMA Y LO QUE NO, escrito para que nadie lo lea mas fuerte de lo
-# que es. Afirma que con margen el release SUPERA el preflight. No afirma que
-# muera por la admision, porque la causa siguiente depende del estado del
-# arbol de trabajo, que un test no puede suponer: MEDIDO, con el arbol sucio el
-# release muere en `working tree is dirty`, que esta en el MISMO paso 0 y por
-# detras del preflight. Afirmar la causa exacta haria que este test pasara solo
-# en un arbol limpio, y fallara de forma enganosa en cuanto se ejecute durante
-# el desarrollo, que es cuando mas hace falta. La afirmacion util —"el gate se
-# puede superar"— no depende de nada de eso.
+# que es. Afirma que con margen el release **SUPERA el preflight** y llega a su
+# paso siguiente. No afirma que muera por la admision, porque la causa
+# siguiente depende del estado del arbol de trabajo, que un test no puede
+# suponer: MEDIDO, con el arbol sucio el release muere en `working tree is
+# dirty`, que esta en el MISMO paso 0 y por detras del preflight.
+#
+# MEDIDO, y por que estas dos lineas se reescribieron: el caso decia aqui que
+# no afirmaba que el dry-run se muriera, y dos aserciones mas abajo afirmaban
+# exactamente eso —"el release sigue y muere por otra causa (rc no cero)" y "el
+# diagnostico de ese fallo tambien nombra su propio paso"—. El caso se
+# contradicia a si mismo, y sus dos aserciones se apoyaban en que el dry-run
+# SIEMPRE se muriera despues del preflight. MEDIDO, y aqui esta el motivo por el
+# que eso era una bomba: cuando se arreglo la limpieza (commit 2297de3e) el
+# dry-run **completo y salio con 0**, y las dos aserciones cayeron **sin que el
+# producto hubiera cambiado en nada**. Un caso que exige que el sistema falle
+# para poder pasar no mide una propiedad del sistema: mide el defecto que mas
+# tarde se arreglo, y el dia que se arregla cae —que es la forma mas cara de
+# descubrir que un guard estaba pegado a un sintoma—. Por eso la afirmacion es
+# ahora la que el caso siempre dijo: el gate deja seguir. Y la segunda es un
+# **implicado** —"si se para, dice por que y en que paso"—, que es verdadero
+# con o sin muerte y por eso no presupone ninguna.
+#
+# Y se ha medido por que NO hay una tercera asercion: se intento, buscando
+# `release admission` como marca de "llegó al paso siguiente", y cayo al
+# ejecutarse con el arbol sucio —esa linea va DESPUES del `working tree is
+# dirty`—. Un aserto que depende del estado del arbol no es un aserto, es una
+# bomba que solo se ve cuando alguien desarrolla.
 
 limpiar_marcador
 SDDK_RELEASE_MIN_FREE_MB=1 SDDK_RELEASE_MIN_AVAIL_MB=1 \
@@ -348,10 +367,22 @@ asert "E2: con margen el preflight se supera y lo DICE" \
 asert "E2: y en efecto no se detuvo por recursos" \
     "$(grep -q 'disco insuficiente' "$e2_log" && echo 0 || echo 1)" \
     "$(grep 'insuficiente' "$e2_log" | head -1)"
-asert "E2: el release sigue y muere por otra causa (rc no cero esta vez tambien)" \
-    "$([ "$e2_rc" -ne 0 ] && echo 1 || echo 0)" "rc=$e2_rc -- un preflight que nunca dejara pasar nada daria rc=0 aqui"
-asert "E2: el diagnostico de ese fallo tambien nombra su propio paso" \
-    "$(grep -q 'por que fallo el release' "$e2_log" && echo 1 || echo 0)"
+# Lo que demuestra que el gate NO es una puerta trasera son las dos
+# aserciones de arriba juntas, y no hace falta una tercera: E1 con margen
+# INSUFICIENTE muere nombrando el disco, y E2 con margen SUFICIENTE lo supera
+# y no se para por recursos. Umbral y no puerta. MEDIDO: se intento anadir una
+# tercera asercion —"se alcanza el paso siguiente del preflight", buscando
+# `release admission`— y cayo al ejecutarse con el arbol sucio, porque esa
+# linea se imprime DESPUES del `working tree is dirty` y un test no puede
+# suponer el estado del arbol. Un aserto que depende del arbol no es un
+# aserto: es una bomba que solo se ve cuando alguien desarrolla.
+#
+# Lo que si se exige es el implicado, que es verdadero con y sin muerte y por
+# eso no presupone ninguna: si el dry-run se para, tiene que decir por que y en
+# que paso.
+asert "E2: y si aun asi se para, el bloque nombra su propio paso" \
+    "$([ "$e2_rc" = "0" ] && echo 1 || { grep -q 'por que fallo el release' "$e2_log" && echo 1 || echo 0; })" \
+    "rc=$e2_rc"
 asert "E2: este dry-run tampoco llega al 1b" \
     "$(grep -q '1b/15' "$e2_log" && echo 0 || echo 1)"
 caso_termina E2
