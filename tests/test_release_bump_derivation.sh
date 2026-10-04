@@ -16,6 +16,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUMP="$REPO_ROOT/scripts/release-bump.sh"
+ADMISSION="$REPO_ROOT/scripts/lib/release_admission.sh"
 
 if [[ ! -f "$BUMP" ]]; then
     echo "FAIL: $BUMP missing"
@@ -186,6 +187,96 @@ check "workspace behind tag keeps tag as base" \
 # short-circuit, the escape hatch documented in AGENTS.md §2.3 would be dead.
 check "--force-version overrides the declared-release short-circuit" \
     "v2.5.0" "$(derive_forced 2.1.1 2.0.1 'feat: something' 2.5.0)"
+
+# --- The baseline comes from the REMOTE, not the local clone ----------------
+#
+# Session-77. The bump script used to read the baseline from `git tag` on the
+# local clone while `release_admission.sh` read it from `git ls-remote --tags
+# origin`. Two answers to the same question, and the local one goes stale:
+# `gh release create` publishes the tag on the remote and nothing in the
+# pipeline updates the clone.
+#
+# Measured on this repo: `v2.5.6` was published and present in
+# `git ls-remote --tags origin`, while `git tag` stopped at `v2.5.5`. The bump
+# then reported "the workspace declares the pending release (2.5.6)" and would
+# have handed `release.sh` a tag that was ALREADY PUBLISHED.
+#
+# The fixture below reproduces exactly that shape: the remote carries a tag the
+# clone does not have. The assertion is the one that discriminates — the local
+# baseline v2.5.5 would say "workspace 2.5.6 is ahead, nothing to derive" and
+# exit 0 with no tag, which is the bug; the remote baseline v2.5.6 derives a
+# fresh tag from the commits since it.
+#
+#   $1 = workspace version
+#   $2 = tag the CLONE knows about
+#   $3 = tag the REMOTE additionally carries
+#   $4 = commit subject used for the level detection
+derive_remote_ahead() {
+    local ws="$1" local_tag="$2" remote_tag="$3" subject="$4"
+    local dir="$TMPROOT/$RANDOM-$$"
+    local bare="$dir/.remote.git"
+    mkdir -p "$dir/scripts/lib" "$bare"
+    (
+        cd "$dir" || exit 2
+        git init -q --bare "$bare"
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        git remote add origin "$bare"
+        cp "$BUMP" scripts/release-bump.sh
+        cp "$ADMISSION" scripts/lib/release_admission.sh
+        mkdir -p crates/fake
+        cat > Cargo.toml <<EOF
+[workspace]
+members = ["crates/fake"]
+
+[workspace.package]
+version = "$ws"
+edition = "2021"
+EOF
+        cat > crates/fake/Cargo.toml <<EOF
+[package]
+name = "fake"
+version.workspace = true
+EOF
+        printf 'version = "%s"\n' "$ws" > manifest.toml
+        git add -A
+        git commit -qm "chore: base"
+        git tag "v$local_tag"
+        # A commit that was released ELSEWHERE, so the remote tag can sit on it.
+        git commit -q --allow-empty -m "chore: released from another clone"
+        # The only unreleased commit; its type is what decides the level.
+        git commit -q --allow-empty -m "$subject"
+        git push -q origin "refs/tags/v$local_tag:refs/tags/v$local_tag"
+        git push -q origin "HEAD:refs/heads/main"
+        # The later tag exists ONLY on the remote and is never fetched back.
+        # This is the state `gh release create` leaves a clone in.
+        git -C "$bare" tag "v$remote_tag" HEAD^
+    )
+    local out derived
+    out=$(cd "$dir" && bash scripts/release-bump.sh --dry-run 2>&1)
+    rm -rf "$dir" >/dev/null 2>&1
+    derived=$(printf '%s\n' "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}')
+    printf '%s\n' "$derived"
+}
+
+# The remote baseline is one ahead of what the clone knows, and the commit since
+# it is a `fix`. Reading the local tag instead makes the workspace look "ahead
+# of the tag" and derives nothing at all -- which is the defect, and is exactly
+# the shape that would have re-published an existing tag.
+check "remote baseline wins over a stale local tag list (fix)" \
+    "v2.5.4" "$(derive_remote_ahead 2.5.3 2.5.2 2.5.3 'fix: something')"
+
+# Same fixture, minor commit: the derivation must follow the REMOTE baseline,
+# not the local one, or the level is computed from the wrong commit range.
+check "remote baseline yields a minor when the commit is a feat" \
+    "v2.6.0" "$(derive_remote_ahead 2.5.3 2.5.2 2.5.3 'feat: something')"
+
+# A repo with no remote at all must still derive from its local tags — the
+# bootstrap path, and the one the original fixtures above exercise. The remote
+# fix must not turn "never published" into a hard error.
+check "no remote configured still derives from local tags" \
+    "v2.1.0" "$(derive 2.0.1 2.0.1 'feat: something')"
 
 echo ""
 echo "=== matrix result: PASS=$PASS FAIL=$FAIL ==="

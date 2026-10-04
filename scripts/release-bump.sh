@@ -41,12 +41,97 @@ cd "$ROOT"
 
 # --- Git state ---
 
-LAST_TAG="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+# The last PUBLISHED version comes from the REMOTE, through the same
+# authority the push admission and the public-release gate already use
+# (`scripts/lib/release_admission.sh`, `git ls-remote --tags`).
+#
+# It used to come from `git tag` on the local clone. That is a SECOND answer
+# to the same question, and it goes stale: `gh release create` publishes the
+# tag on the remote and nothing in the pipeline updates the local clone.
+# Session-77 measured it on this repo -- `v2.5.6` was published and present in
+# `git ls-remote --tags origin` while `git tag` stopped at `v2.5.5` -- and the
+# consequence was not a wrong number in a report. The script concluded
+# "the workspace declares the pending release (2.5.6)" and would have handed
+# `release.sh` a tag that was ALREADY PUBLISHED. Two answers to "what is out
+# there", one of them a release ago; that is the same shape as the identity
+# defect of session-76, one layer up.
+#
+# Three outcomes, and the caller cannot confuse them:
+#
+#   remote configured and answering   -> authoritative; the remote is used
+#   no remote configured at all       -> the local list, which cannot be
+#                                       stale about a remote that does not
+#                                       exist (bootstrap, isolated fixture)
+#   remote configured, not answering  -> FAIL CLOSED. "I cannot see the
+#                                       remote" and "nothing is published"
+#                                       must not read the same, because one
+#                                       means a fresh release and the other
+#                                       means a wrong one.
+LAST_PUB_REMOTE="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
+LAST_PUB_SOURCE=""
+
+if git remote | grep -qx "$LAST_PUB_REMOTE"; then
+    ADMISSION_LIB="$ROOT/scripts/lib/release_admission.sh"
+    if [ ! -f "$ADMISSION_LIB" ]; then
+        echo "error: '$LAST_PUB_REMOTE' is configured but $ADMISSION_LIB is missing;" >&2
+        echo "       without it there is no authority for the published version." >&2
+        exit 1
+    fi
+    # shellcheck source=scripts/lib/release_admission.sh
+    . "$ADMISSION_LIB"
+    if ! _last_published_resolve; then
+        echo "error: cannot read published tags from '$LAST_PUB_REMOTE' ($LAST_PUB_OUTCOME)" >&2
+        echo "       refusing to derive a version from a local tag list that may be" >&2
+        echo "       stale. Fetch the remote, or pass --force-version explicitly." >&2
+        exit 1
+    fi
+    if [ "$LAST_PUB_OUTCOME" = "bootstrap" ]; then
+        LAST_TAG=""
+        LAST_PUB_SOURCE="remote ($LAST_PUB_REMOTE: no v* tags yet)"
+    else
+        LAST_TAG="v${LAST_PUB_OUTCOME#v}"
+        LAST_PUB_SOURCE="remote ($LAST_PUB_REMOTE)"
+    fi
+else
+    LAST_TAG="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+    LAST_PUB_SOURCE="local (no '$LAST_PUB_REMOTE' remote configured)"
+fi
+
+if [ -n "$LAST_TAG" ]; then
+    # The range below is computed as "${LAST_TAG}..HEAD", so the ref has to
+    # exist HERE. A tag published from this clone exists on the remote and is
+    # absent locally until fetched -- the exact state session-77 hit. The
+    # commit it points at is already in this history, so fetching the tag ref
+    # brings no new objects. If it cannot be fetched, the range is not
+    # computable and guessing at it would fabricate the commit list that
+    # decides the SemVer level.
+    if ! git rev-parse -q --verify "refs/tags/$LAST_TAG" >/dev/null; then
+        echo "resolving the last published tag: $LAST_TAG is on '$LAST_PUB_REMOTE' but not locally; fetching it" >&2
+        if ! GIT_TERMINAL_PROMPT=0 git fetch -q --tags "$LAST_PUB_REMOTE" "refs/tags/$LAST_TAG:refs/tags/$LAST_TAG" >&2; then
+            echo "error: cannot fetch '$LAST_TAG' from '$LAST_PUB_REMOTE'." >&2
+            echo "       '$LAST_TAG' is published but unavailable here, so the commits since" >&2
+            echo "       the last release cannot be read. Refusing to guess the level." >&2
+            exit 1
+        fi
+    fi
+elif [ -z "$LAST_PUB_SOURCE" ]; then
+    LAST_PUB_SOURCE="local (none)"
+fi
+
+CURRENT="${LAST_TAG#v}"
+
 if [ -z "$LAST_TAG" ]; then
-    echo "error: no semver tag found" >&2
+    echo "error: no published semver tag found ($LAST_PUB_SOURCE)" >&2
+    echo "       with no baseline there is no commit range to derive a level from." >&2
+    echo "       Pass --force-version to declare the release version explicitly." >&2
     exit 1
 fi
-CURRENT="${LAST_TAG#v}"
+
+# Where the baseline came from, printed on every run. Two answers to "what is
+# published" is how session-77 nearly re-published a tag that already existed;
+# a caller that cannot see which one answered cannot tell a fresh bootstrap
+# from a stale clone.
+echo "last published: $LAST_TAG ($LAST_PUB_SOURCE)" >&2
 
 # The version the workspace is actually AT, which may be ahead of the last
 # tag (a manual `--force-version` bump, or the ceremonial-release-pending

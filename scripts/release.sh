@@ -226,6 +226,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_authenticity_posture.sh \
             tests/test_release_authenticity_posture_mutation.sh \
             tests/test_backlog_discard_reason_enforcement_mutation.sh \
+            tests/test_release_bump_remote_baseline_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -259,6 +260,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_authenticity_posture.sh \
              tests/test_release_authenticity_posture_mutation.sh \
              tests/test_release_bump_bundle_sync.sh \
+             tests/test_release_bump_derivation.sh \
              tests/test_release_unsigned_propagation.sh \
              tests/test_changelog_merge.sh \
              tests/test_release_state_pointer.sh \
@@ -882,6 +884,24 @@ else
          no es la que dice medir. Sin esto, el conjunto cerrado puede volver a ser
          una propiedad de un solo parser de argumentos sin que nada lo note.
          Log: $BACKLOG_REASON_MUT_LOG"
+fi
+
+# La autofalsacion de la linea base remota del bump. Va aqui y no en un hueco
+# propio porque comparte el motivo con 3c/3g/3h/3i: una comprobacion que solo
+# se ejecuta cuando alguien edita el guard envejece sin que nadie lo note. Este
+# guard existe porque `release-bump.sh` y `release_admission.sh` se discrepaban
+# sobre cual es la ultima version PUBLICADA —el remoto contra el clon local— y
+# con la respuesta equivocada el pipeline republicaba un tag ya existente.
+step "3i-b/15 — la línea base del bump viene del remoto, y se le aplica una mutación"
+BUMP_BASELINE_MUT_LOG="$RELEASE_SCRATCH/release_bump_remote_baseline_mutation.log"
+if bash tests/test_release_bump_remote_baseline_mutation.sh >"$BUMP_BASELINE_MUT_LOG" 2>&1; then
+    ok "autofalsación de la línea base del bump: $(grep -m1 '^PASS=' "$BUMP_BASELINE_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$BUMP_BASELINE_MUT_LOG" >&2
+    die "la autofalsacion de la linea base del bump no pasa: o los casos de linea
+         base remota dejaron de tener dientes, o la mutacion no se aplico y se
+         esta contando como deteccion. Sin esto, una release puede republicar un
+         tag que ya existe. Log: $BUMP_BASELINE_MUT_LOG"
 fi
 
 # --- 4. manifest ---

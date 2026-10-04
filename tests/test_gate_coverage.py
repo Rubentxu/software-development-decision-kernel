@@ -88,9 +88,15 @@ EXCEPTIONS: dict[str, str] = {
     # release.sh contra el binario publicado. El residuo --el estado de
     # procedencia no concluyente-- es cobertura de SESION, no de pipeline, y
     # queda escrito en release.sh y en INC-DEBT-064.
-    "test_release_bump_derivation.sh": (
-        "deriva la version consultando el remoto; requiere red."
-    ),
+    #
+    # test_release_bump_derivation.sh YA NO esta excepcionado (session-77).
+    # La razon decia "deriva la version consultando el remoto; requiere red", y
+    # era falsa en las dos direcciones: el script consultaba los tags LOCALES
+    # (por eso no tocaba la red), y sus fixtures usan un remoto BARE en disco,
+    # luego `git ls-remote` funciona sin red. Al cablearlo en el 1b, la Regla 2
+    # —una excepcion para un test que ya tiene runner es un FAIL— cobro la razon
+    # caducada. La excepcion sobrevivia porque otro guard la mencionaba en un
+    # comentario, que es exactamente lo que este fichero no cuenta.
 }
 
 
