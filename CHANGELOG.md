@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.9.1] - 2026-10-04
+
+### Fixes
+  - fix(release): los 21 sitios de `grep -q` con pipefail que decidian un veredicto por accidente
+
+### Other
+  - docs(debt): INC-DEBT-071 resuelta, y su criterio de triaje medido como falso
+  - test(release): el guard que INC-DEBT-071 declaraba que faltaba, y su autofalsador
+  - docs(state): el puntero reconciliado a 68aeaada tras el cierre de la 2.9.0
+  - docs(journal): session-80 cierra con REL-2.9.0 publicada e instalada
+
 ## [2.9.0] - 2026-10-04
 
 ### Features
