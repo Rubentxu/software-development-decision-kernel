@@ -13848,3 +13848,92 @@ declaran dos caminos y **no se elige ninguno** en este bloque.
   `__spine_import__`, que es decision del operador), 064 con los cuatro criterios
   **parecen cumplidos** y su ciclo en `RELEASE_PENDING`, 061/049 reasignacion de
   `project_id` que es decision del operador.
+
+---
+
+## session-79b — la linea base de "que version esta publicada", unificada
+
+**WorkItem.** INC-DEBT-070, el bloque siguiente al de la 2.8.0, sin parar. Elegido
+porque es el mas agudo de los abiertos: lo pisa la **proxima** release, y su
+arreglo "facil" —duplicar en el changelog nuevo los commits ya publicados—
+produce un artefacto que describe una release que no es la suya.
+
+### Que hacia
+
+`tests/test_changelog_coverage.sh` sacaba su linea base de `git -C "$ROOT" tag`,
+el **clon local**. `gh release create` publica en el remoto y **nada actualiza el
+clon**. MEDIDO al cerrar 2.8.0: local `v2.7.0`, remoto `v2.8.0` → el gate habria
+comparado `v2.7.0..HEAD` con **4 commits feat/fix/test ya publicados en 2.8.0**.
+
+Ahora usa la **misma** autoridad que `release-bump.sh` y el gate 9b
+(`release_admission.sh`, `_last_published_resolve`) y trata sus tres resultados
+**por separado**: `bootstrap` → skip limpio; `query_failed` → **FAIL CERRADO que
+nombra la causa**; tag publicado → autoridad. Trae el objeto del tag cuando el
+clon no lo tiene, y si no puede, falla cerrado en vez de adivinar. La lista local
+se usa **solo** sin remoto configurado. Y **imprime de donde salio la linea
+base**, porque un lector que no ve que autoridad respondio no puede distinguir un
+bootstrap limpio de un clon viejo.
+
+### El defecto era invisible para un suite verde
+
+En el repo real el clon y el remoto coinciden cuando corre el gate, luego alli
+leer del clon daria el mismo veredicto. **La propiedad solo es visible con un
+clon deliberadamente viejo**, y un clon viejo se fabrica. El test construye
+fixtures donde **las dos respuestas dicen cosas distintas**: clon en `v0.9.0` y
+remoto en `v1.0.0` dejan un rango remoto de 1 commit cubierto por la seccion y
+uno local de 3 con dos ya publicados. Con la autoridad correcta **pasa**; con la
+defectuosa **falla pidiendo trabajo ya salido**.
+
+### Y al arreglarlo aparecio un SEGUNDO defecto, que la linea base vieja tapaba
+
+Con la linea base correcta, el gate **fallo en el repo real**: hay un
+`fix(tests)` despues del tag, luego exigia que la seccion **2.8.0 — ya
+publicada —** declarara trabajo posterior. **Eso es pedirle que describa mal un
+artefacto que ya se distribuyo.** Antes pasaba por el motivo equivocado.
+
+Ahora, cuando el workspace **es** la version publicada, el gate dice lo que puede
+decir y nada mas. **Y no es una puerta trasera**: dentro de `release.sh` ese
+estado es imposible, porque el paso 0 exige que la version del workspace sea
+SEMVER MAYOR que el mayor tag publicado. Dos gates independientes y ninguno
+miente: este declara que no comprueba nada, aquel se niega a publicar sin
+bumpear.
+
+### La instrumentacion de la propia falsacion, tercera vez
+
+Tres defectos, y los tres **mios**, los tres de "medir mal lo que mido":
+
+1. **El needle leia un caso al reves.** `cae()` buscaba `[ok] C1:` y un caso tiene
+   **varias** aserciones, luego un caso medio caido se leia **verde**. Las tres
+   mutaciones se declararon "sin dientes" cuando dos si los tenian. Un caso CAE
+   si **alguna** de sus aserciones es FAIL.
+2. **El fixture no discriminaba.** Las tres lineas de commit estaban en la
+   seccion, luego las dos lineas base pasaban. Un caso que no discrimina no mide.
+   Y `v1.0.0` estaba en `HEAD~2` en vez de `HEAD~1`, luego el rango remoto tenia
+   dos commits y la seccion solo podia cubrir uno.
+3. **Un fixture roto puede producir un verde.** El `git-wrapper` de esta maquina
+   no firma commits en un repo sin identidad → los commits no se creaban → el
+   gate leia un repo vacio → **C0 pasaba por el motivo equivocado**. Por eso el
+   test afirma **integridad del fixture antes de medir nada sobre el**.
+
+Es la misma forma que las dos anteriores, y la leccion no cambia: **un guard que
+no sabe decir "no he comprobado nada" termina fabricando cobertura.**
+
+### Verificacion
+
+`PASS=18 FAIL=0` en el test (C0 control + C1 clon viejo + C2 bootstrap +
+C3 remoto caido + C4 seccion congelada), `PASS=5 FAIL=0 SKIP=0` en la
+autofalsacion (M1 autoridad local, M2 degradacion silenciosa, M3 rango
+inc calculable, M4 seccion congelada), restauracion byte-identica por sha y sin
+residuo. `shellcheck` limpio en los tres, `bash -n` limpio en `release.sh`.
+Guard de cobertura **PASS (67 tests, 0 sin runner)**, `debt_index_coherence`
+**PASS**, y los guards de changelog y de bump intactos (`PASS=10`,
+`PASS=2 FAIL=0 SKIP=0`). INC-DEBT-070 a **resolved**.
+
+### Lo que NO arregla esto
+
+- **El clon local sigue quedandose viejo tras cada publicacion.** Ahora el gate
+  lo detecta y va a por el tag correcto, asi que el efecto esta neutralizado;
+  pero lo que se pago hoy fue **un `git fetch --tags`**. La causa —publicar en el
+  remoto no actualiza el clon— sigue viva y no tiene guard.
+- **INC-DEBT-069 sigue abierta** por decision propia: sus dos caminos son
+  trabajo con alcance propio y aqui no se abre ninguno.
