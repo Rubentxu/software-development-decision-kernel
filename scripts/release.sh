@@ -769,7 +769,14 @@ if [ "$BUILD_TARGET" != "x86_64-unknown-linux-musl" ]; then
     warn "esto reintroduce INC-021. Se requiere una decision explicita del operador."
 fi
 
-if ! rustup target list --installed 2>/dev/null | grep -qx "$BUILD_TARGET"; then
+# INC-DEBT-071: `grep -q` sale en cuanto casa y deja al escritor con trabajo
+# pendiente; con `pipefail` eso convierte un acierto en 141 y este `if !`
+# entraba por "no lo encontre" con el target instalado. `grep -c` lee el flujo
+# entero, luego el escritor termina siempre. MEDIDO: la clase daba 2,10 % sin
+# carga y 9,17 % con carga de compilacion — que es justo cuando corre esto.
+if [ "$(rustup target list --installed 2>/dev/null | grep -cx -- "$BUILD_TARGET")" -gt 0 ]; then
+    ok "build target instalado: $BUILD_TARGET"
+else
     die "el target $BUILD_TARGET no esta instalado (rustup target add $BUILD_TARGET).
          release.sh publica assets musl; compilar contra otro target rompe el
          contrato del installer. Para publicar de otro modo, cambia tambien el
@@ -1339,8 +1346,19 @@ tar czf "$BUNDLE_TARBALL" \
     -C "$TMP/bundle-stage" software-development-decision-kernel
 sha256sum "$BUNDLE_TARBALL" | awk '{print $1}' > "$BUNDLE_TARBALL.sha256"
 # Contract check: the standalone tarball MUST carry BUNDLE.toml now.
-tar tzf "$BUNDLE_TARBALL" | grep -qx "software-development-decision-kernel/BUNDLE.toml" \
-    || { echo "FATAL: bundle tarball is missing software-development-decision-kernel/BUNDLE.toml" >&2; exit 1; }
+#
+# INC-DEBT-071: esto era la MINA de la clase, no un caso mas. `tar tzf` lista
+# los ~400 miembros del bundle y `grep -qx` cerraba en cuanto encontraba
+# BUNDLE.toml —que no es el ultimo— dejando a `tar` con casi todo el listing
+# por escribir. Con `pipefail`, un 141 espurio hacia que el `||` dijera
+# "FATAL: bundle tarball is missing ..." sobre un bundle que SI lo tenia.
+# `grep -c` lee el listing entero, luego `tar` siempre termina.
+if [ "$(tar tzf "$BUNDLE_TARBALL" | grep -cx -- "software-development-decision-kernel/BUNDLE.toml")" -gt 0 ]; then
+    ok "bundle tarball lleva BUNDLE.toml en la raiz"
+else
+    echo "FATAL: bundle tarball is missing software-development-decision-kernel/BUNDLE.toml" >&2
+    exit 1
+fi
 # Contract check (INC-DEBT-056, session-65h): the staged tree must be EXACTLY
 # the manifest's paths plus the two files the manifest cannot list itself —
 # MANIFEST.sha256 (a file cannot contain its own digest) and BUNDLE.toml

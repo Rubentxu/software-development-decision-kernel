@@ -29,7 +29,10 @@ if grep -qF 'Historical / superseded' "$file"; then
 fi
 
 # If file starts with YAML frontmatter, insert banner after the closing ---.
-if head -1 "$file" | grep -q '^---$'; then
+# INC-DEBT-071: `grep -q` salia en cuanto casaba; con `pipefail` un 141
+# espurio de `head` hacia que un fichero CON frontmatter pareciera no tenerlo,
+# y el banner se insertaba antes del `---` de apertura. `grep -c` lee entero.
+if [ "$(head -1 "$file" | grep -c -- '^---$')" -gt 0 ]; then
   # find line number of second '---' that closes the frontmatter
   close=$(awk 'NR>1 && /^---$/ {print NR; exit}' "$file")
   if [[ -n "$close" ]]; then

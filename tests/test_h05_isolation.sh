@@ -54,7 +54,10 @@ ko() { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)) ; }
 
 # --- 1) rlib inspection ---
 if [[ -f "$RLIB" ]]; then
-    if nm "$RLIB" 2>/dev/null | grep -q 'set_process_service_for_tests'; then
+    # INC-DEBT-071: `nm` sobre un rlib release escribe MUCHO y `grep -q`
+    # cerraba en cuanto casaba; con `pipefail` un 141 espurio hacia que un rlib
+    # que SI exportaba pareciera limpio — un verde falso sobre una fuga.
+    if [ "$(nm "$RLIB" 2>/dev/null | grep -c 'set_process_service_for_tests')" -gt 0 ]; then
         ko "rlib export leaks set_process_service_for_tests"
         note "  found $(nm "$RLIB" | grep -c 'set_process_service_for_tests') occurrence(s)"
     else
@@ -66,7 +69,9 @@ fi
 
 # --- 2) release binary inspection ---
 if [[ -f "$BIN" ]]; then
-    if nm "$BIN" 2>/dev/null | grep -q 'set_process_service_for_tests'; then
+    # INC-DEBT-071: misma carrera que arriba, y aqui el escritor es `nm` sobre
+    # el binario release entero, que es de los que mas lista emite.
+    if [ "$(nm "$BIN" 2>/dev/null | grep -c 'set_process_service_for_tests')" -gt 0 ]; then
         ko "binary leak: set_process_service_for_tests is exported"
         note "  found in $(nm "$BIN" | grep -c 'set_process_service_for_tests') line(s)"
     else

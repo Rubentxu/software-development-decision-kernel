@@ -313,12 +313,15 @@ fi
 
 # ─── Scenario 11: --dry-run does not contact/mutate GH publish state
 section "Scenario 11: --dry-run skips gate (no GH mutation)"
-if grep -A4 'DRY_RUN.*=.*1' "$RELEASE_SCRIPT" | grep -q 'skipping step 9b'; then
+# INC-DEBT-071: `grep -A4` es escritor externo con lineas pendientes tras la
+# coincidencia. Con `pipefail` + `grep -q` un 141 espurio hacia que una guarda
+# que SI existe pareciera ausente, y el gate 9b se ejecutaria en un dry-run.
+if [ "$(grep -A4 'DRY_RUN.*=.*1' "$RELEASE_SCRIPT" | grep -c 'skipping step 9b')" -gt 0 ]; then
     ok_t "DRY_RUN guard skips gate"
 else
     bad_t "DRY_RUN guard MISSING for gate"
 fi
-if grep -B1 -A2 'SKIP_INSTALL.*=.*1' "$RELEASE_SCRIPT" | grep -q 'skipping step 9b'; then
+if [ "$(grep -B1 -A2 'SKIP_INSTALL.*=.*1' "$RELEASE_SCRIPT" | grep -c 'skipping step 9b')" -gt 0 ]; then
     ok_t "SKIP_INSTALL guard skips gate"
 else
     bad_t "SKIP_INSTALL guard MISSING for gate"

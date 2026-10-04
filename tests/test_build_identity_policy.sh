@@ -75,7 +75,11 @@ echo
 echo "== STOP 4: el bundle no se toca =="
 # Si el cambio hubiera alterado la superficie del bundle, MANIFEST.sha256 habria
 # cambiado en el rango. No tiene que haber cambiado.
-if git diff --name-only "$BASE"..HEAD | grep -qx 'MANIFEST.sha256'; then
+# INC-DEBT-071: `git diff --name-only` sobre un rango largo escribe mucho y
+# `grep -q` cerraba en cuanto casaba. Con `pipefail`, un 141 espurio hacia que
+# una superficie de bundle que SI habia cambiado pareciera intacta — y este
+# STOP existe precisamente para que eso no pase en silencio.
+if [ "$(git diff --name-only "$BASE"..HEAD | grep -cx 'MANIFEST.sha256')" -gt 0 ]; then
     echo "  [FAIL] MANIFEST.sha256 cambio en el rango: la superficie del bundle se toco"
     FAIL=$((FAIL + 1))
 else

@@ -117,7 +117,7 @@ LAST_TAG=""
 LAST_PUB_SOURCE=""
 # MUTACION: si la consulta remota falla, se usa la lista local en vez de fallar
 # cerrado. Es la degradacion que el defecto original practicaba en silencio.
-if git -C "$ROOT" remote | grep -qx "$LAST_PUB_REMOTE" && [ -f "$ROOT/scripts/lib/release_admission.sh" ]; then
+if [ "$(git -C "$ROOT" remote | grep -cx -- "$LAST_PUB_REMOTE")" -gt 0 ] && [ -f "$ROOT/scripts/lib/release_admission.sh" ]; then
     . "$ROOT/scripts/lib/release_admission.sh"
     _last_published_resolve || true
     if [ "${LAST_PUB_OUTCOME:-}" != "bootstrap" ] && [ -n "${LAST_PUB_OUTCOME:-}" ]; then

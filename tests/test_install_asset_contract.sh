@@ -111,7 +111,11 @@ else
 fi
 # Only the *call sites* matter here: a `--version | awk` inside
 # probe_binary_version is the validated path, not the defect.
-if grep -E '^[[:space:]]*TMP_VERSION=' "$INSTALL_SH" | grep -qE -- '--version.*\|.*awk'; then
+# INC-DEBT-071: aqui el escritor es un `grep -E` que puede emitir MUCHAS
+# lineas (un call site por cada invocacion), y el lector cerraba en cuanto
+# casaba. Con `pipefail` un 141 espurio hacia que un `--version | awk` sin
+# validar pareciera ya validado.
+if [ "$(grep -E '^[[:space:]]*TMP_VERSION=' "$INSTALL_SH" | grep -cE -- '--version.*\|.*awk')" -gt 0 ]; then
     fail "installer still parses --version through a bare awk pipe at a call site"
 else
     ok "installer has no unvalidated --version | awk call site"

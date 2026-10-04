@@ -85,7 +85,12 @@ LAST_PUB_REMOTE="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
 LAST_PUB_SOURCE=""
 LAST_TAG=""
 
-if git -C "$ROOT" remote | grep -qx "$LAST_PUB_REMOTE"; then
+# INC-DEBT-071: `git remote` es de los escritores cortos, pero "corto" no es
+# "seguro" — MEDIDO, el riesgo lo decide si al escritor le queda trabajo tras
+# la coincidencia, y eso no se lee del tamano. Con `grep -q` + pipefail un 141
+# espurio hacia que un remoto configurado pareciera no existir, que es
+# justo la confusion que este bloque dice no poder permitir.
+if [ "$(git -C "$ROOT" remote | grep -cx -- "$LAST_PUB_REMOTE")" -gt 0 ]; then
     ADMISSION_LIB="$ROOT/scripts/lib/release_admission.sh"
     if [ ! -f "$ADMISSION_LIB" ]; then
         bad "remote '$LAST_PUB_REMOTE' is configured but $ADMISSION_LIB is missing: there is no authority for the published version"

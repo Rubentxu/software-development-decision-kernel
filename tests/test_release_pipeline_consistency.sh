@@ -194,8 +194,12 @@ fi
 # non-zero exit into `die "cannot compute SemVer tag"`, which would abort a
 # legitimate release. The behavioural CASE C below proves the same thing by
 # execution; this pins it without running the fixture.
-if grep -A2 'no bump to derive: the workspace already declares' "$ROOT/scripts/release-bump.sh" \
-   | grep -qE '^\s*exit 0$'; then
+# INC-DEBT-071: `grep -A2` es un escritor EXTERNO y puede tener lineas por
+# escribir despues de la coincidencia. Con `pipefail` + `grep -q` un 141
+# espurio hacia que un cortocircuito que sale 0 pareciera abortar, que es
+# justo la regresion que este aserto existe para cazar.
+if [ "$(grep -A2 'no bump to derive: the workspace already declares' "$ROOT/scripts/release-bump.sh" \
+   | grep -cE '^\s*exit 0$')" -gt 0 ]; then
     ok "the declared-release short-circuit exits 0, so release.sh does not die"
 else
     fail "the declared-release short-circuit must exit 0, not error out"

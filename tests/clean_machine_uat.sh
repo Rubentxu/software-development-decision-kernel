@@ -212,14 +212,19 @@ check_podman() {
     # Wait for container to be running
     local i=0
     while [ $i -lt 30 ]; do
-        if podman inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
+        # INC-DEBT-071: `grep -q` salia en cuanto casaba y con `pipefail` un
+        # 141 espurio de `podman` hacia que un contenedor vivo pareciera muerto.
+        if [ "$(podman inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -c true)" -gt 0 ]; then
             break
         fi
         sleep 1
         ((i++)) 2>/dev/null || true
     done
 
-    if ! podman inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
+    # INC-DEBT-071: el `if !` era la forma mas traicionera de la clase — con
+    # un 141 espurio entraba por la rama de "el contenedor no arranco" y
+    # abortaba una UAT limpia.
+    if [ "$(podman inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -c true)" -eq 0 ]; then
         echo "[FATAL] container failed to start" >&2
         exit 1
     fi

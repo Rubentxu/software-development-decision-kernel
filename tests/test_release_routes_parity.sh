@@ -69,7 +69,7 @@ podman run --rm \
           "manifest_sha256 = \"sha256:$MANIFEST_SHA\"" \
           > BUNDLE.toml
         tar czf cloud.tar.gz agents skills prompts/sddk assets specs docs/impeccable-reference MANIFEST.sha256 BUNDLE.toml
-        tar tzf cloud.tar.gz | grep -qx "BUNDLE.toml" || { echo "missing root-level BUNDLE.toml" >&2; exit 1; }
+        [ "$(tar tzf cloud.tar.gz | grep -cx -- "BUNDLE.toml")" -gt 0 ] || { echo "missing root-level BUNDLE.toml" >&2; exit 1; }
         cat cloud.tar.gz
     ' > "$OUT/cloud.tar.gz" 2>"$OUT/cloud.log"
 RC=$?

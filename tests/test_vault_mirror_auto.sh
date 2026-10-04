@@ -108,18 +108,29 @@ if ! [[ "$LINE_8" -lt "$LINE_8B" && "$LINE_8B" -lt "$LINE_9" ]]; then
 fi
 echo "PASS (a): step 8b is between step 8 and step 9"
 
+# INC-DEBT-071: estas CINCO comprobaciones leian la MISMA slice por tuberia
+# con `grep -q`. Con `set -o pipefail`, `grep -q` sale en cuanto casa y deja a
+# `sed` con trabajo pendiente; si `sed` recibe SIGPIPE el pipeline devuelve 141
+# y el `if !` entra por "no lo encontre" aunque lo haya encontrado. MEDIDO
+# sobre la clase: 2,10 % sin carga y 9,17 % con carga de compilacion — que es
+# exactamente cuando corre el 1b. La slice se lee UNA vez a una variable y se
+# busca DENTRO, sin tuberia; de paso el fichero se abre una vez en vez de
+# cinco. Los helpers imprimen CUANTAS lineas casan y nunca su codigo de salida:
+# el codigo dice si grep fallo, no si la needle acerto, y no es lo mismo.
+SECCION_8B="$(sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH")"
+casan_8b() { printf '%s' "$SECCION_8B" | grep -c -- "$1"; }
+casan_8bE() { printf '%s' "$SECCION_8B" | grep -cE -- "$1"; }
+
 # --- (b) the invocation uses the right script with no flags ---
 
-if ! sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
-        | grep -q "python3 .*mirror_adrs_to_vault\.py"; then
+if [ "$(casan_8b 'python3 .*mirror_adrs_to_vault\.py')" = "0" ]; then
     echo "FAIL (b): step 8b does not invoke mirror_adrs_to_vault.py"
     exit 1
 fi
 
 # The script's main() takes no argv; if release.sh passes flags,
 # sys.argv processing inside Python will raise IndexError on argv[1].
-if sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
-        | grep -qE 'mirror_adrs_to_vault\.py\s+--?[a-zA-Z]'; then
+if [ "$(casan_8bE 'mirror_adrs_to_vault\.py\s+--?[a-zA-Z]')" -gt 0 ]; then
     echo "FAIL (b): step 8b passes flags to mirror_adrs_to_vault.py"
     echo "        The script's main() takes no arguments; passing flags"
     echo "        would raise IndexError on sys.argv[1]."
@@ -132,8 +143,7 @@ echo "PASS (b): step 8b invokes the mirror script with no flags"
 # Vault mirrors are human knowledge per AGENTS §2.7; the repo ADR is
 # the runtime authority. A mirror failure must NOT abort the release.
 # Assert that the step's failure branch uses `warn`, not `die`.
-if ! sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
-        | grep -q 'warn.*mirror\|mirror.*non-fatal\|mirror.*failed'; then
+if [ "$(casan_8b 'warn.*mirror\|mirror.*non-fatal\|mirror.*failed')" = "0" ]; then
     echo "FAIL (c): step 8b's failure branch does not log a warn message"
     echo "        Vault is human knowledge; mirror failures must not abort"
     echo "        the release."
@@ -141,8 +151,7 @@ if ! sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
 fi
 
 # And critically, no `die` inside the mirror block
-if sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
-        | grep -q 'die.*mirror\|mirror.*die'; then
+if [ "$(casan_8b 'die.*mirror\|mirror.*die')" -gt 0 ]; then
     echo "FAIL (c): step 8b uses 'die' on mirror failure — vault is"
     echo "        human knowledge, not runtime authority. Mirror failure"
     echo "        must be soft (warn), not abort."
@@ -183,8 +192,7 @@ echo "PASS (d): step 8b is unconditional (outside SKIP_TESTS, before DRY_RUN)"
 
 # --- (e) stdout+stderr captured into MIRROR_OUT for operator visibility ---
 
-if ! sed -n "${LINE_8B},$((LINE_9 - 1))p" "$RELEASE_SH" \
-        | grep -q 'MIRROR_OUT=.*2>&1'; then
+if [ "$(casan_8b 'MIRROR_OUT=.*2>&1')" = "0" ]; then
     echo "FAIL (e): step 8b does not capture both stdout and stderr"
     echo "        The operator needs to see mirror counts (created/skipped)"
     echo "        on success and any traceback on failure."

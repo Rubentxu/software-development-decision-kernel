@@ -70,7 +70,11 @@ cd "$ROOT"
 LAST_PUB_REMOTE="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
 LAST_PUB_SOURCE=""
 
-if git remote | grep -qx "$LAST_PUB_REMOTE"; then
+# INC-DEBT-071: `grep -q` cerraba en cuanto casaba y dejaba a `git remote` con
+# trabajo pendiente; con `pipefail` un 141 espurio hacia que este script
+# creyera que NO hay remoto configurado y se fuera por la rama de bootstrap
+# isolado —publicando sobre una autoridad que no existe. `grep -c` lee entero.
+if [ "$(git remote | grep -cx -- "$LAST_PUB_REMOTE")" -gt 0 ]; then
     ADMISSION_LIB="$ROOT/scripts/lib/release_admission.sh"
     if [ ! -f "$ADMISSION_LIB" ]; then
         echo "error: '$LAST_PUB_REMOTE' is configured but $ADMISSION_LIB is missing;" >&2
