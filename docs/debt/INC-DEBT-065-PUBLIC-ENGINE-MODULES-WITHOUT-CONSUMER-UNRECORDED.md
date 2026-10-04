@@ -263,3 +263,41 @@ repita en la siguiente medición.
 3 controles contra el grafo real, **5 mutaciones al source real, 5 detectadas
 y 0 sobrevividas**, y el contraste con el instrumento de C3m.1 declarado módulo
 a módulo.
+
+---
+
+## Segunda instancia, y de OTRA granularidad (session-79)
+
+Este registro mide a granularidad de **módulo**: cuenta `pub mod` y pregunta quién
+los usa. Session-79 encontró una segunda forma del mismo defecto que ese
+instrumento **no puede ver por construcción**, y conviene que quede escrita porque
+acaba de costar una medición de 2.38 s.
+
+`cycle_summary` está en la categoría de "con consumidor de producto" — la tiene, y
+bien: `derive_cycle_summary` la usan `cycle status` y `cycle narrative`. Y sin
+embargo, dentro de ese módulo se escribió `derive_all_cycle_summaries`, una función
+pública a la que **nada llamaba en todo el workspace**, ni producto ni pruebas. El
+instrumento clasifica el módulo como consumido y no llega a preguntar por sus
+funciones. Un módulo consumido con una función muerta sigue siendo un módulo
+consumido, y el agujero vive un nivel más abajo que la unidad de medida.
+
+**Cómo salió, que es la parte que el instrumento explica por qué no lo habría
+sacado:** por medición, no por inventario. `cycle list` tardaba 2.38 s en release
+contra 0.05 s publicados. La causa era la llamada por fila que re-leía el log de 651
+eventos 109 veces, y la función escrita para evitarlo llevaba horas en el repo sin
+estar cableada. Ningún guard mide tiempo de una superficie, y el inventario mide
+consumo: los dos miran cosas distintas, y este defecto solo era visible desde
+la primera.
+
+**Estado: cerrado por el consumidor, no por el registro.** La función muerta
+desapareció —la sustitución lee el log una vez y devuelve una entrada por ciclo
+pedido— y `cycle list` quedó en 0.07 s. Queda escrito igual porque **el límite de
+granularidad del instrumento sigue exactamente igual de abierto**: la próxima
+función pública sin conectar dentro de un módulo consumido volvería a ser invisible
+para esta medición, y volvería a salir por un custo medido en lugar de por un
+inventario.
+
+**Lo que este registro NO propone.** Una segunda pasada de medición a granularidad
+de función es trabajo con su propio instrumento, sus propios falsos y sus propios
+controles, y abrirlo aquí sería el patrón que esta entrada critica: una fila más que
+nadie puede contrastar. Lo que se registra es el hueco y una instancia medida.
