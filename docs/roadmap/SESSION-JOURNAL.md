@@ -14144,3 +14144,174 @@ real, y cuatro de ellos los metio este mismo bloque.
 - La exclusion del check 3d sobre `workspace_version_at_current` (arriba).
 - No hay ningun guard que mida que las directivas de shellcheck sigan
   puestas: un `disable` que alguien quite no lo detecta nadie.
+
+## session-81: INC-DEBT-071 resuelta y REL-2.9.1 PUBLICADA E INSTALADA (2 intentos)
+
+### Que se eligio y por que
+
+La sesion arranco con `/autonomo` y 29 ciclos OPEN. La deuda elegida fue
+**INC-DEBT-071**, no por severidad sino porque era la unica con una
+afirmacion **falsable**: la causa documentada, y sobre todo el criterio de
+triaje que proponia ("decidir por tamano de la entrada"). Una deuda
+cuyos criterios no se pueden falsar no es deuda medible.
+
+### La causa era correcta, y se intento tumbarla tres veces
+
+Las tres falsaciones fallaron por **instrumento**, no por razon, y esa
+secuencia es el resultado principal del bloque:
+
+1. "la slice real tiene 9 625 B, muy por debajo del umbral" — medido
+   contra `v2.8.1`, que **no es el arbol que fallo**.
+2. "el needle no esta en la slice" — misma causa. Con el arbol real
+   (`1c=527`, `next=707`) la slice son 8 471 B y el needle esta en la
+   linea **535**.
+3. "el umbral son ~256 KiB" — **n=3 por punto**, y la carrera es del
+   orden del 1 %: tres tiradas no ven casi nada.
+
+**El umbral no existe.** MEDIDO con la muestra que la probabilidad merece,
+sobre la slice real:
+
+- **2,10 %** sin carga (42 de 2 000)
+- **9,17 %** con 32 procesos compitiendo (55 de 600)
+- el guard entero: `PASS=37 FAIL=3` en 40 corridas con carga
+
+Un release compila con `cargo`, o sea con carga. A ~9 % por sitio y ~6
+sitios de la clase por fichero, el 1b **no podia pasar limpio** de forma
+estable. Esto no era un defecto que "pudiera" tocar la release: era una
+**cuenta pendiente**.
+
+### FALSO el criterio de triaje que la propia deuda proponia
+
+Poner la aguja al FINAL de la slice —donde al escritor no le queda trabajo
+por hacer— **no** la hace segura: **1,50 %** sin carga y **8,33 %** con
+carga. Lo que decide no es el tamano de la entrada sino si al escritor le
+queda algo por escribir cuando el lector cierra, y eso no se lee del
+tamano. Por eso el guard **no tiene lista de excepciones escrita a mano**:
+la excepcion es estructural y se imprime. Una lista a mano es la forma
+mas rapida de que la cuenta vuelva a mentir sin que nadie lo note.
+
+### Alcance: no eran 35 ficheros
+
+Medido con **dos instrumentos escritos por separado que coinciden**:
+**32** ficheros con `pipefail` y la clase, **91** sitios, de los que **21
+son peligrosos** (escritor EXTERNO + rc consumido) en **13** ficheros. Los
+otros 70 son estructuralmente inmunes.
+
+Que fuesen 21 y no 35 no es buena noticia: los 35 eran **candidatos**, y
+el documento lo decia. Faltaba medirlos.
+
+### La mina que no delata el tamano
+
+`scripts/release.sh` hacia `tar tzf "$BUNDLE_TARBALL" | grep -qx
+".../BUNDLE.toml"` sobre un bundle de ~400 miembros, y `grep -qx` cerraba
+en cuanto encontraba `BUNDLE.toml`, que no es el ultimo. Un 141 espurio
+imprimia **"FATAL: bundle tarball is missing BUNDLE.toml"** sobre un
+bundle que si lo tenia, y salia con 1.
+
+### Lo entregado
+
+- **21 sitios** en 13 ficheros: `| grep -q` -> `| grep -c`, con el
+  consumidor pasando a `[ ... -gt 0 ]` / `[ ... = 0 ]`. En
+  `test_vault_mirror_auto.sh` la slice se lee **una vez** a variable.
+- **`tests/test_grep_q_after_pipe.py`** — el guard que la deuda declaraba
+  que faltaba. MEDIDO que tiene dientes: contra el arbol **pristine** de
+  HEAD reporta `PELIGROSOS = 21` y sale 1; contra el arreglado, 0 y sale 0.
+- **`tests/test_grep_q_after_pipe_mutation.py`** — `PASS=9 FAIL=0 SKIP=0`.
+- Ambos cableados en el 1b. Cobertura: 72 tests, 68 con runner, **0 sin
+  motivo**.
+
+### El primer intento de 2.9.1 MURIO, y por dos razones distintas
+
+```
+RELEASE_RC=1
+[FAIL] shellcheck reporta avisos:  tests/clean_machine_uat.sh  (12 avisos)
+        test_changelog_coverage.sh  FAIL
+```
+
+**El segundo fallo era mio y el gate lo cazo bien.** Escribi la seccion
+`## [2.9.1]` con `release-bump.sh` **antes** de commitear `0bbc4389
+fix(state)`, luego ese `fix` no estaba representado. El gate compara por
+huella y no lo encontraba. **La leccion es de orden: el changelog se
+escribe DESPUES de los commits, no antes.**
+
+**El primero escondia algo que no era cosmetico.** `shellcheck` corre SIN
+filtro de severidad sobre todo `.sh` del rango: mis 2 lineas en
+`clean_machine_uat.sh` metieron el fichero entero bajo el lint y salieron
+**12 avisos preexistentes** en lineas que no toque, de un fichero que
+**nunca habia estado en el rango de ningun cambio**. Y debajo:
+
+```sh
+podman exec "$C" bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && $*"
+```
+
+`$*` **sin comillas**: el shell del host re-partia argumentos y expandia
+globs ANTES de que la cadena llegara al contenedor. Reproducido: un
+argumento con un espacio imprimia **DOS** lineas en vez de una. Y
+`sddk_with_path` estaba definida **CUATRO veces** (86, 468, 521, 561), las
+cuatro identicas. Arreglado en `cd1dc41a`: una definicion, el comando
+llega como un argumento y lo interpreta el shell del contenedor (verificado
+que `$HOME` resuelve al del receptor), y `rebuild_exit` se LEE en vez de
+borrarse. Registrado como **INC-DEBT-073** (medium/P2): es la **tercera vez**
+que esta clase vuelve, y session-80 ya la encontro sin tocar el diseno del
+gate.
+
+### Un defecto del arnes de reconciliacion
+
+Un `git commit --amend` deja el objeto vivo pero **fuera de toda rama**:
+`current_sha` **resuelve** y por eso pasaba el `rev-parse`, y como el
+commit reescrito tenia practicamente el mismo historial,
+`rev-list --count` devolvia 1, que cabia en la tolerancia de 3.
+`reconcile_state_pointer.sh` decia **"nada que reparar"** mientras
+`test_release_state_pointer.sh` daba **FAIL en dos**. Dos herramientas
+discrepando, y la mas facil de obedecer es la que dice PASS. Corregido en
+`0bbc4389`: la **alcanzabilidad se comprueba ANTES que la tolerancia**,
+porque la tolerancia mide RETRASO de un puntero sano y no puede absolver
+uno que ha salido del arbol.
+
+### Tres errores mios, y la parte que no se puede fabricar
+
+1. Escribi `]]` en la fila del indice **dos veces** (071 y 073). Cada vez
+   la fila dejo de parsearse y el guard **dejo de vigilar esa deuda**; el
+   recuento bajo de 55 a 54. El observable estaba disponible y dependio de
+   que yo mirara: por eso escribir una fila debe **asertar** que el
+   recuento de filas parseables subio.
+2. En `mask_dollar` del guard, la rama `$((` estaba **debajo** de la de
+   `$(`: codigo muerto, y la aritmetica quedaba **exculpada**. El guard
+   reporting 17 en vez de 21.
+3. El regex casaba el segundo `|` de un `||` como si fuera tuberia: un
+   sitio que no existe. Por eso el autofalsador dio `PASS=8 FAIL=1`, y el
+   fallo no era del guard sino del clasificador.
+
+**Los 2 y 3 los encontro el CONTRASTE entre dos instrumentos, no la
+revision.** Un parser que solo devuelve cuentas no informa: hay que
+obligarlo a ensenar las lineas que clasifica, y a que la cuenta se pueda
+falsar a ojo.
+
+Ademas, el arnes del falsador **restauraba solo los atributos en
+MAYUSCULAS**, luego un parche a `strip_comment` se filtraba a las
+mutaciones siguientes y M5 media el efecto de M4. Un falsador que arrastra
+el defecto de la mutacion anterior entre casos no mide la que dice medir.
+
+### REL-2.9.1 — verificada contra la API y el CDN, no contra el log
+
+- Tag remoto `v2.9.1` -> `e9d368fe` (= HEAD), publicado `2026-10-04T23:10:18Z`
+- `isDraft=false`, `isPrerelease=false`, **9 assets**
+- CDN real (no la API): `sddk` HTTP 200 (31 862 720 B),
+  `software-development-decision-kernel.tar.gz` HTTP 200 (679 500 B)
+- Instalado: `sddk 2.9.1`, `framework/current -> 2.9.1`
+- Gate 11 del pipeline: `binary.bundle_coherence: present`, `all_present: true`
+- Firmado: `UNSIGNED` declarado. El ancla y `SDDK_RELEASE_VERIFY_KEY_BODY`
+  en `scripts/install.sh:235` siguen siendo placeholder.
+
+### Lo que sigue vivo, sin adornos
+
+- **INC-DEBT-050** (critical/P1) y **INC-DEBT-061** (high/P1): decision del
+  operador / producto. **INC-DEBT-073** (medium/P2) abierto: el gate de
+  shellcheck sigue sin filtro de severidad y sigue mirando solo el rango.
+- Los **70 sitios exentos** siguen ahi: inmunes por su **estructura**
+  (escritor builtin, o rc que nadie consume), no por permiso.
+- La medicion de esta deuda es de **esta maquina**: el mecanismo es el de
+  POSIX, las tasas no son transferibles.
+- **Sin medir, y por tanto sin afirmar**: si el gate de shellcheck puede
+  seguir reventando una release. Ahora se sabe que **si**, y por que, pero
+  el censo de deuda de lint del repo no se ha corrido.
