@@ -13937,3 +13937,90 @@ Guard de cobertura **PASS (67 tests, 0 sin runner)**, `debt_index_coherence`
   remoto no actualiza el clon— sigue viva y no tiene guard.
 - **INC-DEBT-069 sigue abierta** por decision propia: sus dos caminos son
   trabajo con alcance propio y aqui no se abre ninguno.
+
+---
+
+## session-79b cierre: REL-2.8.1 publicada e instalada
+
+La release que se habia lanzado a la mitad del bloque termino bien, y lo
+interesante es **por que termino bien siendo el caso que el arreglo de
+INC-DEBT-070 no habia podido ver nunca**.
+
+### La linea base del gate 2b se exercito en el mundo real, por fin
+
+INC-DEBT-070 se arr glo porque el gate 2b sacaba la linea base de
+`git tag` —el clon LOCAL—. El arreglo se escribio justo antes de publicar
+v2.8.0, y por lo tanto **nunca llego a ejecutarse contra un tag que
+existiera solo en el remoto**: en el momento del commit, el clon era la
+fuente de verdad y el fallo no se podia reproducir. La consecuencia es
+que la fix entro a la release sin un solo ejercicio de su rama principal.
+
+Al publicar v2.8.1 ese ejercicio llego solo, porque `gh release create` deja
+el tag en el remoto y **no** en el clon:
+
+```
+resolving v2.8.1: published on 'origin' but absent locally; fetching the ref
+(published-version authority: remote (origin))
+(comparing against last published tag: v2.8.1)
+[ok] nothing to ship: workspace (2.8.1) is the published tag (v2.8.1) and the range is empty
+```
+
+Las **tres ramas** del gate quedaron probadas contra el repositorio real en
+el mismo dia, y cada una por un camino distinto:
+
+| Rama | Como se ejercito |
+|---|---|
+| Tag ausente del clon | el caso de arriba: fue el primero que se dio, no una simulacion |
+| Seccion congelada | workspace == tag publicado, rango vacio: el gate declara que no comprueba nada y por que |
+| Remoto inalcanzable | medido aparte: `FAIL` nombrando la causa, **exit 1** (no 0 con un `PASS` cosmético) |
+
+Y el caso que motivó la deuda queda cerrado por construccion: con el clon
+viejo (que era el estado natural del repo tras publicar), el gate ya no
+puede pedir trabajo que salio en v2.8.0.
+
+El detalle que hace la prueba/util: **`PASS=3`**. Un gate que anuncie mas
+comprobaciones de las que hizo seria una mentira, y este anuncia las que
+hizo.
+
+### El release se quedo 12,5 minutos en silencio
+
+MEDIDO: el paso 3 (`cargo build --release --bin sddk`) imprimio
+`Blocking waiting for file lock on build directory` y ahi se quedo
+**12 minutos y medio** sin una sola linea mas. Otro proyecto
+(`agent-secretless`) con la toolchain `stable` corria `cargo test` sobre el
+mismo `CARGO_TARGET_DIR` compartido.
+
+No fallo por eso, asi que **no aparece en ninguna linea del log como
+problema**: solo como una frase de cargo que parece informacion. Es la misma
+clase de defecto que el backlog P1 `bl-bl-01M42JGYG4000388551BF9NZ40`
+(session-76, OOM killer, log cortado a 122880 bytes sin diagnostico) y que
+INC-DEBT-069 (ENOSPC, seis tests rojos sin causa): **el pipeline no sabe
+decir por que esta lento ni por que murio**, y las tres son la misma
+carencia. Queda como el siguiente bloque de valor.
+
+### Estado final medido
+
+- REL-2.8.1 publicada `2026-10-04T14:58:25Z`, `draft=false`, `prerelease=false`,
+  **9/9 assets HTTP 200** por CDN (nombres sacados de la API, no supuestos).
+- Guards de la release real: **3k `PASS=5 FAIL=0 SKIP=0`** (enumeracion de
+  decisiones, session-79) y **3l `PASS=5 FAIL=0 SKIP=0`** (linea base del
+  changelog, este bloque), con 3b/3c/3d/3e/3f/3g/3h/3i/3i-b/3j tambien
+  verdes.
+- Instalada `sddk 2.8.1`; `framework/current -> 2.8.1`.
+- El binario publicado reproduce el comportamiento sobre el ledger real:
+  `pending_human_decisions: 2`, `undetermined_runtime_states: 2`, dos filas
+  `approval-waiting` con `pending_approval: surface.cycle_state#cycle_supersede`
+  y dos `unknown` que no contaminan el contador de pendientes.
+- `test_release_state_pointer.sh` **PASS sin reconciliar**: el puntero ya
+  apuntaba a `0a720d37` con `workspace_version_at_current (2.8.1)` y la
+  tolerancia de 3 commitsabsorbiaaba el desfase de 1. Corregir un puntero que no
+  ha derivado seria escribir historia para que nada digas.
+
+### Lo que sigue abierto y sin frente
+
+- **INC-DEBT-069** y el backlog P1 `bl-bl-01M42JGYG4000388551BF9NZ40` son
+  la misma carencia y estan sin resolver: el release no tiene ni preflight
+  de recursos ni diagnostico de causa de muerte.
+- El clon local se queda viejo tras cada publicacion; el efecto ya esta
+  neutralizado por el gate, la causa no.
+- Firmado: `UNSIGNED` declarado, no se fabrica clave ni ancla.
