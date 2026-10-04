@@ -13512,3 +13512,102 @@ en la tabla `projects`**—, y los dos fixtures de `smoke-test-cycle` /
 - `SPEC-012` (7 citas ambiguas de un ID), `HostEvent` (`INC-DEBT-065`),
   `INC-DEBT-050`/`061`, severidad de `060` y el archivo de
   `a4-1-generic-verify`: ya medidos y registrados, ninguno abierto aqui.
+
+---
+
+## session_78 — la vista del operador dejo de afirmar lo que no sabe
+
+**Ciclo de trabajo:** `p-63676b11dc0ef88f/c3n-production-boundary-certification`
+(sigue `OPEN`, ver "Lo que sigue abierto").
+
+### Que se cerro
+
+`INC-DEBT-067` (high/P1), cerrada. `sddk cycle narrative` —la superficie que su
+propio `--help` llama *operator view*— afirmaba `Cycle completed.` y
+`Nada por ahora.` para **todo** ciclo.
+
+### El hallazgo que cambia el alcance de la deuda
+
+Al medir antes de tocar nada, el defecto resulto **peor de lo que el documento
+recogia**. No eran dos constantes: `run_cycle_narrative(args, _environment)`
+**nunca abria el store** — su parametro `environment` estaba literalmente sin
+usar. No era una derivacion ausente, era **la ausencia de lectura**.
+
+Medido sobre el repo real: `sddk cycle narrative --cycle no-existe-este-ciclo-xyz`
+imprimia `Cycle completed.` / `Nada por ahora.` con **exit 0**. Una vista que
+fabrica una afirmacion de completitud sobre un objeto que no existe no es una
+vista debil: es **falsa**, y falla abierta **en la direccion que esconde
+trabajo**.
+
+### El ciclo real que la vista escondia
+
+`c3n-production-boundary-certification` lleva desde `2026-10-03` en
+`approval-waiting` con una aprobacion pendiente de
+`surface.cycle_state#cycle_supersede` que **solo un operador humano puede
+conceder**. Antes, la vista decia que no hacia falta nada con el ciclo.
+Ahora dice:
+
+    The cycle is open at phase "design" (runtime: approval-waiting).
+    Decide 1 pending approval request: surface.cycle_state#cycle_supersede.
+
+**El bloqueo es visible en la vista disenada para hacerlo visible.** El ciclo
+sigue abierto: el arreglo hace el bloqueo legible, no lo concede.
+
+### Tres cosas que solo se ven al integrar
+
+1. **Cinco tests de la propia CLI afirmaban el defecto.** Usaban
+   `CliEnvironment::default()` — sin ledger — con un id que nunca existio, y
+   decian `status == 0`. No eran flojos: eran el defecto escrito como contrato.
+   Lo que **no** era admisible era behavioralizarlos para volver a ponerlos en
+   verde, porque eso convertia el arreglo en un giro de guion.
+2. **El falsador mas importante del bloque falló el primer intento.** M2 rompia
+   `resolve_cycle_context` y el test **siguio en verde**: el enlace que decide
+   (`get_cycle(cycle_id)?`) seguia intacto. El test pasaba, luego la mutacion no
+   habia roto la garantia: habia roto otra cosa. Reescrita sobre el enlace que
+   decide, ahora cae. Queda escrito en el propio falsador.
+3. **Un ratchet arquitectónico prohibio mi arreglo** (`conf09b`, WU-C3): las
+   variantes de status derivadas son decode-only y la etiqueta se deriva.
+   El test enumeraba esas variantes; se reescribio para barrer los estados por
+   la via derivada, que es una afirmacion **mas fuerte**, sin tocar el
+   allowlist.
+
+Ademas, dos defectos mios que los tests del arreglo encontraron: un
+`unreachable!` **alcanzable** (una lease etiquetada `Live` con la caducidad
+pasada) y `apply_claims` **sobrescribiendo en silencio** el override del
+llamante. Los dos del mismo genero que la deuda original.
+
+### Verificacion
+
+- Falsador de la narrativa: `PASS=4 FAIL=0 SKIP=0`, restauracion verificada.
+- `sddk-engine --lib cycle_narrative`: 20/20.
+- `sddk-cli --test cycle_narrative_operator_view`: 5/5.
+- `s_narrative_cli_*`: 5/5.
+- `arch_ratchet_mutations` (WU-C3): 6/6.
+- **Suite completa del workspace: 5462 tests verdes, 0 fallos, 24 ignorados**
+  (recuento por suma de bloques `test result:`, verificado por dos vias).
+- `cargo fmt --check` y `cargo clippy --workspace --all-targets -D warnings`
+  limpios. `test_gate_coverage.py`: 0 tests sin runner. Gate 2b: `PASS=7 FAIL=0`.
+
+### Lo que sigue abierto, y por que NO se ha tocado
+
+- **El ciclo `c3n` sigue `OPEN` en `approval-waiting`, con la lease caducada**
+  (expiro `2026-10-03T17:32Z`, sin dueno). Conceder la aprobacion de
+  `surface.cycle_state` desde quien pide la mutacion **anularia el gate**: es
+  decision de operador, y el arreglo solo lo hace visible.
+- **El paso 1 del release no tiene cota de memoria** (P1 vivo,
+  `bl-bl-01M42JGYG4000388551BF9NZ40`): bajo carga muere por OOM sin
+  diagnostico. MEDIDO hoy en esta maquina: la carga llego a 27 por proyectos
+  ajenos, y el `CARGO_TARGET_DIR` compartido hace que compilen a la vez. No se
+  abre aqui porque arreglarlo es su propio bloque.
+- Deudas P1 abiertas: `INC-DEBT-064`, `INC-DEBT-061`, `INC-DEBT-049` (parte).
+  `INC-DEBT-065` (HostEvent), `SPEC-012`, `057`/`058`, archivo de
+  `a4-1-generic-verify`: medidos y registrados, ninguno abierto aqui.
+- La **firma** sigue irreducible sin material externo y el ancla sigue siendo el
+  placeholder. **No se fabricara una clave ni un ancla.**
+
+### Nota de infraestructura
+
+`agent-session start|checkpoint|close` **no existe** en el CLI de SDDK (verificado
+contra el binario: `error: unrecognized subcommand 'agent-session'`). El hueco ya
+esta declarado en el journal desde session-35 y se mapea sobre `cycle`,
+`capability` y `memory`. No se improvisa una orden que no existe.
