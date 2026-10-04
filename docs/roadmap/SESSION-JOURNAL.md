@@ -13215,3 +13215,123 @@ esta demostrado dentro de un release real, porque los arreglos son de
 tooling — que es justo el patron que ya dio dos veces (v2.2.17, el
 `--strip-components`; y el instalador de tres `local` sin fuente). La prueba es
 `v2.5.6`.
+
+---
+
+## session_76 — la misma pregunta, tres respuestas
+
+**Resultado:** un defecto real de producto, medido sobre el estado real de este
+repo y reparado. Commit `1d958be6` + `a5ce9533`. Workspace `2.5.6`, sin
+publicar. **3649 tests verdes / 0 fallos** en `sddk-domain` + `sddk-storage` +
+`sddk-engine`, `cargo fmt --check` y `cargo clippy --all-targets` limpios.
+
+### Como se llego aqui: el backlog mentia, y el sitio donde se cocoa no es el mismo
+
+El arranque de esta sesion es el que manda `agent-session start` y el backlog,
+no los documentos. El backlog tenia tres items:
+
+- **`bl-bl-01M3WH77NJ000387S2CR8BWM00` (P1)** — `context bootstrap` se salta el
+  resolver con pin y devuelve el `project_id` huerfano `p-995939af668a53d8`
+  (0 eventos, 0 ciclos) mientras `project resolve` y `adopt status` devuelven el
+  pinneado.
+- Los otros dos son fixtures de smoke-test (`re-triage-test`, `smoke-test-cycle`).
+
+**El P1 ya no es real.** Medido: `context bootstrap` usa hoy el id resuelto con
+pin, identico a `project resolve`, y el codigo de `context_cmd.rs:1080-1089`
+documenta el arreglo. Sus criterios caducaron. Es exactamente el caso que el
+protocolo avisa de verificar: *una alerta de deuda cuyos criterios iniciales ya
+no siguen vigentes no es deuda real*.
+
+Y al ejecutar el comando aparecio algo **peor**, en la misma superficie.
+
+### El defecto: dos veredictos incompatibles sobre el mismo hecho
+
+Sobre el estado real —fila `projects` con `https://github.com/Rubentxu/...`,
+plan de hoy `.../rubentxu/...`—:
+
+| Comando | Veredicto |
+|---|---|
+| `sddk adopt status` | `complete` |
+| `sddk adopt repair` | `RegistrationConflict` |
+| `sddk context bootstrap` | `RegistrationConflict` |
+
+**El comando de estado no puede detectar la condicion que el de aplicar va a
+rechazar.** Dos veredictos incompatibles para el mismo hecho, y el primero
+invita a concluir que no hay nada que hacer. `context bootstrap` es la entrada
+obligatoria de `/home/rubentxu/AGENTS.md` §2: sin ella, ningun agente puede
+arrancar su sesion.
+
+La causa es que la pregunta *"¿estas dos filas son el mismo remoto?"* tenia
+**tres** respuestas, y las tres se ejecutan en el mismo comando:
+
+- (a) `sddk-engine` `same_identity`, sobre el recibo — case-insensitive desde
+  session-65i.
+- (b) `sddk-engine` `inspect_ledger`, sobre la fila — la misma funcion.
+- (c) `sddk-storage` `register_project_workspace` — **byte a byte**. Esa tercera
+  nunca recibio el arreglo.
+
+Un fallo abierto en la lectura contra uno cerrado en la escritura. El arreglo
+mueve la regla al dominio como `remote_urls_equivalent` y hace que las tres la
+llamen. **No vive en la capa que la necesita a proposito**: mientras cada crate
+tenga su copia, divergen en cuanto una se toque y la otra no — que es
+exactamente lo que ocurrio.
+
+### El comentario que lo sostenia era falso, y era lo mas caro del arreglo
+
+`crates/sddk-engine/Cargo.toml` decia, textual, que
+`Storage::register_project_workspace` rechaza esa fila *"today by design
+(RegistrationConflict)"* y que *"the guard under test is `inspect_ledger`, not
+the storage guard"*. El arnes de test **pagaba ese rechazo con SQL crudo** para
+fabricar la fila fosilizada.
+
+Era un **workaround disfrazado de decision**, y era lo que sostenia el defecto:
+si el storage «debia» rechazar, entonces el motor que la llama «la misma
+identidad» estaba equivocado, y nadie iba a mirar al storage. Corregidos el
+comentario del `Cargo.toml` y el del test.
+
+### Tres dientes, y tres falsaciones por separado
+
+1. **`session76_same_remote_in_any_spelling_converges_but_a_different_remote_still_conflicts`**
+   (`sddk-storage`). Restaurada la comparacion cruda **cae** en la primera
+   grafia distinta. Quitada la comparacion del remoto **entera**, **tambien
+   cae** — porque el conflicto real tiene que seguir mandando. Sin ese segundo
+   diente, un arreglo que solo volviera todo verde pasaria el primero.
+2. **`fossilized_capitalized_ledger_row_is_still_the_same_identity`**
+   (`sddk-engine`) ahora exige las **dos mitades**: lectura (`adopt status` dice
+   `complete`) **y** escritura (`apply_adoption` converge). Antes solo asertaba
+   la lectura, y **ahi es exactamente donde la divergencia era invisible**.
+   Con solo el storage revertido: la lectura sigue verde, la escritura cae con
+   el error real.
+3. La verificacion de cierre es sobre el **estado real**, no sobre un fixture.
+
+### Dos conjeturas refutadas por la medicion, y por que importa
+
+- **El case del remoto ya estaba resuelto.** Asumi que la comparacion cruda era
+  la regla y busque el arreglo ahi. No: `remote_urls_match` existe desde
+  session-65i y su comentario documenta *este* fallo exacto. La divergencia
+  estaba en la **tercera** copia, que nunca habia visto el arreglo.
+- **Mi propia comparacion campo a campo estaba mal construida.** Use una lista
+  de claves fija en vez de diffear, y por eso «lei» que al recibo le faltaban
+  `cycle_artifacts` y `generated` — no faltaban, tenia las 7. Un diff con claves
+  asumidas no es un diff: es una conjetura con formato de evidencia.
+- Y **el test nuevo cayo en su primera version** por la misma razon: use `acme`
+  donde el fixture usa `owner`, o sea otro remoto, o sea el conflicto era
+  correcto. *Un falsador que solo sabe decir «cayo» no distingue las dos
+  direcciones de la falsacion*, y esta vez la distincion era el punto.
+
+### Lo que queda abierto, y por que NO se ha tocado
+
+- **El backlog no tiene verbo para «ya esta arreglado».** `sddk backlog discard`
+  ofrece un conjunto cerrado `superseded | wontfix | duplicate`, y ninguna
+  encaja: `wontfix` mintiria (no se declino, se hizo), `superseded` exige un
+  sucesor que no existe. Forzar cualquiera de los dos escribiria una falsidad en
+  un ledger append-only, que es justo el antipatron que este trabajo lleva toda
+  la sesion corrigiendo. **No se ha descartado el item**; queda registrado que
+  sus criterios son nulos, verificado. Es un hueco de vocabulario pequeno y real.
+- **El ciclo no tiene lease viva** y el ledger guarda 188 ciclos con 29 `OPEN`.
+  Archivar o transicionar es escritura sobre el ledger: decision del operador.
+- La **firma** sigue irreducible sin material externo, y el ancla sigue siendo el
+  placeholder. **No se fabricara una clave ni un ancla.**
+- `SPEC-012` (7 citas ambiguas de un ID, reportadas por `3h`), `HostEvent`
+  (`INC-DEBT-065`), `INC-DEBT-050`/`061`, severidad de `060`, y el archivo de
+  `a4-1-generic-verify`: todos ya medidos y registrados, ninguno abierto aqui.
