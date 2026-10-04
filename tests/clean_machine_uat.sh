@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
+# SC2016: los comandos que se ejecutan DENTRO del contenedor van entre comillas
+# simples a proposito — `$HOME` debe expandirse en el shell del contenedor
+# (`$HOME=/root` ahi), no en el del host, que es `/home/<usuario>`. Con comillas
+# dobles el `--prefix` apuntaria al home equivocado y la UAT mediria una ruta que
+# no existe. Es el aviso correcto aplicado sobre una decision correcta, y por eso
+# se silencia aqui con su motivo y no en cada linea.
+#
 # clean_machine_uat.sh — UAT-1: end-to-end clean-machine verification of the
 # published SDDK release on a fresh isolated container.
 #
@@ -82,10 +90,31 @@ timing_elapsed() { echo $(( SECONDS - _ts )); }
 
 # Global helper: run sddk inside the container with PATH pointing to $HOME/.local/bin
 # Binary installed at $HOME/.local/bin/ ($HOME=/root inside container)
-# shellcheck disable=SC2329  # Called by run_workflow, run_restart, run_projection_rebuild
+#
+# MEDIDO (session-81): esta funcion estaba definida CUATRO veces en este
+# fichero —lineas 86, 468, 521 y 561—, las cuatro identicas, y la de la 86
+# era la que el resto redefinia sin motivo. Cuatro copias de "como se ejecuta
+# sddk dentro del contenedor" divergen en cuanto se toca una.
+#
+# Y la forma tambien estaba mal, mas alla del aviso de shellcheck. Era:
+#
+#     podman exec "$C" bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && $*"
+#
+# `$*` va SIN COMILLAS, luego el shell del HOST re-partia los argumentos y
+# expandia globs antes de que la cadena llegara al contenedor: cualquier valor
+# con un espacio se destruia aqui, no alla. Y el comando se montaba con dos
+# niveles de reinterpretacion —esta shell, luego la del contenedor—, con lo
+# que el escapado de `"` y de `\$` era lo unico que sostenia el contrato.
+#
+# Ahora el comando llega como UN argumento y lo interpreta el shell del
+# contenedor, que es donde `$HOME` DEBE expandirse. Los callers lo pasan entre
+# comillas simples precisamente para que el host no lo toque.
+# shellcheck disable=SC2329  # invocada desde run_workflow, run_restart y run_projection_rebuild
 sddk_with_path() {
-    # shellcheck disable=SC2016
-    podman exec "$CONTAINER_NAME" bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && $*"
+    podman exec "$CONTAINER_NAME" bash -c '
+        export PATH="$HOME/.local/bin:$PATH"
+        eval "$1"
+    ' _ "$1"
 }
 
 # ── Assertions ───────────────────────────────────────────────────────────────
@@ -465,9 +494,6 @@ run_workflow() {
     timing_start
 
     # Binary is at $HOME/.local/bin/ ($HOME=/root inside container)
-    sddk_with_path() {
-        podman exec "$CONTAINER_NAME" bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && $*"
-    }
 
     # Test sddk version (confirms binary + framework version alignment)
     echo "  running sddk version..."
@@ -518,9 +544,6 @@ run_restart() {
     timing_start
 
     # Binary is at $HOME/.local/bin/ ($HOME=/root inside container)
-    sddk_with_path() {
-        podman exec "$CONTAINER_NAME" bash -c "export PATH="\$HOME/.local/bin:\$PATH" && $*"
-    }
 
     # Kill the running sleep process (container keeps running)
     podman exec "$CONTAINER_NAME" pkill -f "sleep infinity" || true
@@ -532,7 +555,7 @@ run_restart() {
 
     # Re-run dev doctor after restart to confirm binary + framework persist
     local doctor2_exit=0
-    sddk_with_path "sddk dev doctor --prefix "\$HOME/.local" --format json" \
+    sddk_with_path 'sddk dev doctor --prefix "$HOME/.local" --format json' \
         > /tmp/restart_doctor.json 2>&1 || doctor2_exit=$?
 
     if [ "$doctor2_exit" -eq 0 ]; then
@@ -558,13 +581,10 @@ run_projection_rebuild() {
     timing_start
 
     # Binary is at $HOME/.local/bin/ ($HOME=/root inside container)
-    sddk_with_path() {
-        podman exec "$CONTAINER_NAME" bash -c "export PATH="\$HOME/.local/bin:\$PATH" && $*"
-    }
 
     # Snapshot the dev doctor output before any mutation
     local doctor_before_exit=0
-    sddk_with_path "sddk dev doctor --prefix "\$HOME/.local" --format json" \
+    sddk_with_path 'sddk dev doctor --prefix "$HOME/.local" --format json' \
         > /tmp/rebuild_before.json 2>&1 || doctor_before_exit=$?
 
     if [ "$doctor_before_exit" -ne 0 ]; then
@@ -575,13 +595,17 @@ run_projection_rebuild() {
 
     # Trigger idempotent re-install (rebuild)
     local rebuild_exit=0
-    sddk_with_path "sddk dev install --prefix "\$HOME/.local" --channel release --source "\$HOME/.local" --format text 2>/dev/null" \
+    sddk_with_path 'sddk dev install --prefix "$HOME/.local" --channel release --source "$HOME/.local" --format text 2>/dev/null' \
         > /tmp/rebuild_install.log 2>&1 || rebuild_exit=$?
 
     # Snapshot after rebuild
     local doctor_after_exit=0
-    sddk_with_path "sddk dev doctor --prefix "\$HOME/.local" --format json" \
+    sddk_with_path 'sddk dev doctor --prefix "$HOME/.local" --format json' \
         > /tmp/rebuild_after.json 2>&1 || doctor_after_exit=$?
+
+    if [ "$rebuild_exit" -ne 0 ]; then
+        echo "  [INFO] scenario 8: la reinstalacion salio con $rebuild_exit"
+    fi
 
     if [ "$doctor_before_exit" -eq 0 ] && [ "$doctor_after_exit" -eq 0 ]; then
         echo "  [PASS] scenario 8: dev doctor stable before and after rebuild"
@@ -589,7 +613,7 @@ run_projection_rebuild() {
         echo "  [INFO] scenario 8: rebuild test inconclusive (SHOULD — not blocking)"
     fi
 
-    record_timing "scenario_8_projection_rebuild" "$(($doctor_after_exit == 0 ? 1 : 0))"
+    record_timing "scenario_8_projection_rebuild" "$((doctor_after_exit == 0 ? 1 : 0))"
 }
 
 # ── Scenario 9: Upgrade-to-next-version N/A ───────────────────────────────────
