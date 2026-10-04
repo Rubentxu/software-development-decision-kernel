@@ -225,6 +225,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_sign_artifacts_mutation.sh \
             tests/test_release_authenticity_posture.sh \
             tests/test_release_authenticity_posture_mutation.sh \
+            tests/test_backlog_discard_reason_enforcement_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -859,6 +860,28 @@ else
     die "la autofalsacion de citas de spec no pasa: o una propiedad dejo de tener
          dientes, o una mutacion cayo por una razon que no es la que dice medir.
          Log: $SPEC_CITATION_MUT_LOG"
+fi
+
+# 3i. El conjunto cerrado de motivos de descarte del backlog es una propiedad del
+# LEDGER, no de un parser de argumentos. Antes de este paso se midieron cuatro
+# capas y ninguna lo-era: el dominio declaraba un error de motivo invalido que
+# nunca construia, el campo del evento era String (y los tests del storage
+# escribian "won't fix", "done" y "x"), el schema exigia presencia y no
+# pertenencia, y el unico que exigia algo era el ValueEnum de la CLI.
+# Va con su autofalsacion en la MISMA release porque el defecto que corrige es
+# precisamente del genero que un guard verde no puede ver: con el campo en
+# String, la mayoria de estas comprobaciones seguirian en verde.
+step "3i/15 — el conjunto cerrado de descarte lo impone el ledger, y se le aplican cinco mutaciones"
+BACKLOG_REASON_MUT_LOG="$RELEASE_SCRATCH/backlog_discard_reason_mutation.log"
+if bash tests/test_backlog_discard_reason_enforcement_mutation.sh >"$BACKLOG_REASON_MUT_LOG" 2>&1; then
+    ok "autofalsación del conjunto de descarte: $(grep -m1 '^PASS=' "$BACKLOG_REASON_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$BACKLOG_REASON_MUT_LOG" >&2
+    die "la autofalsacion del conjunto cerrado de descarte no pasa: o un punto de
+         enforcement dejo de tener dientes, o una mutacion cayo por una razon que
+         no es la que dice medir. Sin esto, el conjunto cerrado puede volver a ser
+         una propiedad de un solo parser de argumentos sin que nada lo note.
+         Log: $BACKLOG_REASON_MUT_LOG"
 fi
 
 # --- 4. manifest ---
