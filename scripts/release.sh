@@ -479,6 +479,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_uat_authority_citations.py \
              tests/test_spec_citation_anchor.py \
              tests/test_contamination_surface_mutation.py \
+             tests/test_grep_q_after_pipe.py \
+             tests/test_grep_q_after_pipe_mutation.py \
              tests/test_gate_coverage.py; do
         if [ -f "$p" ]; then
             # Mismo arreglo que en el bucle de shell, y por el mismo motivo: un
