@@ -930,6 +930,40 @@ else
          Log: $NARRATIVE_VIEW_MUT_LOG"
 fi
 
+# La autofalsacion de la ENUMERACION de decisiones pendientes. Mismo motivo que
+# 3c/3g/3h/3i/3i-b/3j: una comprobacion que solo se ejecuta cuando alguien edita
+# el guard envejece sin que nadie lo note.
+#
+# Aqui el defecto era el que mas costa caro de invisible. `sddk approval list`
+# exige `--cycle`, y las 662 lineas de `cycle list` no mencionaban ni
+# `runtime_state` ni `approval`: un ciclo bloqueado por una persona era
+# byte-identico a uno que no necesitaba nada. MEDIDO sobre el ledger real, 2
+# ciclos estaban esperando una decision y ninguno era visible sin saber su id de
+# antemano — la misma clase de hueco que cerro 3j, un nivel mas arriba: 3j dio
+# una narrativa que deriva, esto da una enumeracion que dice a quien espera.
+#
+# Y el motivo por el que M5 tiene su propio test, escrito en el falsador: la
+# primera vez se aplico y el suite quedo VERDE. No tenia dientes, no porque el
+# guard fuera blando, sino porque `cycle start` emite el evento inicial de su
+# ciclo, luego en el sandbox no habia NI UNO sin eventos y la mutacion no tenia
+# sujeto. Un guard que no puede ver el defecto que nombra declara una cobertura
+# que no tiene, y es peor que no declararla: ocupa el lugar del que sí la
+# comprueba.
+step "3k/15 — la enumeracion nombra a quien espera una decision, y se le aplican cinco mutaciones"
+ATTENTION_ENUM_MUT_LOG="$RELEASE_SCRATCH/cycle_attention_enumeration_mutation.log"
+if bash tests/test_cycle_attention_enumeration_mutation.sh >"$ATTENTION_ENUM_MUT_LOG" 2>&1; then
+    ok "autofalsación de la enumeracion de decisiones: $(grep -m1 '^PASS=' "$ATTENTION_ENUM_MUT_LOG" || echo PASS)"
+else
+    tail -25 "$ATTENTION_ENUM_MUT_LOG" >&2
+    die "la autofalsacion de la enumeracion de decisiones no pasa: o la lista vuelve a
+         no decir a quien espera, o una fila que no se puede leer vuelve a
+         declararseKnown, o un ciclo sin eventos deja de ser 'tranquilo y
+         conocido', o una mutacion cayo por una razon que no es la que dice
+         medir. Sin esto, la unica superficie que enumera los ciclos del proyecto
+         puede volver a esconder las decisiones abiertas sin que nada lo note.
+         Log: $ATTENTION_ENUM_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"
