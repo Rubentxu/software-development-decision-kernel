@@ -142,6 +142,39 @@ warn() { printf '\033[1;33m  !\033[0m %s\n' "$*" >&2; }
 # aunque el `exit` de aqui y el trap se ejecuten los dos.
 die()  { printf '\033[1;31m  ✗\033[0m %s\n' "$*" >&2; exit 1; }
 
+# --- la clase de gates que faltaba en el guard ---
+#
+# MEDIDO en el quinto intento de 2.9.0: `--skip-tests` solo cubria los pasos 1 y
+# 1b, porque su `if` cierra antes del paso 2. Los gates que invocan un test
+# (2b, 3b-3m, 9c) estan todos despues, fuera del guard. Y el 3m corre el
+# falsador de diagnostico, que a su vez invoca el guard de cableado, que lanza
+# `release.sh --dry-run --skip-tests` otra vez. Ese dry-run se salta 1 y 1b pero
+# LLEGA al 3m, luego la cadena no termina: se observaron tres niveles vivos
+# creciendo y una release parada mas de 30 minutos en un gate que jamas iba a
+# pasar.
+#
+# El arreglo anterior (`--skip-tests` en las dos invocaciones) era correcto y era
+# insuficiente: aplicaba la EXISTENCIA de la bandera, que es lo que un guard
+# acaba comprobando. La PROPIEDAD que hay que exigir es otra: bajo
+# `--skip-tests`, ningun test se ejecuta. Por eso los sitios pasan por
+# `test_gate`, y por eso hay un guard que mide la propiedad y no la bandera.
+#
+# `--skip-tests` esta DOCUMENTADO como "asume que ya corriste los gates" (linea
+# 47). Este helper es lo que hace que el codigo cumpla su propio contrato. El
+# estado de un gate aqui es de TRES: PASS, FAIL, o NO_EJECUTADO declarado. Un
+# gate saltado que se reporta como verde seria exactamente la mentira que este
+# repositorio no se permite.
+test_gate() {
+    # $1 = etiqueta del gate. Imprime la declaracion de NO_EJECUTADO y devuelve 0
+    # para que el sitio que llama no lo confunda con un PASS.
+    if [ "$SKIP_TESTS" = "1" ]; then
+        printf '\033[1;33m  ~\033[0m NO_EJECUTADO (--skip-tests): %s\n' "$1"
+        return 0
+    fi
+    return 1
+}
+
+
 require() {
     command -v "$1" >/dev/null 2>&1 \
         || die "required command not found: $1"
@@ -613,11 +646,13 @@ ok "version: $VERSION → tag: $TAG"
 #
 # Fail-closed before the build, because a missing entry found at step 9 (after
 # a `gh release create`) costs a deletion; found here it costs a commit.
-if [[ "$DRY_RUN" == "0" ]]; then
+if [[ "$DRY_RUN" == "0" && "$SKIP_TESTS" == "0" ]]; then
     step "2b/15 — changelog coverage"
     bash tests/test_changelog_coverage.sh \
         || die "changelog coverage failed: the declared section does not describe the work this release ships. Add the missing entries (git log --format=%s <last-tag>..HEAD) and re-run."
     ok "changelog describes the shipped work"
+elif [ "$SKIP_TESTS" = "1" ]; then
+    test_gate "test_changelog_coverage.sh"
 fi
 
 # --- 2.5 semver-correct tag (cycle-c2 bug fix) ---
@@ -821,7 +856,9 @@ ok "binary: $BIN ($("$BIN" --version 2>&1)), target=$BUILD_TARGET"
 # autofalsacion que envejece sin que nadie lo note.
 step "3b/15 — reconciliación del artefacto contra la autoridad (INC-DEBT-060)"
 RECON_LOG="$RELEASE_SCRATCH/reconciliation.log"
-if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation.sh \
+if test_gate "test_cycle_list_total_reconciliation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate
+elif SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation.sh \
         >"$RECON_LOG" 2>&1; then
     ok "reconciliación del artefacto: $(grep -m1 '^PASS=' "$RECON_LOG" || echo 'PASS')"
 else
@@ -841,7 +878,9 @@ fi
 # seguir pareciendo que vigila.
 step "3c/15 — autofalsación de la reconciliación (cada comprobación con dientes)"
 RECON_MUT_LOG="$RELEASE_SCRATCH/reconciliation_mutation.log"
-if SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation_mutation.sh \
+if test_gate "test_cycle_list_total_reconciliation_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate
+elif SDDK_GUARD_BIN="$BIN" bash tests/test_cycle_list_total_reconciliation_mutation.sh \
         >"$RECON_MUT_LOG" 2>&1; then
     ok "autofalsación: $(grep -m1 '^PASS=' "$RECON_MUT_LOG" || echo 'PASS')"
 else
@@ -875,7 +914,9 @@ fi
 # aqui.
 step "3d/15 — los cuatro estados de binary.build_identity (dev doctor)"
 IDENT_LOG="$RELEASE_SCRATCH/doctor_identity_states.log"
-if bash tests/test_doctor_identity_states.sh "$BIN" >"$IDENT_LOG" 2>&1; then
+if test_gate "test_doctor_identity_states.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_doctor_identity_states.sh "$BIN" >"$IDENT_LOG" 2>&1; then
     ok "estados de la identidad: $(grep -m1 '^PASS=' "$IDENT_LOG" || echo 'PASS') (O6 declarado NOT_RUN)"
 else
     tail -25 "$IDENT_LOG" >&2
@@ -891,7 +932,9 @@ fi
 # paso va aqui, con el arbol ya en su forma final, y no en el 1b.
 step "3e/15 — receipt de frontera exigible (C3n.1 / AT-UAT-023)"
 UAT_BOUNDARY_LOG="$RELEASE_SCRATCH/uat_boundary_receipt.log"
-if bash tests/test_uat_boundary_receipt.sh >"$UAT_BOUNDARY_LOG" 2>&1; then
+if test_gate "test_uat_boundary_receipt.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_uat_boundary_receipt.sh >"$UAT_BOUNDARY_LOG" 2>&1; then
     ok "receipt de frontera: $(grep -m1 '^PASS=' "$UAT_BOUNDARY_LOG" || echo 'PASS')"
 else
     tail -25 "$UAT_BOUNDARY_LOG" >&2
@@ -909,7 +952,9 @@ fi
 # se llamaban *_e2e sin cruzar ninguna frontera. Corregido con rename.
 step "3f/15 — la regla 4: un nombre de test no promete una frontera que no cruza"
 NAMES_LOG="$RELEASE_SCRATCH/uat_naming_policy.log"
-if bash tests/test_uat_naming_boundary_policy.sh >"$NAMES_LOG" 2>&1; then
+if test_gate "test_uat_naming_boundary_policy.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_uat_naming_boundary_policy.sh >"$NAMES_LOG" 2>&1; then
     ok "politica de nombres: $(grep -m1 '^PASS=' "$NAMES_LOG" || echo 'PASS')"
 else
     tail -25 "$NAMES_LOG" >&2
@@ -925,7 +970,9 @@ fi
 # VERDE con su propio veto desconectado, y eso solo se ve falsandolo.
 step "3g/15 — autofalsación de la política de nombres (cada comprobación con dientes)"
 NAMES_MUT_LOG="$RELEASE_SCRATCH/uat_naming_policy_mutation.log"
-if bash tests/test_uat_naming_boundary_policy_mutation.sh >"$NAMES_MUT_LOG" 2>&1; then
+if test_gate "test_uat_naming_boundary_policy_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_uat_naming_boundary_policy_mutation.sh >"$NAMES_MUT_LOG" 2>&1; then
     ok "autofalsación de nombres: $(grep -m1 '^PASS=' "$NAMES_MUT_LOG" || echo 'PASS')"
 else
     tail -25 "$NAMES_MUT_LOG" >&2
@@ -942,7 +989,9 @@ fi
 # indistinguible de uno sin dientes -- y eso solo se ve sembrando el defecto.
 step "3h/15 — una cita de spec ancla a un documento, y se le aplican seis mutaciones"
 SPEC_CITATION_LOG="$RELEASE_SCRATCH/spec_citation_anchor.log"
-if python3 tests/test_spec_citation_anchor.py >"$SPEC_CITATION_LOG" 2>&1; then
+if test_gate "test_spec_citation_anchor.py"; then
+    :   # NO_EJECUTADO declarado por test_gate
+elif python3 tests/test_spec_citation_anchor.py >"$SPEC_CITATION_LOG" 2>&1; then
     ok "citas de spec ancladas: $(grep -m1 'citas ambiguas SIN ancla' "$SPEC_CITATION_LOG" || echo PASS)"
 else
     tail -25 "$SPEC_CITATION_LOG" >&2
@@ -951,7 +1000,9 @@ else
          porque el ID existia en algun sitio. Log: $SPEC_CITATION_LOG"
 fi
 SPEC_CITATION_MUT_LOG="$RELEASE_SCRATCH/spec_citation_anchor_mutation.log"
-if python3 tests/test_spec_citation_anchor_mutation.py >"$SPEC_CITATION_MUT_LOG" 2>&1; then
+if test_gate "test_spec_citation_anchor_mutation.py"; then
+    :   # NO_EJECUTADO declarado por test_gate
+elif python3 tests/test_spec_citation_anchor_mutation.py >"$SPEC_CITATION_MUT_LOG" 2>&1; then
     ok "autofalsación de citas de spec: $(grep -m1 '^  PASS=' "$SPEC_CITATION_MUT_LOG" | tr -s ' ')"
 else
     tail -25 "$SPEC_CITATION_MUT_LOG" >&2
@@ -971,7 +1022,9 @@ fi
 # String, la mayoria de estas comprobaciones seguirian en verde.
 step "3i/15 — el conjunto cerrado de descarte lo impone el ledger, y se le aplican cinco mutaciones"
 BACKLOG_REASON_MUT_LOG="$RELEASE_SCRATCH/backlog_discard_reason_mutation.log"
-if bash tests/test_backlog_discard_reason_enforcement_mutation.sh >"$BACKLOG_REASON_MUT_LOG" 2>&1; then
+if test_gate "test_backlog_discard_reason_enforcement_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_backlog_discard_reason_enforcement_mutation.sh >"$BACKLOG_REASON_MUT_LOG" 2>&1; then
     ok "autofalsación del conjunto de descarte: $(grep -m1 '^PASS=' "$BACKLOG_REASON_MUT_LOG" || echo PASS)"
 else
     tail -25 "$BACKLOG_REASON_MUT_LOG" >&2
@@ -990,7 +1043,9 @@ fi
 # con la respuesta equivocada el pipeline republicaba un tag ya existente.
 step "3i-b/15 — la línea base del bump viene del remoto, y se le aplica una mutación"
 BUMP_BASELINE_MUT_LOG="$RELEASE_SCRATCH/release_bump_remote_baseline_mutation.log"
-if bash tests/test_release_bump_remote_baseline_mutation.sh >"$BUMP_BASELINE_MUT_LOG" 2>&1; then
+if test_gate "test_release_bump_remote_baseline_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_release_bump_remote_baseline_mutation.sh >"$BUMP_BASELINE_MUT_LOG" 2>&1; then
     ok "autofalsación de la línea base del bump: $(grep -m1 '^PASS=' "$BUMP_BASELINE_MUT_LOG" || echo PASS)"
 else
     tail -25 "$BUMP_BASELINE_MUT_LOG" >&2
@@ -1014,7 +1069,9 @@ fi
 # nombre de test y no por el texto de una asercion.
 step "3j/15 — la vista del operador deriva sus afirmaciones, y se le aplican cuatro mutaciones"
 NARRATIVE_VIEW_MUT_LOG="$RELEASE_SCRATCH/cycle_narrative_operator_view_mutation.log"
-if bash tests/test_cycle_narrative_operator_view_mutation.sh >"$NARRATIVE_VIEW_MUT_LOG" 2>&1; then
+if test_gate "test_cycle_narrative_operator_view_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_cycle_narrative_operator_view_mutation.sh >"$NARRATIVE_VIEW_MUT_LOG" 2>&1; then
     ok "autofalsación de la vista del operador: $(grep -m1 '^PASS=' "$NARRATIVE_VIEW_MUT_LOG" || echo PASS)"
 else
     tail -25 "$NARRATIVE_VIEW_MUT_LOG" >&2
@@ -1047,7 +1104,9 @@ fi
 # comprueba.
 step "3k/15 — la enumeracion nombra a quien espera una decision, y se le aplican cinco mutaciones"
 ATTENTION_ENUM_MUT_LOG="$RELEASE_SCRATCH/cycle_attention_enumeration_mutation.log"
-if bash tests/test_cycle_attention_enumeration_mutation.sh >"$ATTENTION_ENUM_MUT_LOG" 2>&1; then
+if test_gate "test_cycle_attention_enumeration_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_cycle_attention_enumeration_mutation.sh >"$ATTENTION_ENUM_MUT_LOG" 2>&1; then
     ok "autofalsación de la enumeracion de decisiones: $(grep -m1 '^PASS=' "$ATTENTION_ENUM_MUT_LOG" || echo PASS)"
 else
     tail -25 "$ATTENTION_ENUM_MUT_LOG" >&2
@@ -1073,7 +1132,9 @@ fi
 # mismo y el test no mediria nada.
 step "3l/15 — la linea base publicada del gate 2b tiene una sola autoridad, y se le aplican tres mutaciones"
 CHANGELOG_BASELINE_MUT_LOG="$RELEASE_SCRATCH/changelog_coverage_baseline_mutation.log"
-if bash tests/test_changelog_coverage_baseline_mutation.sh >"$CHANGELOG_BASELINE_MUT_LOG" 2>&1; then
+if test_gate "test_changelog_coverage_baseline_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_changelog_coverage_baseline_mutation.sh >"$CHANGELOG_BASELINE_MUT_LOG" 2>&1; then
     ok "autofalsación de la linea base publicada: $(grep -m1 '^PASS=' "$CHANGELOG_BASELINE_MUT_LOG" || echo PASS)"
 else
     tail -25 "$CHANGELOG_BASELINE_MUT_LOG" >&2
@@ -1092,7 +1153,9 @@ RELEASE_DIAG_MUT_LOG="$RELEASE_SCRATCH/release_diagnostics_mutation.log"
 # es la prueba de que los 42 casos de diagnostico y los 24 de cableado CAEN
 # cuando se quita cada punto de enforcement. Un diagnostico bonito que nadie
 # ha intentado romper es texto, y el texto se degrada en silencio.
-if bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1; then
+if test_gate "test_release_diagnostics_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_release_diagnostics_mutation.sh >"$RELEASE_DIAG_MUT_LOG" 2>&1; then
     ok "autofalsacion del diagnostico de release: $(grep -m1 '^PASS=' "$RELEASE_DIAG_MUT_LOG" || echo PASS)"
 else
     tail -25 "$RELEASE_DIAG_MUT_LOG" >&2
@@ -1877,11 +1940,15 @@ else
                 || die "9c: could not fetch $asset for authenticity verification"
         done
 
-        SDDK_RELEASE_REPO="$REPO" bash tests/test_supply_chain_authenticity.sh \
-            --tag "$TAG" --assets-dir "$AUTH_TMP" >"$AUTH_TMP/auth.out" 2>&1 || {
-                cat "$AUTH_TMP/auth.out"
-                die "9c: supply-chain authenticity check FAILED — the published release does not verify under the shipped trust root"
-            }
+        if test_gate "test_supply_chain_authenticity.sh"; then
+            warn "9c declarado NOT_RUN (--skip-tests) — la autenticidad del release publicado NO se verifico"
+        else
+            SDDK_RELEASE_REPO="$REPO" bash tests/test_supply_chain_authenticity.sh \
+                --tag "$TAG" --assets-dir "$AUTH_TMP" >"$AUTH_TMP/auth.out" 2>&1 || {
+                    cat "$AUTH_TMP/auth.out"
+                    die "9c: supply-chain authenticity check FAILED — the published release does not verify under the shipped trust root"
+                }
+        fi
         grep -E "PASS=[0-9]+ FAIL=0" "$AUTH_TMP/auth.out" >/dev/null \
             || die "9c: authenticity check did not report FAIL=0"
         ok "published release verifies under the pinned trust root (9c)"

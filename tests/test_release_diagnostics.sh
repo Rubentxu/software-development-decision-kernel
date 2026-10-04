@@ -272,14 +272,38 @@ out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 \
 asert "C8: memoria suficiente devuelve 0" "$([ $? -eq 0 ] && echo 1 || echo 0)"
 # Disco y memoria son reglas DISTINTAS: basta con que una falle, y el mensaje
 # tiene que senalar la que fallo, no la otra.
-out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 \
-    SDDK_RELEASE_MIN_FREE_MB=999999 SDDK_RELEASE_MIN_AVAIL_MB=1 \
+#
+# MEDIDO: este sub-caso usaba el `df` REAL con un umbral de 999999 MiB, y por
+# eso dependia de lo lleno que estuviera el disco de la maquina. Con 350 GiB
+# libres fallaba (que es lo que el caso quiere); en cuanto el mismo disco paso
+# a 1,1 TiB libres, el umbral se cumplio, la comprobacion paso, la funcion
+# devolvio 0 SIN IMPRIMIR NADA y las dos aserciones cayeron. Un caso que
+#depends de la maquina mide la maquina: se rompe cuando el disco se vacia, que
+# es justo cuando nadie esta mirando este test. C7 ya lo hacia bien, con un `df`
+# que dice la cifra; aqui hace falta lo mismo, y la cifra se elige para que
+# falle siempre y no dependa de nada externo.
+cat > "$STUBS/df" <<'STUB'
+#!/bin/sh
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf 'fake-scratch 999999999 12 %s 50%%%% %s\n' "$FAKE_FREE_MB" "$FAKE_MOUNT"
+STUB
+chmod +x "$STUBS/df"
+out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 FAKE_FREE_MB=12 FAKE_MOUNT=/mnt/scratch-falso \
+    SDDK_RELEASE_MIN_FREE_MB=4096 SDDK_RELEASE_MIN_AVAIL_MB=1 \
     release_check_resources "$TMPROOT" 2>&1)"
+rc=$?
 asert "C8: con memoria de sobra pero sin disco, el fallo es de disco" \
-    "$([ $? -eq 1 ] && echo 1 || echo 0)" "obtenido: $out"
+    "$([ $rc -eq 1 ] && echo 1 || echo 0)" "rc=$rc obtenido: $out"
 asert "C8: y el mensaje no culpa a la memoria" \
     "$([[ "$out" == *disco* && "$out" != *memoria* ]] && echo 1 || echo 0)" "obtenido: $out"
-rm -f "$STUBS/free"
+# Y el otro lado de la misma regla, con la cifra del stub: disco y memoria son
+# independientes, asi que con las dos de sobra tiene que devolver 0 sin hablar.
+out="$(PATH="$STUBS:$PATH" FAKE_AVAIL_MB=8192 FAKE_FREE_MB=999999999 FAKE_MOUNT=/mnt/scratch-falso \
+    SDDK_RELEASE_MIN_FREE_MB=4096 SDDK_RELEASE_MIN_AVAIL_MB=4096 \
+    release_check_resources "$TMPROOT" 2>&1)"
+asert "C8: y con las dos de sobra devuelve 0 en silencio" \
+    "$([ $? -eq 0 ] && echo 1 || echo 0)" "obtenido: $out"
+rm -f "$STUBS/free" "$STUBS/df"
 caso_termina C8
 
 # --- C9: el lock compartido se nombra, y el release no se acusa a si mismo ---

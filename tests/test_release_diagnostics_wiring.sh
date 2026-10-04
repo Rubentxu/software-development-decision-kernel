@@ -320,6 +320,57 @@ asert "E3: y el paso aparece una sola vez tambien" \
     "apariciones: $(grep -cE '^\s+paso *:' "$e1_log")"
 caso_termina E3
 
+# --- E4: la PROPIEDAD, no la bandera ---------------------------------------
+#
+# MEDIDO en el quinto intento de 2.9.0: el arreglo de la sesion-80 ponia
+# `--skip-tests` en las dos invocaciones del guard, lo cual impedia volver a
+# entrar por el 1b. Pero el `if` de SKIP_TESTS cierra antes del paso 2, y los
+# CATORCE gates que invocan un test estan todos despues. El 3m corre el
+# falsador, que invoca este mismo fichero, que lanza `release.sh --dry-run
+# --skip-tests`, que se salta 1 y 1b pero LLEGA al 3m. Se observaron tres
+# niveles vivos creciendo y una release parada mas de 30 minutos en un gate
+# que jamas iba a pasar.
+#
+# Por eso E0 comprobaba que la bandera ESTUVIERA, y esto comprueba lo otro: que
+# bajo `--skip-tests` no quede NINGUN test alcanzable. Un needle sobre la
+# bandera volveria a dar verde en cuanto alguien anadiera un gate nuevo, que es
+# exactamente como se colaron los trece que faltaban.
+caso_empieza E4
+SIN_CUBRIR="$(codigo "$RELEASE" | awk '
+    /(^|[^_[:alnum:]])(bash|python3)[[:space:]]+tests\// {
+        cubierto = 0
+        for (i = NR - 4; i < NR; i++) {
+            if (i > 0 && (buf[i] ~ /test_gate/ || buf[i] ~ /SKIP_TESTS/)) cubierto = 1
+        }
+        if (!cubierto) print "linea " NR ": " $0
+    }
+    { buf[NR] = $0 }
+')"
+asert "E4: ningun test que release.sh invoca queda fuera de test_gate o de SKIP_TESTS" \
+    "$([ -z "$SIN_CUBRIR" ] && echo 1 || echo 0)" \
+    "sin cubrir -> $(printf '%s' "$SIN_CUBRIR" | head -2 | tr '\n' ' ')"
+asert "E4: y hay gates de verdad que comprobar (si la lista fuera vacia el caso no mediria nada)" \
+    "$([ "$(codigo "$RELEASE" | grep -cE '(bash|python3)[[:space:]]+tests/')" -ge 10 ] && echo 1 || echo 0)"
+caso_termina E4
+
+# --- E5: el helper se EJERCE, no se lee ------------------------------------
+#
+# Un needle sobre el texto de `test_gate` pasaria aunque la funcion devolviera
+# lo contrario. Se extrae la definicion real del release.sh y se ejecuta.
+caso_empieza E5
+TEST_GATE_FN="$(sed -n '/^test_gate() {/,/^}/p' "$RELEASE")"
+R_SKIP="$(printf '%s\n' "$TEST_GATE_FN" | SKIP_TESTS=1 bash -c 'source /dev/stdin; test_gate x >/dev/null 2>&1; echo $?' 2>/dev/null)"
+R_RUN="$(printf '%s\n' "$TEST_GATE_FN" | SKIP_TESTS=0 bash -c 'source /dev/stdin; test_gate x >/dev/null 2>&1; echo $?' 2>/dev/null)"
+asert "E5: con SKIP_TESTS=1 declara el NO_EJECUTADO y devuelve 0" \
+    "$([ "$R_SKIP" = "0" ] && echo 1 || echo 0)" "devolvio '$R_SKIP'"
+asert "E5: y con SKIP_TESTS=0 devuelve 1, que es lo que deja pasar al gate" \
+    "$([ "$R_RUN" = "1" ] && echo 1 || echo 0)" "devolvio '$R_RUN'"
+DECLARA="$(printf '%s\n' "$TEST_GATE_FN" | SKIP_TESTS=1 bash -c 'source /dev/stdin; test_gate NOMBRE_DEL_GATE' 2>&1)"
+asert "E5: y lo que declara nombra el flag y el gate, no dice solo 'skipping'" \
+    "$(printf '%s' "$DECLARA" | grep -q 'NO_EJECUTADO (--skip-tests)' && printf '%s' "$DECLARA" | grep -q 'NOMBRE_DEL_GATE' && echo 1 || echo 0)" \
+    "declaracion: $(printf '%s' "$DECLARA" | tr -d '\n' | cut -c1-60)"
+caso_termina E5
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then

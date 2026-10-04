@@ -262,12 +262,88 @@ del lines[i]
 open(p, "w").write("\n".join(lines))
 '
 
+# M14 y M15: la clase de gates, no la bandera.
+#
+# M10 quito `--skip-tests` de las invocaciones y cae E0. Eso es cierto y no
+# basta: el defecto real era que el `if` de SKIP_TESTS cerraba antes de los
+# CATORCE gates, luego la bandera no cubria el camino de vuelta. E0 seguiria
+# verde con los trece sites sin cubrir. M14 quita UN `test_gate` de un gate
+# real, y es lo que tiene que caer: si E4 sobrevive a esto, E4 no vigila la
+# propiedad que su nombre dice.
+mutar "M14 un gate se queda sin test_gate y queda alcanzable bajo --skip-tests" "$RELEASE" "$WIRE" E4 \
+    "sin el envoltorio, ese test se ejecuta con --skip-tests y vuelve a entrar por el 3m." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+# quita el envoltorio de UN site real: el del falsador de diagnostico (3m), que
+# es el que cerraba el ciclo. Se dejan los demas intactos a proposito: E4 tiene
+# que caer por ESTE, no por un efecto colateral de habermelo borrado todos.
+# El needle se ancla en la linea que abre el gate y en el `elif` de la
+# invocacion, no en el texto del comentario de al lado: un needle escrito
+# contra lo que uno espera, y no contra lo que el codigo escribe, es un needle
+# roto. Ya paso, y el falsador lo declaro SKIP en vez de contarlo como
+# deteccion.
+lineas = s.split("\n")
+salida, quitado = [], False
+for l in lineas:
+    if not quitado and l.startswith("if test_gate ") and "test_release_diagnostics_mutation.sh" in l:
+        # se salta el `if`, la rama `:` y el `elif`, y la invocacion pasa a `if`
+        estado = 0
+        quitado = True
+        continue
+    if quitado and estado == 0:
+        estado = 1
+        continue          # la linea `:` con su comentario
+    if quitado and estado == 1:
+        assert l.startswith("elif bash tests/test_release_diagnostics_mutation.sh"), \
+            "el site de 3m no tiene la forma que esta mutacion supone: " + l
+        salida.append(l.replace("elif bash", "if bash", 1))
+        estado = 2
+        continue
+    salida.append(l)
+assert estado == 2, "no se encontró el site de 3m"
+open(p, "w").write("\n".join(salida))
+'
+
+# M15: el helper se EJERCE en E5, luego la mutacion tiene que cambiar lo que
+# DEVUELVE, no lo que parece. Cambiar `return 0` por `return 1` haria que un
+# gate declarado NOT_RUN se ejecutara, que es el falso verde en su forma pura.
+mutar "M15 test_gate devuelve 1 al saltarse, y un NO_EJECUTADO se vuelve PASS" "$RELEASE" "$WIRE" E5 \
+    "con return 1 el sitio que llama toma la rama del gate y lo da por bueno sin haberlo ejecutado." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "        return 0\n    fi\n    return 1\n}"
+nuevo = "        return 1\n    fi\n    return 1\n}"
+assert viejo in s, "el cuerpo de test_gate no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
+# M16: laDisk y la memoria son reglas DISTINTAS, y C8 mide que la que falla es
+# la que el mensaje senala. Se quita la rama de disco de la libreria: con ella
+# fuera, el "debe fallar por disco" de C8 dejaria de fallar y las dos aserciones
+# caeran. Es la unica mutacion que demuestra que C8 mira la FUNCION y no el
+# entorno -- que era exactamente lo que no hacia: hasta el quinto intento de
+# 2.9.0, C8 usaba el `df` real y se rompia en cuanto el disco se vaciaba.
+mutar "M16 la rama de disco del preflight desaparece y C8 deja de senalar el disco" "$LIB" "$TEST" C8 \
+    "sin la rama de disco, el caso que debe fallar por disco pasa, y con el pasan tambien las dos aserciones que comprueban el mensaje." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "if [ -n \"$free_mb\" ] && [ \"$free_mb\" -lt \"$SDDK_RELEASE_MIN_FREE_MB\" ]; then"
+nuevo = "if [ -n \"$free_mb\" ] && false; then"
+assert viejo in s, "la rama de disco no tiene la forma que esta mutacion supone"
+s = s.replace(viejo, nuevo, 1)
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'
 printf 'PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
-    printf 'RESULT: PASS — las trece comprobaciones tienen dientes, y el arbol quedo intacto.\n'
+    printf 'RESULT: PASS — las dieciseis comprobaciones tienen dientes, y el arbol quedo intacto.\n'
     exit 0
 fi
 if [ "$FAIL" -ne 0 ]; then
