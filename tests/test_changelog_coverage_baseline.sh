@@ -250,6 +250,39 @@ else
     ok "C3: y no llego a comparar contra ningun tag, que es lo unico correcto aqui"
 fi
 
+
+# ── C4: el workspace YA es la version publicada. Su seccion esta congelada ───
+# Este caso lo destapo el arreglo de INC-DEBT-070, y no lo preexisting: con la
+# linea base vieja este gate PASABA por el motivo equivocado. Medido en el repo
+# real: con el clon en v2.7.0 comparaba contra v2.7.0 y la seccion 2.8.0 si
+# declaraba esos commits, mientras la seccion que de verdad se iba a publicar ya
+# habia salido y no se puede ampliar.
+echo "-- C4: la seccion bajo prueba YA esta publicada y no puede ampliarse"
+F4="$TMP/f4"
+git init -q --bare "$TMP/remote4.git"
+make_fixture "$F4" "2.0.0" "feat(cli): lo que ya salio en 2.0.0"
+init_repo "$F4" "$TMP/remote4.git"
+git -C "$F4" tag v2.0.0
+git -C "$F4" push -q origin v2.0.0
+# Trabajo posterior a la release, sin version que lo recoja. La seccion 2.0.0
+# NO lo nombra, y no debe: ya se publico.
+git -C "$F4" commit -q --allow-empty -m "feat(cli): trabajo sin version todavia"
+if assert_fixture "$F4" 2 "C4"; then
+    ok "C4: el fixture tiene el commit posterior a la release que el caso afirma"
+fi
+OUT4="$(run_gate "$F4")"; RC4=$?
+if [[ "$RC4" -eq 0 ]]; then
+    ok "C4: el gate sale 0 — una seccion publicada no se puede ampliar, y eso no es un fallo"
+else
+    bad "C4: el gate exige a una seccion YA PUBLICADA que declare trabajo posterior; eso es pedirle que mienta sobre un artefacto distribuido"
+    sed -n '1,12p' <<<"$OUT4" | sed 's/^/        /'
+fi
+if grep -qE 'nothing to compare: workspace .* is the published tag' <<<"$OUT4"; then
+    ok "C4: y NOMBRA el motivo en vez de declarar cobertura que no ha comprobado"
+else
+    bad "C4: el gate pasa sin decir que no ha comprobado nada; un PASS sin base no es un PASS"
+fi
+
 # ── C0: control de no-vacuidad. Sin esto, un gate que solo sabe decir FAIL ───
 # pasaria los tres casos. El control exige que la fixture con todo en orden
 # produzca un PASS, luego el test puede distinguir "certeza" de "pesimismo".

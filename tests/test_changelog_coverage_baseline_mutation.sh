@@ -162,6 +162,26 @@ fi
     restore
 fi
 
+
+# ── M4: la seccion congelada se trata como si se pudiera ampliar ───────────
+# El caso que el arreglo de la linea base destapo: cuando el workspace ya es la
+# version publicada, su seccion salio y pedirle que declare commits posteriores
+# es pedirle que describa mal un artefacto que ya se distribuyo. Si el bloque
+# congelado desaparece, el gate cae a la comprobacion normal y falla. C4 cae.
+echo "-- M4: una seccion ya publicada se trata como ampliable"
+if muta_entre \
+    'WS_VER="$(sed -n' \
+    'done < <(git -C "$ROOT" log --format=%s "$LAST_TAG"..HEAD)' \
+    ': # MUTACION: desaparece el tratamiento de la seccion congelada. El gate
+# vuelve a la comprobacion normal y le pide a una seccion ya publicada que
+# declare el trabajo posterior, que es exactamente el defecto.
+'; then
+    if cae "M4" "C4"; then
+        ok "M4 detectado: el gate pidio a una seccion publicada que declarara trabajo posterior"
+    fi
+    restore
+fi
+
 # ── restauracion byte-identica ──────────────────────────────────────────────
 SHA_FINAL="$(sha256sum "$GATE" | cut -d' ' -f1)"
 if [[ "$SHA_FINAL" == "$SHA_ANTES" ]]; then

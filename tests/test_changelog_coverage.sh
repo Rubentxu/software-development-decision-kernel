@@ -155,6 +155,43 @@ fi
 
 echo "  (comparing against last published tag: $LAST_TAG)"
 
+# ── La seccion congelada: el workspace YA es la version publicada ───────────
+#
+# MEDIDO al cerrar 2.8.0, y este caso lo destapo el arreglo de INC-DEBT-070: con
+# la linea base vieja (clon en v2.7.0) este gate **pasaba por el motivo
+# equivocado** —comparaba contra v2.7.0 y la seccion 2.8.0 si declaraba esos
+# commits— mientras la seccion que de verdad se iba a publicar ya estaba
+# congelada. Con la linea base correcta el caso es visible y es real.
+#
+# Si el workspace ES el tag publicado, su seccion salio: **no se puede ampliar**,
+# y pedirle que declare commits posteriores es pedirle que mienta sobre un
+# artefacto ya distribuido. Esos commits pertenecen a la release siguiente, que
+# todavia no tiene version, luego no hay nada que comprobar aqui.
+#
+# Por que esto NO es una puerta trasera: dentro de `release.sh` este estado es
+# imposible, porque el paso 0 (`release_admission_check_v2`) exige que la version
+# del workspace en HEAD sea SEMVER MAYOR que el mayor tag publicado. Dos gates
+# independientes, y ninguno de los dos miente: este declara que no comprueba
+# nada y por que, y aquel se niega a publicar sin bumpear. Un gate que solo
+# puede decir "no" es el que entrena a ignorar los rojos, y eso lo impone el
+# propio gate en el caso del rango vacio (session-75).
+WS_VER="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml" | head -1)"
+TAG_VER="${LAST_TAG#v}"
+if [[ "$WS_VER" == "$TAG_VER" ]]; then
+    PENDING="$(git -C "$ROOT" log --format=%s "$LAST_TAG"..HEAD \
+        | grep -cE '^(feat|fix|test)' || true)"
+    if [[ "$PENDING" -eq 0 ]]; then
+        ok "nothing to ship: workspace ($WS_VER) is the published tag ($LAST_TAG) and the range is empty"
+    else
+        ok "nothing to compare: workspace ($WS_VER) is the published tag ($LAST_TAG) and $PENDING \
+feat/fix/test commit(s) since it belong to a release that has no version yet"
+    fi
+    echo
+    echo "PASS=$PASS FAIL=$FAIL"
+    echo "RESULT: PASS (the section under test is already published and cannot be extended)"
+    exit 0
+fi
+
 # Normalise a subject for comparison: lowercase, collapse whitespace.
 norm() { tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' '; }
 
