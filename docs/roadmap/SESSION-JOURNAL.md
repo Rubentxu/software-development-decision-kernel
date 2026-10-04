@@ -13335,3 +13335,180 @@ comentario del `Cargo.toml` y el del test.
 - `SPEC-012` (7 citas ambiguas de un ID, reportadas por `3h`), `HostEvent`
   (`INC-DEBT-065`), `INC-DEBT-050`/`061`, severidad de `060`, y el archivo de
   `a4-1-generic-verify`: todos ya medidos y registrados, ninguno abierto aqui.
+
+---
+
+## session_77 — el conjunto cerrado que nadie hacia cumplir, y la release que casi se republica
+
+**Contexto de arranque.** Estado recuperado de SDDK, no de `CURRENT.md` ni del
+journal: `adopt status` = `complete`, proyecto `p-63676b11dc0ef88f`, workspace
+`w-2e7853aadc28217a6649e309`, HEAD `91330def` en `main` publicado y arbol
+limpio, workspace 2.5.6 con el tag `v2.5.6` publicado. Cinco items vivos en el
+backlog. `SDDK PRE-FLIGHT` emitido antes de tocar codigo.
+
+### El encargo, y por que el encargo era pequeno
+
+El bloque pedido era anadir `resolved` al conjunto cerrado de `backlog discard`,
+para que la autoridad pudiera decir "ya esta arreglado" sin mentir: `wontfix`
+afirmaria una declinacion que no ocurrio y `superseded` exige un sucesor
+existente, luego las dos opciones fabricarian o una falsedad o un linaje.
+
+**MEDIDO AL BUSCAR DONDE VIVIA EL CONJUNTO: no vivia en el ledger.** Se
+midieron las cuatro capas y ninguna lo-era:
+
+- el dominio declaraba `BacklogError::InvalidDiscardReason` y **nunca lo
+  construia**; su mensaje llevaba la lista de motivos transcrita a mano;
+- `BacklogEvent::Discarded.reason` era `String`, y los **propios tests del
+  storage** escribian `"won't fix"`, `"done"` y `"x"`;
+- `BacklogItemDiscardedSchema` exigia que `reason` fuera string, no que
+  estuviera en el conjunto;
+- `append_event` no valida contra el schema.
+
+Lo unico que exigia la pertenencia era el `ValueEnum` de clap. Anadir un
+miembro habria ampliado una lista que nadie verificaba, y el
+`InvalidDiscardReason` era codigo muerto que ademas **declaraba** un
+conjunto cerrado que no cerraba nada.
+
+### Lo que se hizo
+
+`BacklogDiscardReason` en `sddk-domain` como autoridad unica, con
+`resolved`; de ella salen la pertenencia del schema, el mensaje de error
+(renderizado desde `ALL`, no transcrito — era una cuarta copia) y la regla de
+linaje (`requires_successor`: solo `superseded` exige sucesor). El campo del
+evento pasa a tipado: un motivo invalido deja de ser **construible**. La CLI
+conserva su enum de clap porque el derive no cruza de crate, pero como adapter
+delgado con guard de biyeccion.
+
+**La garantia del campo es de tiempo de compilacion**, y una suite que solo
+compila es indistinguible de una que no se ejecuto nunca. Un rasgo sellado la
+hace observable: si el campo vuelve a `String`, el fichero deja de compilar y
+el guard se ve caer. Es lo unico que convierte esa garantia en algo vigilable.
+
+### Tres falsadores, y tres formas de medirlos mal
+
+`tests/test_backlog_discard_reason_enforcement_mutation.sh` (`PASS=5 FAIL=0
+SKIP=0`), cableado como paso **3i**. Tres defectos **del propio falsador**,
+encontrados al construirlo, los tres de la misma familia: *medir mal la propia
+falsacion*.
+
+1. **La aguja era la asercion, no el test.** M1 y M4 caian, pero el script las
+   declaraba "fallo por una causa distinta". Y M4 era el caso grave: la
+   mutacion quitaba `Resolved` del enum de la CLI y eso moria por un error de
+   compilacion porque el propio guard referencia la variante — o sea que
+   **cualquier** borrado de variante habria caido igual sin ejercitar la logica
+   del guard. La mutacion ahora colapsa dos motivos CLI sobre un mismo miembro
+   del dominio: compila y exige la asercion de inyectividad. Y la aguja paso a
+   ser el **nombre del test**: fijarse en la asercion hace que el falsador
+   dependa del ORDEN en que un test se comprueba, que no es la propiedad
+   vigilada.
+2. **`cargo test "$filtro"` comillado** pasaba `-p crate --lib nombre` como un
+   unico argumento; cargo lo tomaba por nombre de paquete. Cuatro de las cinco
+   mutaciones se declararon no detectadas cuando si lo estaban.
+3. **Tercera vez en la sesion** que un needle ambiguo reporta el veredicto
+   invertido — buscar el NOMBRE del caso en vez de la FORMA `PASS [...]` da
+   "sigues verdes" justo cuando ha caido. El unico arreglo en los tres casos
+   fue el mismo: **medir la forma del resultado, no su contenido**.
+
+Y un cuarto defecto, **mio de edicion**: al reescribir `muta()` perdi por un
+momento el bloque que convierte "la mutacion no encontro su texto" en `SKIP`.
+Estaba a punto de meter en el guard que caza falsos `PASS` el mismo falso
+`PASS` que caza. Repuesto antes de dar nada por bueno.
+
+### El defecto que encontro la propia release, y que era de otra familia
+
+Al preparar el bump, el dry-run dijo "workspace (2.5.6) is ahead of last tag
+(2.5.5); the workspace declares the pending release (2.5.6)". **La 2.5.6 ya
+estaba publicada.** MEDIDO: `git tag` se paraba en `v2.5.5` mientras
+`git ls-remote --tags origin` devolvia `v2.5.6` y la release de GitHub existia
+con sus 9 assets. El clon local nunca se habia traido ese tag.
+
+La consecuencia no era un numero equivocado: el script concluia que no habia
+nada que derivar y `release.sh` habria recibido un tag **ya publicado**.
+
+**Es el mismo defecto de session-76, una capa mas arriba**: la pregunta
+"cual es la ultima version publicada" tenia DOS respuestas, y las dos se
+ejecutan en el mismo pipeline. `release-bump.sh` leia `git tag` del clon LOCAL;
+`scripts/lib/release_admission.sh` —que usan el hook de admision de push y el
+gate 9b— lee `git ls-remote --tags origin`. La local se queda vieja porque
+`gh release create` publica en el remoto y nada del pipeline actualiza el
+clon.
+
+El arreglo usa la misma autoridad con la misma semantica de TRES resultados que
+no se pueden confundir: remoto que responde (autoritativo); **sin remoto
+configurado** (la lista local, que no puede estar vieja respecto de un remoto
+que no existe); remoto que no responde (**fail-closed**, porque "no veo el
+remoto" y "no hay nada publicado" no pueden leerse igual). Cada ejecucion
+imprime **de donde** salio la linea base.
+
+Falsador propio `tests/test_release_bump_remote_baseline_mutation.sh`
+(`PASS=2 FAIL=0 SKIP=0`), tambien en el 3i. Y de paso: la excepcion de
+`test_gate_coverage.py` que eximia al test de derivacion decia "requiere red" y
+**era falsa en las dos direcciones** —el script consultaba tags locales, luego
+no tocaba la red, y sus fixtures usan un remoto bare en disco—; ademas el test
+solo estaba "cubierto" porque otro guard lo mencionaba en un comentario, que
+es justo lo que ese fichero decide NO contar.
+
+### Tres paradas de la release, y las tres eran gates que funcionan
+
+1. `test_release_state_pointer.sh`: puntero 5 commits atras y version
+   desalineada. Reconciliado con el script mecanico, conservando la evidencia.
+   **El orden importa**: el puntero tiene que nombrar un commit que este en
+   `origin/main`, asi que los commits de producto se publicaron primero y el
+   documental va detras.
+2. `test_build_identity_policy.sh`: `PASS=7 FAIL=1` con seis avisos de
+   shellcheck. **Dos eran SC2181, el mismo error que session-75 ya habia
+   corregido en otro falsador** (`$?` despues de un here-doc mide el comando
+   anterior, no python) — repetido aqui por el mismo patron. Los otros: SC2086
+   resuelto con array (la expansion sin comillas era correcta y habia que
+   conservarla), SC2016 con disable de fichero y motivo (las cadenas de
+   mutacion llevan backticks que deben quedar literales; expandirlos
+   corromperia el literal y fabricaria un `SKIP`), y SC1091 por source
+   dinamico.
+3. El gate de changelog exigio la entrada del `fix` de shellcheck. Correcto: un
+   commit que se publica y no aparece en el changelog hace que el artefacto se
+   describa mal.
+
+Ninguna de las tres era ruido: las tres gates detectaron algo real, y las tres
+habrian dejado pasar un artefacto mal descrito o un tag ya publicado.
+
+### Estado al cierre
+
+`REL-2.6.0` **PUBLICADA con `EXIT=0`**, tag commit
+`9fdfa7d940c0ab4f2a10fc09927e024f7cd8d34c`, publicada `2026-10-04T07:20:07Z`,
+9/9 assets, `draft=false`, `prerelease=false`. Los dos pasos nuevos ejecutados
+en la release real y verdes: `autofalsación del conjunto de descarte: PASS=5
+FAIL=0 SKIP=0` y `autofalsación de la línea base del bump: PASS=2 FAIL=0 SKIP=0`.
+Binario instalado `sddk 2.6.0` con `framework/current -> 2.6.0`, y
+**`backlog discard` acepta `resolved`**.
+
+Verificacion de producto: 2245 tests verdes / 0 fallos en 87 suites del
+workspace, `cargo fmt --check` y `cargo clippy --all-targets` limpios,
+`test_gate_coverage.py` con 63 tests y 0 sin runner, `shellcheck --severity=style`
+limpio en los tres shell tocados.
+
+El backlog vivo pasa de **5 items a 1**, y el que queda es trabajo real: el P1
+del paso 1 del release sin cota de memoria, que muere por OOM bajo carga sin
+diagnostico. Los otros cuatro se cerraron con el verbo que cada uno merecia, y
+ninguno por convenience: el P1 de `context bootstrap` con **`resolved`** tras
+**re-medir** su afirmacion en este mismo commit —los tres comandos coinciden en
+`p-63676b11dc0ef88f` y el huerfano `p-995939af668a53d8` que citaba **no existe
+en la tabla `projects`**—, y los dos fixtures de `smoke-test-cycle` /
+`re-triage-test` con `wontfix` porque nunca fueron trabajo.
+
+### Lo que queda abierto, y por que NO se ha tocado
+
+- **El paso 1 del release no tiene cota de memoria** (P1 vivo,
+  `bl-bl-01M42JGYG4000388551BF9NZ40`). MEDIDO en session-76: `MemAvailable` a
+  2,4 Gi con el swap al 100% produjo un OOM-kill en el paso mas temprano, con el
+  log truncado sin linea `EXIT=` y sin trampa de limpieza. Hoy corrieron cuatro
+  releases con 25-33 GiB libres; la maquina es un recurso compartido y puede
+  volver a matar el run. **Una release puede morir por el estado de otra
+  maquina, y ese es el peor sitio posible para enterarse.**
+- El ciclo sigue sin lease viva y el ledger guarda 188 ciclos con 29 `OPEN`.
+  Archivar o transicionar es escritura sobre el ledger: decision del operador.
+- La **firma** sigue irreducible sin material externo y el ancla sigue siendo el
+  placeholder. **No se fabricara una clave ni un ancla.** Las releases v2.5.3 a
+  v2.6.0 se publicaron sin firmar.
+- `SPEC-012` (7 citas ambiguas de un ID), `HostEvent` (`INC-DEBT-065`),
+  `INC-DEBT-050`/`061`, severidad de `060` y el archivo de
+  `a4-1-generic-verify`: ya medidos y registrados, ninguno abierto aqui.
