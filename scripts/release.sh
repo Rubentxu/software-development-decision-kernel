@@ -416,7 +416,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_vault_coherence_alignment.sh \
              tests/test_build_identity_policy.sh \
              tests/test_kmt_canonical_meaning.sh \
-             tests/test_release_build_identity.sh; do
+             tests/test_release_build_identity.sh \
+             tests/test_binary_freshness_checker.sh; do
         # Fail-closed. Session-75: este `if [ -x ]` con `warn` + skip era un
         # agujero silencioso. Cinco de los tests enumerados llevaban 644, se
         # saltaron en v2.5.3, v2.5.4 y v2.5.5, y el paso seguia imprimiendo
