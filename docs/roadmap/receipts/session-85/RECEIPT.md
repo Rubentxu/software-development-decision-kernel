@@ -52,6 +52,17 @@ MEDIDO también, y es la parte que importa:
 
 ### PipelineK (Kotlin/Gradle) — **no, y el motivo está escrito en el código**
 
+> **ADENDA, posterior a este recibo.** La medición de arriba dice que SDDK
+> *no mira* `build.gradle.kts`. Eso era verdad al publicarse y **ha dejado de
+> serlo**: `b9b59069` (ADR-0163) añade la capacidad de **preguntar** a la
+> herramienta de build con `--evaluate-build`. Lo que queda es distinto y hay que
+> no leer este parrafo como el estado actual: hoy SDDK **pregunta**, y lo que se obtiene
+> en ese checkout es `Invalid` con el motivo del propio Gradle
+> (`Another Gradle invocation is already using this v2 checkout`), porque otra
+> invocación tiene el checkout tomado. Es un bloqueo **del entorno**, no del
+> código, y se nombra en vez de esconderse. El repo sigue intacto y sin segunda
+> declaración. Detalle en `docs/roadmap/receipts/cl-build-model-observation/`.
+
 MEDIDO en `/var/home/rubentxu/Proyectos/kotlin/pipeline-kotlin`:
 
 1. **El monorepo tiene 37 targets** y SDDK se niega a elegir:
