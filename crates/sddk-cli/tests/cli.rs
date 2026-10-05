@@ -13059,8 +13059,28 @@ fn release_bump_prepends_changelog_and_resets_manifest_version() {
     // Copy the script into the scratch repo so ROOT derivation points there.
     let script_dir = root.join("scripts");
     fs::create_dir_all(&script_dir).unwrap();
-    let script_src = std::env!("CARGO_MANIFEST_DIR").to_string() + "/../../scripts/release-bump.sh";
-    fs::copy(&script_src, script_dir.join("release-bump.sh")).unwrap();
+    let scripts_src = std::path::Path::new(std::env!("CARGO_MANIFEST_DIR")).join("../../scripts");
+    fs::copy(scripts_src.join("release-bump.sh"), script_dir.join("release-bump.sh")).unwrap();
+    // `release-bump.sh` sourcea `scripts/lib/changelog_merge.sh`, asi que el
+    // sandbox necesita la libreria tambien. MEDIDO (session-82): sin esta
+    // copia, el release 2.11.0 MURIO en el paso 1 con
+    // `release-bump.sh failed: ... linea 373: <ruta del scratch>` — un
+    // error que nombra una linea y no dice que le falta el fichero, y que
+    // durante un rato se leyo como un fallo del release y no como una
+    // dependencia que este test no proveyo.
+    //
+    // Y el error era de la clase que este repo ya ha pagado varias veces:
+    // el script de produccion y el test se desarrollo cada uno por su
+    // cuenta, y lo que uno gana el otro no lo ve. Aqui la dependencia se
+    // copia entera, no una funcion suelta.
+    let lib_dst = script_dir.join("lib");
+    fs::create_dir_all(&lib_dst).unwrap();
+    for entry in fs::read_dir(scripts_src.join("lib")).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_file() {
+            fs::copy(entry.path(), lib_dst.join(entry.file_name())).unwrap();
+        }
+    }
 
     // Stub cargo so `cargo check` inside the script is a no-op.
     let bin = root.join("stubbin");

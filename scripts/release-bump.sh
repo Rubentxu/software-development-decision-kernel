@@ -367,10 +367,25 @@ trap 'rm -f "$ENTRY_FILE"' EXIT
 # es la misma que usa el gate 2b.
 # shellcheck source=lib/changelog_merge.sh
 # SC1091: la ruta del source es una variable ($ROOT) y el analisis estatico
-# no puede seguirla. La existencia del fichero se comprueba en el `case` de
-# abajo: si la libreria no estuviera, el source aborta con set -e.
+# no puede seguirla. Por eso la existencia se comprueba ANTES, aqui: con un
+# source desnudo y `set -e`, una libreria ausente mata el script en la linea
+# del source con un error que nombra una linea y no dice que le falta el
+# fichero. MEDIDO (session-82): asi murió el release 2.11.0 en el paso 1,
+# y el mensaje era `release-bump.sh failed: ... linea 373: <scratch>`.
 # shellcheck disable=SC1091
-. "$ROOT/scripts/lib/changelog_merge.sh"
+CHANGELOG_MERGE_LIB="$ROOT/scripts/lib/changelog_merge.sh"
+if [ ! -f "$CHANGELOG_MERGE_LIB" ]; then
+    echo "error: falta la libreria del merge del changelog:" >&2
+    echo "       $CHANGELOG_MERGE_LIB" >&2
+    echo "       Se busca RELATIVA a este script, luego cualquier sitio donde" >&2
+    echo "       se copie release-bump.sh sin scripts/lib/ tiene que llevar la" >&2
+    echo "       libreria tambien. Un fallo asi no dice que version se iba a" >&2
+    echo "       publicar ni que parte del trabajo ya estaba hecha: solo dice" >&2
+    echo "       que un fichero no estaba." >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$CHANGELOG_MERGE_LIB"
 
 CHANGELOG_DISPOSITION="$(changelog_merge CHANGELOG.md "$NEXT" "$ENTRY_FILE")"
 
