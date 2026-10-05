@@ -1,3 +1,87 @@
+# CURRENT — puntero de sesion vigente
+
+> **Este bloque es el estado actual. Todo lo que hay por debajo de la
+> linea `--- HISTORICO ---` esta DEMOTADO y describe un estado que ya no
+> es cierto** (session-29, cuando la siguiente release aun era 2.2.0).
+> Se conserva, no se borra, y no se lee como estado.
+
+**Revalidar siempre contra Git antes de creerse nada de aqui.** La
+autoridad del estado operativo es SDDK (`sddk cycle`, ledger) mas el
+proceso; estos ficheros son el rastro, no la fuente.
+
+## Estado a 2026-10-05 (session-81b cerrada)
+
+- **Release vigente: `v2.10.0`**, publicada `2026-10-05T05:25:51Z`,
+  `draft=false`, `prerelease=false`, **9 assets**, verificada contra la
+  API y el CDN. Tag `v2.10.0` -> `4b9e191f` (= HEAD al publicar).
+- **Instalado en local**: `sddk 2.10.0`,
+  `~/.local/share/sddk/framework/current -> 2.10.0`, bundle en layout raiz
+  con `MANIFEST.sha256` a un nivel. `sddk dev doctor` da
+  `all_present: true`.
+- **Workspace `Cargo.toml` = 2.10.0**, alineado con el tag publicado.
+- **Firma: `UNSIGNED` declarado** (`SDDK_SKIP_SIGNING=1`). El ancla y
+  `SDDK_RELEASE_VERIFY_KEY_BODY` en `scripts/install.sh:235` son
+  placeholder. No fabricar clave ni ancla.
+- **Proyecto SDDK**: `p-63676b11dc0ef88f`, ledger real en
+  `~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite`.
+
+## Que quedo cerrado en session-81b
+
+- **INC-DEBT-064** -> `resolved`. El juez de frescura del binario vive
+  en el checkout (`scripts/check_binary_freshness.sh`), no en el
+  artefacto: el binario aporta el HECHO de si mismo y el checkout calcula
+  el JUICIO, porque sin punto de referencia no hay juicio. Guard
+  hermetico con autofalsacion, cableado en el 1b, y la regla en AGENTS.md
+  2.3.1. La condicion de fondo («el binario del PATH va atrasado») NO se
+  elimina; se cierra el dano de medir sin saberlo.
+- **INC-DEBT-071** -> `resolved` en session-81a. 21 sitios de
+  `grep -q` con pipefail convertidos a `grep -c`, con guard y falsador.
+
+## Que sigue abierto, y por whom
+
+| Deuda | Sev | Owner | Que falta |
+|---|---|---|---|
+| INC-DEBT-050 | critical/P1 | **operador** | alias que aparta 12 ciclos con historia partida |
+| INC-DEBT-061 | high/P1 | **operador** | 6/15 alias con historia partida; 53 ciclos apartados |
+| INC-DEBT-073 | medium/P2 | codigo | el gate de shellcheck sin filtro de severidad y que solo mira el rango |
+| INC-DEBT-074 | medium/P2 | codigo | el merge del changelog no deduplica; su test COPIA el bloque |
+| INC-DEBT-072 | low/P3 | codigo | el paso 15 imprime `bundle: None` con el bundle instalado (confirmado en 2.10.0) |
+
+**No tocar 050 ni 061**: son decision del operador/producto.
+
+## Siguiente bloque, por valor medido
+
+1. **INC-DEBT-074** — el orden de las tres salidas esta escrito: (1)
+   extraer el merge a una funcion que **ejecuten** tanto
+   `release-bump.sh` como el test, porque sin eso el punto 2 no es
+   verificable; (2) deduplicar por la **misma** regla del gate 2b;
+   (3) asercion de no-duplicado, falsada quitando el dedup. Es deuda que
+   ya ha costado un recorte manual no repetible.
+2. **INC-DEBT-073** — decidir la severidad minima que cobra el gate de
+   shellcheck y correr **una vez** el censo de deuda de lint del repo,
+   para que "cero avisos" sea alcanzable y no una sorpresa por fichero.
+3. **Residuo declarado de 064** — cablear el juez de frescura en el camino
+   que **certifica** una medicion (verify de ciclo o UAT), **nunca en el
+   1b**: ahi el binario del PATH es viejo por construccion durante un
+   release y el gate seria rojo siempre sin medir nada.
+4. **C5 del roadmap** — conformar el repo al gate de arquitectura
+   (eliminar ARCH003/ARCH008, implementar los 10 evaluadores), segun la
+   nota de C3l.7 en `ROADMAP.md`.
+
+## Dos reglas que este bloque cobro por el camino
+
+- **bump primero, puntero despues.** El 1b exige que
+  `workspace_version_at_current` coincida con `Cargo.toml` y que el
+  puntero este a <=3 commits de `main`. Reconciliar el puntero antes del
+  bump costo el primer intento de 2.10.0: las dos comprobaciones que
+  caeron eran la misma causa.
+- **Un codigo de salida hay que saber de quien es.** Dos wrappers
+  consecutivos mintieron en direcciones opuestas (un `echo` final y un
+  `rm -f` de un shim), y ninguno de los dos era el release. Lo que
+  produjo el diagnostico fue `git ls-remote` y `gh release view`.
+
+--- HISTORICO (session-29 y anteriores — NO es estado actual) ---
+
 # CURRENT — puntero de reanudación de SDDK
 
 **Estado (session-75, 2026-10-04): `v2.5.5` PUBLICADA, Y EL RECORRIDO `0`..`13` DEL PIPELINE CORRIO `EXIT=0` COMPLETO POR PRIMERA VEZ EN ESTE REPO.** `HEAD` = `886e47cc` = commit del tag `v2.5.5`. Workspace **2.5.5 declarada y publicada** (último tag `v2.5.5`, publicada `2026-10-03T22:56:09Z`).

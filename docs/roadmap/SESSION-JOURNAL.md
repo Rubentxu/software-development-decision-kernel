@@ -14315,3 +14315,220 @@ el defecto de la mutacion anterior entre casos no mide la que dice medir.
 - **Sin medir, y por tanto sin afirmar**: si el gate de shellcheck puede
   seguir reventando una release. Ahora se sabe que **si**, y por que, pero
   el censo de deuda de lint del repo no se ha corrido.
+
+---
+
+## session-81b — 2026-10-05T05:35Z — INC-DEBT-064 resuelta y REL-2.10.0 publicada e instalada
+
+Actor: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
+WorkItem: cierre de INC-DEBT-064 + release del bloque
+Rango: `f19df586..4b9e191f` (published = `4b9e191f` = `v2.10.0`)
+
+### 1. INC-DEBT-064 — revalidada por ejecucion antes de tratarla
+
+La regla de `autonomo` dice: alerta de deuda cuyos criterios ya no
+viguran no es deuda. Se revalido y **dos de las tres afirmaciones eran
+CADUCADAS**:
+
+- «`dev doctor` no invoca el check» — FALSO. Lo publica
+  (`binary.build_identity`) y `--strict` sale con **1**.
+- «la fase verify esta abierta» — FALSO. Cerrada en `261a578c`.
+- «el binario del PATH sigue obsoleto» — VIGENTE, y es **estructural**.
+
+Lo que faltaba no era la deteccion sino **donde vive el JUICIO**.
+`dev build-id --check` se ejecuta desde el binario que juzga, y eso rompe
+la propiedad de dos maneras: no se puede comprobar nada **antes** de
+instalar, y un artefacto anterior a `032e9553` contesta
+`unrecognized subcommand` con rc=2 (MEDIDO con un stub) luego **no puede
+ni declarar que no lo tiene**.
+
+**La separacion que cierra la deuda**: el binario aporta el **HECHO**
+(`--format json`: su commit y si su arbol estaba sucio) y el checkout
+calcula el **JUICIO**, porque el checkout es el punto de referencia. Un
+artefacto puede dar un hecho sobre si mismo; nadie puede juzgarse sin algo
+externo. De ahi que el juez viva en el repo y no en el binario.
+
+Entregado: `scripts/check_binary_freshness.sh` (siete relaciones, solo
+`matches` y `ahead` verdes; `--format json`),
+`tests/test_binary_freshness_checker.sh` (10 checks, 0 fallos, hermetico,
+autofalsado), la regla en AGENTS.md 2.3.1, y la deuda a `resolved`.
+
+**Lo que el guard cazo de verdad**: en su primera corrida honesta, `dirty`
+salia `matches`/OK. Dos causas, ninguna vista por revision — el parser
+exigia comillas en un booleano y luego lo capturaba con espacios al
+final. El contraste entre el parser y el ejecutable lo vio; la revision
+no.
+
+**Lo que NO se cierra y no se dice lo contrario**: la condicion
+«el binario del PATH va atrasado» no se elimina (se instala desde un
+release, el workspace no bumpea entre releases, luego todo el trabajo
+posterior comparte numero con el). Lo que se cierra es el **daño**:
+medir sin saberlo. El residuo declarado es que **ningun runner invoca**
+el script ni `doctor --strict`; el cierre se apoya en la regla, no en la
+imposibilidad de saltarsela.
+
+### 2. La version NO fue la que yo habia planeado, y corregirlo fue lo barato
+
+El plan de este bloque decia 2.9.2 (patch). **Falso**, y medido antes de
+publicar: `scripts/release-bump.sh --dry-run` lee el **remoto** con la
+misma autoridad que el gate 9b y devuelve `v2.9.1 -> v2.10.0 (minor)`,
+porque el rango contiene un `feat(cli)`. Publicar 2.9.2 habria publicado
+un artefacto que se describe mal a si mismo: un changelog cuya cabecera
+dice una version y cuyo contenido es de otra.
+
+### 3. El bump destapo un defecto de su propio tooling — INC-DEBT-074
+
+`release-bump.sh:357-377` hace `tail -n +2 "$ENTRY_FILE"` al final de la
+seccion existente **sin comparar** con lo que ya declara. Y el orden del
+flujo hace inevitable el solapamiento: el preflight pide HEAD =
+`chore(release): bump version`, luego la seccion del artefacto que se
+publica tiene que existir **antes** del bump.
+
+**MEDIDO**: la seccion `## [2.10.0]` quedo con las 6 entradas
+**escritas dos veces** (la prosa en las lineas 8-15, el bloque
+autogenerado con el subject pelado en las 19-27). Hubo que recortarlo a
+mano, y ese recorte no es repetible.
+
+**El gate 2b no lo ve y no es culpa suya**: comprueba **presencia** por
+huella, y duplicar no incumple presencia — con el duplicado puesto daba
+`PASS=5 FAIL=0`. Contesta «el changelog describe el trabajo», que no es
+«lo describe una vez».
+
+**La segunda cara es la que impide el arreglo**:
+`tests/test_changelog_merge.sh:30-43` **pega el bloque del merge
+literalmente** («copied verbatim from release-bump.sh»). Cambiar el merge
+no mueve el test, luego un dedup correcto no seria verificable por el
+unico guard que existe para ese bloque. Es la clase de «una copia del
+codigo no vigila el codigo», ya pagada varias veces en este repo y aqui
+peor que en las anteriores, porque **el objeto exclusivo del guard es
+justamente ese bloque**.
+
+Registrado como **INC-DEBT-074** (medium/P2) con las tres salidas en
+orden, y la primera es extraer el merge a una funcion que ambos ejecuten.
+
+### 4. La alta de la deuda se autovigilo, y esa asercion tambien se falsifico
+
+Tres veces seguidas en este repo se escribio `]]` de mas en una fila de
+`docs/debt/README.md`, y cada vez la fila dejo de parsear: el guard
+`check_debt_index_coherence.sh` dejo de vigilar esa deuda **y siguio
+dando verde**. El alta de 074 se hizo con un script que construye el ID
+una vez y **aserta que el numero de filas parseables subio +1**.
+
+**Y esa asercion se falsifico con el defecto real** antes de darla por
+buena: anadiendo `]]` de mas, el recuento pasa de **56 a 55** (delta -1,
+no +1) luego el script aborta sin escribir nada.
+
+MEDIDO: indice 56 entradas, 56 estados, `RESULT: PASS`.
+
+Dos cosas que la asercion aprendo al construirla, y que no se ven en el
+codigo: el grupo 1 del regex del guard es el **SLUG completo** entre
+corchetes, no el ID; y `at` es un **indice de linea** mientras `after` es
+una lista de filas **parseadas** — las cuatro vinetas de cabecera
+(SEVERITY, PRIORITY, schema, template) no casan, luego los dos indices no
+son el mismo numero. Comparar la fila nueva con `at` daba una fila que no
+era la nueva, y el abort fue correcto.
+
+### 5. REL-2.10.0: el primer intento MURIO, y la causa fue mi orden
+
+**Intento 1 — muerto en el 1b** con dos fallos de
+`tests/test_release_state_pointer.sh`:
+
+```
+4: [FAIL] el puntero va 4 commit(s) por DETRAS de main (tolerancia 3)
+8: [FAIL] workspace_version_at_current dice '2.9.1' pero Cargo.toml dice '2.10.0'
+```
+
+Reconcilie el puntero **antes** del bump. Es la misma causa contada dos
+veces, y las dos aserciones tienen dientes: la primera por retraso, la
+segunda por contradiccion con la version.
+
+**EL ORDEN CORRECTO, que queda escrito para que no se invierta:
+bump primero, puntero despues.** El puntero tiene que nombrar un commit
+que ya este a la version que se publica, y ademas ir cerca de `main`;
+las dos condiciones empujan al final del rango.
+
+**El script me lo habia dicho y lo descarte.** En `c1d15ca1` imprimio
+«el commit objetivo NO es un bump de version, pero el puntero declarara
+2.9.1», y lo lei como «correcto, no requiere accion» porque 2.9.1 SI era
+la version de ese commit. Describia el **futuro** —el siguiente commit
+cambia la version— y lo lei como si describiera el presente. **Un aviso
+que solo nombra un hecho presente y un peligro futuro se lee como
+veredicto sobre el presente**, y por eso hay que leer que tipo de frase
+es antes de obedecerla.
+
+Verificado aislado antes de gastar el segundo intento:
+`PASS`, 9 comprobaciones, `workspace_version_at_current (2.10.0) ==
+Cargo.toml (2.10.0)`, 0 commits de retraso.
+
+**Dos wrappers mios mintieron en el camino, y las dos por el mismo
+motivo — no saber de donde viene un codigo de salida.** El primer
+lanzamiento puso `; echo "=== RELEASE_RC=$? ==="` y la task anuncio
+«exited 0»: ese 0 era del `echo`, no de `release.sh`. El segundo
+lanzamiento encadeno con `&&` un `rm -f` sobre un log inexistente; el
+shim `rm` (que delega en `mavis-trash`) sale con 1 cuando el destino no
+esta, luego `bash scripts/release.sh` **no llego a ejecutarse** y el
+`RELEASE_RC=1` era del shim. Se vio porque un log de una sola linea no
+puede ser un release que murio en el 1b habiendose impreso antes
+7 308 lineas. **Lo que produjo el diagnostico correcto fue comparar
+contra el remoto** (`git ls-remote` vacio, `gh release view` sin release),
+no el log ni el codigo de salida.
+
+### 6. REL-2.10.0 — verificada contra la API y el CDN, no contra el log
+
+- Tag remoto `v2.10.0` -> `4b9e191f` (= HEAD), publicado
+  `2026-10-05T05:25:51Z`
+- `isDraft=false`, `isPrerelease=false`, **9 assets** (contrato de 9b)
+- **CDN real**, los 6 assets sondeos por nombre: HTTP 200 en todos, con
+  tamano identico al de la API — `sddk` 31 862 720 B,
+  `software-development-decision-kernel.tar.gz` 679 505 B,
+  `sddk-v2.10.0-sddk-linux-x86_64-musl.tar.gz` 12 615 328 B, mas
+  `CHECKSUMS`, `sbom.json` y `gh-release-receipt.json`
+- Instalado: `sddk 2.10.0`,
+  `framework/current -> 2.10.0`, binario 31 862 720 B
+- Bundle en **layout raiz** con `MANIFEST.sha256` a un nivel —el contrato
+  que exige el consumidor— y `BUNDLE.toml` v2 con las 3 claves a 2.10.0
+- `sddk dev doctor`: `all_present: true`, `binary.build_identity: present`
+- **Cierre del circulo**: el juez de frescura que este mismo release
+  publico, corrido sobre el release que publico, da
+  `relacion: matches` / `veredicto: OK` / `el binario es exactamente
+  este HEAD` (rc 0). Es la primera vez que se mide con la herramienta
+  entregada y no con el log de la entrega.
+- Firmado: **`UNSIGNED` declarado** (`SDDK_SKIP_SIGNING=1`). El ancla y
+  `SDDK_RELEASE_VERIFY_KEY_BODY` en `scripts/install.sh:235` siguen siendo
+  placeholder. No se fabrica clave ni ancla.
+- `RELEASE_RC=0`
+
+### 7. Lo que sigue vivo, sin adornos
+
+- **INC-DEBT-050** (critical/P1) y **INC-DEBT-061** (high/P1): decision del
+  operador / producto. No tocar.
+- **INC-DEBT-073** (medium/P2): el gate de shellcheck sigue sin filtro de
+  severidad y sigue mirando solo el rango.
+- **INC-DEBT-074** (medium/P2, nueva): el merge del changelog no
+  deduplica y su test copia el bloque.
+- **INC-DEBT-072** (low/P3): el paso 15 del release imprime
+  `bundle: None` **aunque el bundle esta instalado y verificado**. Es
+  esta deudaalive otra vez, y la medicion de hoy la confirma en un
+  release que si se publico bien.
+- El residuo declarado de INC-DEBT-064: el juez de frescura no esta
+  cableado en ningun runner. Si se cablea, es en el camino que
+  **certifica** una medicion (verify de ciclo o UAT), **nunca en el 1b**,
+  donde el binario del PATH es viejo por construccion durante un release.
+- Convenciones que no caben en el mismo commit y quedan **ditas, no
+  cumplidas en silencio**: AGENTS.md pide el bump al final, el estado pide
+  el puntero al final. Se cumple la que **exige un gate**; el preflight
+  emite `warn` (no `die`, `release.sh:316-318`) por el subject.
+
+### 8. Commits del bloque (todos en `origin/main`)
+
+| SHA | Que |
+|---|---|
+| `f19df586` | feat(cli): el juez de frescura vive en el checkout |
+| `0eb0765b` | test(cli): el guard del juez, 10 checks, autofalsado |
+| `fd2ea56e` | docs(cli): la regla de AGENTS.md 2.3.1 |
+| `f8043039` | docs(debt): INC-DEBT-064 a `resolved` |
+| `c1d15ca1` | docs(state): puntero (reconciliado donde no tocaba) |
+| `37cec230` | docs(changelog): seccion 2.10.0 |
+| `99d5859c` | chore(release): bump 2.9.1 -> 2.10.0 + recorte del duplicado |
+| `314ac51c` | docs(debt): INC-DEBT-074 |
+| `4b9e191f` | docs(state): puntero reconciliado **despues** del bump (= tag) |
