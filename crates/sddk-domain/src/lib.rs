@@ -49,6 +49,7 @@ pub mod test_select;
 pub mod transition_ast;
 pub mod uat;
 pub mod validator;
+pub mod version_authority;
 pub mod view;
 pub mod workflow;
 pub mod workflow_ir;
