@@ -14697,3 +14697,54 @@ cuyo stdout es un contrato legible por maquina: toda limpieza va con
 - El preflight de la release avisa de que HEAD no es
   `chore(release): bump version` cuando el ultimo commit es el del
   puntero: es un `warn` (`release.sh:316-318`), no un `die`.
+
+### Adenda — el guard de contaminacion NO se rompio: mi runner si
+
+Al cerrar este bloque lanzo la superficie completa con un bucle que hace
+`bash "tests/$t"` para **todos** los tests. Los dos ultimos de la lista son
+**Python**, `test_spec_citation_anchor.py` y
+`test_docs_script_contamination.py`, luego a esos los ejecuto con `bash`.
+
+Lo que sale de ahi:
+
+- `': orden no encontrada`, `from: orden no encontrada`, y el docstring
+  ENTERO del propio test impreso como si fueran comandos — porque bash
+  estaba ejecutando Python como shell;
+- `git mv --help` en la salida;
+- y el proceso **colgaba leyendo stdin** hasta agotar el timeout.
+
+Medido en las dos piezas:
+
+| invocacion | resultado |
+|---|---|
+| `bash tests/test_docs_script_contamination.py` | cuelga, `rc=124` a los 600 s |
+| `python3 tests/test_docs_script_contamination.py` | **PASS en <60 s** |
+
+Y aqui esta lo que hace la lesson cara: **mi comparacion A/B para
+confirmar una regresion tampoco comparaba nada.** Monte un worktree
+pristino en `cfcbac61`, ejecute el test ahi —con `python3`, bien— y
+conclui «regresion mia, lo disparo el contenido de mis docs». Los dos
+lados de la comparacion se diferenciaban en la **INVOCACION**, no en el
+contenido. Un A/B donde cambia la variable que se cree medir no es un A/B:
+es dos medidas de dos cosas distintas, y da la confianza de haber
+descartado algo sin haber descartado nada.
+
+Con `python3`: los dos tests pasan. Ningun defecto del repo. Los
+`PASS=8 FAIL=0` de los ocho tests de shell de la tabla de arriba son
+buenos porque esos si son `bash`; los dos de Python no estaban medidos en
+absoluto hasta ahora.
+
+**La regla, que es la misma de las tres que ya traia este bloque y que
+aun no estaba escrita**: un bucle de tests tiene que decidir el
+interprete por el FICHERO, no por la costumbre de la lista. Un `bash
+"$t"` sobre un `.py` no falla: **se queda colgado leyendo stdin**, y un
+colgado se parece a un test lento, y un test lento se parece a un test
+pesado, y ahi es donde un runner defectuoso se convierte en una
+conclusion sobre el producto que no tiene nada que ver con el producto.
+
+Los tres fallos de este bloque que **no** eran mios — el merge que no
+hacia nada con la seccion ultima, la rama muerta del `case`, y la huella
+con la vineta — se encontraron por tests bien lanzados. Los dos que **si**
+eran mios se encontraron porque un test se colgo y nadie daba credito a un
+colgado sin mirar por que colgada. Un sintoma raro merece una pregunta
+antes que una teoria.
