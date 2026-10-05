@@ -16219,3 +16219,67 @@ Ninguno de los dos es nuevo, y los dos valieron el trabajo:
    **verificar con el guard DESPUES de pushear y ANTES de lanzar**. Con el orden
    de "verificar y luego commitear", este commit mio no habria existido todavia
    cuando se verifica, luego el rojo no se habria visto.
+## session-86 — VA13 `cl-publicar-lo-que-ya-esta-hecho`
+
+   **PUBLICAR 31 COMMITS.** Cuatro bloques (VA9 a VA12) anadieron capacidad y
+   ninguno se libero. MEDIDO: 31 commits desde `v2.11.4`, 43 ficheros de codigo,
+   11 ADRs, y el binario instalado `behind` **declarando la misma version** que
+   el workspace — el caso exacto para el que existe `check_binary_freshness.sh`.
+   Ademas, SDDK reporta **6 ciclos en `RELEASE_PENDING`** cuyo `release.complete`
+   exige `release-receipt` + `merge-receipt`. Publicar es la accion que los
+   desbloquea.
+
+   **LO QUE ENCONTRO EL PERFIL COMPLETO, Y ERA MIO, Y LLEVABA DOS BLOQUES
+   PUBLICADO.** `test the_decision_module_names_no_concrete_technology` cayo con
+   `["gradle"]`. Contra Git: `git show 97dd9293:…version_authority.rs
+   | grep -ci gradle` da **0**, y `git log -S"Gradle"` da **`1621c3fb`**, el
+   primer commit de VA11. Escribi el nombre de la herramienta en el doc-comment
+   de `ProviderError::Malformed`. El dominio declara «no nombro tecnologia
+   concreta» y un fraseado lo cruza sin que ninguna regla de tipos lo note.
+   Por que nadie lo vio: **VA11 tocaba `sddk-domain` y corri el perfil de
+   gateway y CLI**. Los dos bloques se leyeron como «un cambio de gateway»
+   porque el nombre del crate que creia haber tocado estaba antes de abrir el
+   diff. `prompts/sddk/change-scoped-testing.md` manda razonar en
+   `SUT impact -> verification batch`, y lo que hice fue razonar en
+   `-> crate que creia haber tocado -> batch`: **la ley mal aplicada es
+   exactamente la que dice que no se aplique.** Ademas
+   `cargo test --workspace` **sin `--no-fail-fast` para en el primer binario
+   rojo**, luego ese 1 fallo podia esconder otros; la corrida que lo encontro se
+   relanzo con `--no-fail-fast` y el total se mide sobre esa:
+   **workspace 5680/0 en 308 binarios**.
+
+   **DOS INSTRUMENTOS, Y LOS DOS MIENTEN EN SILENCIO.** (1) El gate 2b
+   (cobertura de changelog) estaba en `PASS=19 FAIL=1` porque el commit de
+   arreglo es un `fix` y todo `fix` desde el tag tiene que estar representado;
+   corre **despues** de construir y el `--dry-run` **lo salta**, luego el hueco
+   del ensayo cae en el paso mas caro de revertir. (2)
+   `test_release_state_pointer.sh` paro la release real: `current_sha` estaba
+   **32 commits** por detras y `workspace_version_at_current` decia `2.11.4`
+   con `Cargo.toml` en `2.12.0`. No es de este bloque: es drift acumulado.
+   Reparado con `scripts/reconcile_state_pointer.sh` —**3 campos mecanicos,
+   `superseded_pointer` preservado, cero historia reescrita**—. Y **una parte que
+   el script NO hace y que si es humana**: la **prosa** del campo decia «el tag
+   publicado mas alto es v2.8.1» con el valor en `2.11.4`, o sea dos mitades
+   describiendo hechos distintos. **Un campo puede pasar el gate y seguir
+   mintiendo**, porque el gate compara valores y la mentira estaba en la prosa.
+   La propia nota vieja lo decia: *«un campo estructurado con una prosa que ya
+   no describe el mismo hecho es la misma mentira que el check 3d prohibe en
+   `current_sha`, y ese check todavia no mira aqui»*.
+
+   **LA LECCION DE LOS INSTRUMENTOS, y es la que vale.** El `--dry-run` paso
+   0-8 limpio con `--skip-tests`; la release real paro en el 1b. **Un ensayo
+   que se salta una puerta no ensaya esa puerta, y por eso el ensayo tiene menos
+   cobertura que la cosa que ensaya.** Es la segunda vez en este bloque que sale
+   lo mismo — el `--dry-run` tampoco corre el 2b — y las dos son el mismo hecho.
+   Y al reves: un gate que compara **valores** no vigila la **prosa** que los
+   comenta, luego un campo puede pasar y mentir.
+
+   **LO QUE NO SE HIZO Y POR QUE.** Los 6 ciclos `RELEASE_PENDING` siguen
+   abiertos: MEDIDO el motivo, `release.complete` exige **`merge-receipt`** y lo
+   emite `Forge::merge_pr`, o sea **un merge de pull request** — y
+   `AGENTS.md` §2.2 dice que este repo **no usa PRs**, `main` es la rama unica.
+   Esos seis se movieron a `RELEASE_PENDING` el 2026-10-03, bajo un modelo de
+   workflow que el proyecto ya abandono. **No estan atascados por un bug: estan
+   atascados por una politica que cambio por debajo.** Cerrarlos exigiria decidir
+   que es un `merge-receipt` cuando la respuesta canonica es «no hay merge, hay
+   push directo». Eso es politica y se declara, no se fuerza.

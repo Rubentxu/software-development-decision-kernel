@@ -247,3 +247,75 @@ El bloque declaraba «que un gate del release falle → no se salta ninguno». S
 cumple, y además: **el perfil completo del workspace es parte del gate 1**, luego
 este fallo no es un gate que pueda saltarse sino **el** primer paso del release
 haciendo su trabajo. Lo que habría sido un STOP es haber publicado sin él.
+
+---
+
+## Checkpoint — blocker nuevo, 2026-10-06, en el paso 1b de la release real
+
+El ensayo (`--dry-run --skip-tests`) pasó los pasos 0–8. **La release real no.**
+
+```
+==> 1b/15 — shell contract tests (tests/test_*.sh)
+  x FALLOS en tests/test_release_state_pointer.sh:
+  4:  [FAIL] el puntero va 32 commit(s) por DETRAS de main (tolerancia 3)
+  8:  [FAIL] workspace_version_at_current dice '2.11.4' pero Cargo.toml dice '2.12.0'
+  RESULT: FAIL — STATE.yaml miente sobre el estado del repo.
+```
+
+**Y no es un defecto de este bloque:** es el drift documental que llevaba declarado
+desde el principio, acumulado commit a commit. `current_sha` estaba en `4b50d043`,
+**32 commits** por detrás de `a7a74c7b`.
+
+### Lo que enseña, y es lo que hay que mirar dos veces
+
+El `--dry-run` se lo saltó. No porque el gate no existe —existe y está en el 1b—
+sino porque **`--skip-tests` se salta el 1b entero**. La decisión de usar
+`--skip-tests` en el ensayo era correcta y está escrita en este mismo `PRE-FLIGHT`
+—el perfil completo acababa de pasar en la misma sesión y el 1b se paga una vez—
+y aun así el ensayo no detectó lo que la release real detectó.
+
+**Un ensayo que se salta una puerta no ensaya esa puerta, y por eso el ensayo tiene
+menos cobertura que la cosa que ensaya.** Es la segunda vez en este bloque que sale
+lo mismo: el `--dry-run` tampoco corre el 2b. Las dos son el mismo hecho.
+
+La decisión que sale de aquí, y que no es de este bloque: **`--dry-run` debería
+avisar de qué pasos se salta y de que su cobertura es menor que la de la release
+real**, porque hoy lo hace en silencio.
+
+### La reparación, y por qué no es una decisión
+
+`AGENTS.md` y el propio mensaje del gate separan dos cosas:
+
+| | quién |
+|---|---|
+| `current_sha`, `head_at_state_sync`, `workspace_version_at_current` | **`scripts/reconcile_state_pointer.sh`** |
+| el juicio sobre **qué significa** el estado | humano |
+
+Ejecutado. MEDIDO del diff: **3 campos**, `superseded_pointer` preservado tal cual,
+notas de evidencia conservadas y **cero historia reescrita**. El gate pasa a 8/8.
+
+### Y una parte que el script NO hace, y que sí es mía
+
+El script deja la **prosa** del campo como estaba, y esa prosa ya era falsa: decía
+*«el tag publicado mas alto es v2.8.1»* con el valor del campo en `2.11.4`. Dos
+mitades del mismo campo describiendo **dos hechos distintos**.
+
+Y la nota vieja decía exactamente por qué eso está mal: *«un campo estructurado
+con una prosa que ya no describe el mismo hecho es la misma mentira que el check
+3d del guard prohíbe en `current_sha`, y ese check todavía no mira aquí»*. O sea:
+la propia nota avisaba, el guard no la vigila, y el script la deja.
+
+**Un campo puede pasar el gate y seguir mintiendo**, porque el gate compara
+**valores** y la mentira estaba en la **prosa**. Corregida a mano con el estado
+medido, y sin reescribir la historia anterior.
+
+Eso es un hueco de guard, no de código: `test_release_state_pointer.sh` valida
+`workspace_version_at_current == Cargo.toml` y nada más. Declarado abajo.
+
+### STOP condition revisada, la tercera
+
+El bloque declaraba que si un gate falla no se salta ninguno, y que si la versión
+del artefacto no es `2.12.0` se para. **Ninguno de los dos se ha saltado**: el 1b
+paró la release, se midió la causa, se reparó lo mecánico con el script que el propio
+gate nombra, y se corrigió a mano lo que el script deja. Lo que se hará es
+**reintentar la release entera**, no continuar desde donde paró.
