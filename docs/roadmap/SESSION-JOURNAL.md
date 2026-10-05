@@ -16154,3 +16154,68 @@ con un guard roto a proposito, detiene la release nombrando al culpable.
 5. **Acoplamiento al orden en otros guards** que casan subcadenas de
    `release.sh`: medidos M3 y M7, **no se ha buscado sistematicamente** el
    alcance completo.
+### Cierre: REL-2.11.4 publicada, verificada, y con el 3n gateando de verdad
+
+El ciclo de este bloque se cierra con **dos releases**, no con una: la 2.11.3
+salio al empezar y la 2.11.4 lleva el trabajo. Y la 2.11.4 tiene un rasgo que
+ninguna anterior tuvo:
+
+```
+==> 3n/15 — los siete uat_ctx_* contra el binario que se va a publicar
+  ✓ los 7 uat_ctx_* pasan contra el binario publicado
+```
+
+**Primera ejecucion del 3n como gate, y verde**, con el binario que de verdad
+se iba a publicar. Ese `✓` es la linea que cierra el argumento del bloque: una
+familia de guards que llevaba semanas escrita, que el release entero no miraba,
+y que en su primera vez contando ha dado 7/7. El mismo paso, tres releases
+atras, habria dicho `sddk binary not found` — porque no existia todavia el
+binario que necesita. No se arreglo el paso: se le dio el sitio que el propio
+censo pedia.
+
+Verificacion externa, que es la unica que no depende del log del propio release:
+
+```
+tag v2.11.4 anclado en 8edbb748f7ff6952063210dca0e19f86e0cab92c
+draft=false  prerelease=false  9 assets en la API
+9/9 assets: HTTP 200, bytes identicos a la API, sha256 servido == sha256 declarado
+RESULT: VERIFICADA contra API y CDN
+```
+
+Estado local tras el prune:
+
+```
+binario  sddk 2.11.4        binario 2.11.4 == HEAD 8edbb748   (matches)
+bundle   2.11.4             en disco solo 2.11.4
+actual   framework/2.11.4   el 2.11.3 ya no esta
+```
+
+`check_binary_freshness.sh` da **`matches`**, que es la unica relacion que sale
+verde junto con `ahead`. Importa por lo que se midio antes en esta sesion: con
+la 2.11.3 el mismo script decia `behind` y la comparacion de versiones de
+`--version` **salia verde igual**, porque el binario y el workspace declaraban
+el mismo numero con codigo distinto (INC-DEBT-064).
+
+### Y dos gates que pararon la release antes de publicar nada
+
+Ninguno de los dos es nuevo, y los dos valieron el trabajo:
+
+1. **`cargo fmt` en el paso 1.** Mis cambios Rust sin formatear. Paro en el
+   primer paso, antes de construir nada que no fuera a funcionar.
+2. **El guard del puntero de estado, en mi propia ventana.** Bump manual de
+   `Cargo.toml` a 2.11.4 dejo `manifest.toml` y `Cargo.lock` en 2.11.3, con el
+   commit ya **pusheado**. El mensaje fue literal:
+   `Cargo.lock dice '2.11.3', Cargo.toml dice '2.11.4' -- el build con --locked
+   va a fallar (ci.yml y release.yml)`.
+
+   Lo que hace el hallazgo instructivo es que **`--check` daba `PASS`**: mide
+   puntualidad del puntero frente a `main`, y el puntero era puntual. Los otros
+   dos instrumentos miden otros objetos, luego ninguno estaba equivocado y aun
+   asi la release se habria publicado con el lock roto. Resuelto por la via
+   canonica, `scripts/release-bump.sh --force-version 2.11.4`, que escribe las
+   TRES claves del rango mas el lock y `BUNDLE.toml`.
+
+   Y el orden que lo hizo visible fue el de esta sesion, no el de siempre:
+   **verificar con el guard DESPUES de pushear y ANTES de lanzar**. Con el orden
+   de "verificar y luego commitear", este commit mio no habria existido todavia
+   cuando se verifica, luego el rojo no se habria visto.
