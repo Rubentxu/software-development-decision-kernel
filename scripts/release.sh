@@ -409,6 +409,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_bump_derivation.sh \
              tests/test_release_unsigned_propagation.sh \
              tests/test_changelog_merge.sh \
+             tests/test_changelog_merge_mutation.sh \
              tests/test_changelog_coverage_baseline.sh \
              tests/test_release_diagnostics.sh \
              tests/test_release_diagnostics_wiring.sh \
