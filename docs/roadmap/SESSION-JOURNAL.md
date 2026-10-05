@@ -16000,3 +16000,157 @@ MEDIDO de paso: **525 directorios `/tmp/sddk-excl.*` huerfanos, ninguno vivo**
 deja el candado en disco al salir. No bloquea —la exclusion se toma bien— pero
 es un leak, y 525 directorios en `/tmp` es la clase de cosa que hace que un
 diagnostico de retencion deje de ser legible.
+
+## session-84 bis 7 — el gate que nadie ejecutaba encontro un defecto de producto
+
+### La 2.11.3 salio, y verificada donde cuenta
+
+PUBLICADA. Tag `v2.11.3` en `b37bcf5d`, 9 assets, el paso 9b con el tag SHA
+anclado contra `git ls-remote` (no `origin/main`), y el paso 10 instalando desde
+la URL publica. Verificada aparte con `campana-2113.sh`, que es la unica
+comprobacion que no depende del log del propio release:
+
+```
+tag v2.11.3 anclado en b37bcf5dcaf158168114a6305fbc0cafeeba78b6
+draft=false  prerelease=false  9 assets en la API
+9/9 assets: HTTP 200, bytes identicos a la API, sha256 servido == sha256 declarado
+RESULT: VERIFICADA contra API y CDN
+```
+
+Los nombres de los assets los lee el verificador **de la API**, nunca
+hardcodeados. No es formalidad: en session-84 una campana pidio
+`sddk-v2.11.1-linux-x86_64-musl.tar.gz` cuando el asset real se llama
+`sddk-v2.11.1-sddk-linux-x86_64-musl.tar.gz`, y el 404 era del **instrumento**.
+Un 404 del instrumento es indistinguible de un 404 real si no se distingue de
+quien lo pide.
+
+`UNSIGNED` declarado, como siempre: `SDDK_SKIP_SIGNING=1`, sin clave de firma ni
+ancla inventadas. El 9c quedo `NOT_RUN` con su motivo, que es lo honesto.
+
+### Los tres guiones rojos: ninguno era un fallo de la suite
+
+Con el binario recien publicado se ejecuto por segunda vez la familia
+`uat_ctx_*`. Estaba **4/7**. Los tres rojos se diagnosticaron uno a uno y **los
+tres eran guiones obsoletos, no la suite midiendo mal**:
+
+| guard | lo que decia | lo que pasaba de verdad |
+|---|---|---|
+| `uat_ctx_002` | `cycle not found: uat-cycle-1` | pedia un ciclo que **nunca creo**, con un id que el runtime **no puede producir**: los ids reales llevan prefijo de proyecto. El mismo guion creandolo devuelve `p-3882c99aa0526e27/uat-cycle-1` |
+| `uat_ctx_003` | `bootstrap exited non-zero:` con stderr **vacio** | exigia exit 0 donde el runtime degrada a **4** con `no_capsule_source` desde INC-DEBT-042. El 4 es la degradacion honesta: reclamar `complete` sin capsule seria mentir |
+| `uat_ctx_006` | `expected compiled, got recovered` — 1 verde de 6 | **no era flake del runtime**. `context_source` depende de si el ciclo elegido tenia capsule, y el guion cogia `candidates[0]`, cuyo **orden no es estable**: medido `['beta','alpha']` una vez, `['alpha','beta']` dos. Elegir `alpha` da `recovered` siempre, elegir `beta` da `compiled` siempre |
+
+El tercero es el que mas leccion da, porque **primero se creyo que era un flake**.
+Lo que lo desmonte no fue una teoria: fue **instrumentar el guion real con
+`--keep`**. Mi primera sonda, escrita a partir de una lectura del guion,
+**nunca lo reprodujo** —6/6 verde— porque no replicaba el paso 4. Cuarta
+aparicion de la misma leccion en el bloque: hay que medir **el guion**, no una
+reproduccion suya.
+
+El arreglo de `006` no es relajar la asercion. Es **afirmar la regla en las dos
+ramas** —sin capsule da `compiled`, con capsule da `recovered`—, que es mas
+fuerte que lo que habia, y con un orden de comprobaciones que es load-bearing:
+al reves, elegir beta como `CHOSEN` le daria capsule y la rama «sin capsule»
+volveria a depender del orden. Falsado invirtiendo las dos expectativas: 3/3
+rojo, con el valor real nombrado.
+
+### Y el defecto de producto que aparecio al ejecutar la familia
+
+`uat_ctx_002` no fallaba solo por su guion. Al reproducirlo a mano, con el
+`cycle start` que le faltaba, salio esto —**3 de 3, contra un state home
+nuevo**:
+
+```
+error[ENGINE_STORAGE]: storage error: database error: FOREIGN KEY constraint failed
+  recovery: resolve the underlying storage error first
+```
+
+**`sddk cycle start` no puede crear el primer ciclo de un proyecto.** No es una
+regresion: la FK esta declarada desde el import inicial, luego **nunca funciono
+asi**. La adopcion es la que registra el par
+(`projects` -> `workspaces` -> `cycles`) y `sddk cycle start --help` **no declara
+ese prerrequisito**. Lo que el runtime decia era, literalmente, «depura el error
+de base de datos», cuando el arreglo es un comando.
+
+Dos arreglos, y **el segundo es el que hacia inutil al primero**:
+
+1. `StorageError::ProjectNotAdopted`, comprobado **dentro de la misma
+   transaccion** que el insert. Naza cual de los dos padres falta porque son
+   situaciones distintas: nada registrado, o **un segundo clon de un proyecto ya
+   adoptado** que resuelve otro `workspace_id` porque ese id sale del path
+   canonico. Medido: ese segundo caso es real y frecuente.
+2. `EngineError::Storage` **dejaba de sustituir** el `recovery:` de la capa
+   interior por un texto generico. Ese catch-all es la razon por la que un
+   error que si sabe decir el comando que lo arregla llegaba igual de
+   inaccionable. **Un tipo de error correcto al que se le sustituye el consejo
+   es un tipo de error que no existe.**
+
+MEDIDO despues, con el binario reconstruido:
+
+```
+proyecto nunca registrado -> this ledger has no project row p-a82584a889f7eae6
+segundo clon, mismo repo  -> this ledger has no workspace row w-7b25a9654a756260faad0bcf
+tras `sddk adopt apply`   -> cycle_id p-995939af668a53d8/c1, status OPEN
+```
+
+### La antifalsacion, y por que casi no cuenta
+
+6 tests en `crates/sddk-storage/tests/cycle_parent_registration.rs`. La primera
+falsacion **fue MUERTA y reporto verde**:
+
+> quitar la comprobacion de `insert_cycle_with_event` dejo la suite en **4/4**,
+> porque los tests ejercitaban `insert_cycle` y **`sddk cycle start` no pasa por
+> ahi**.
+
+Es decir: el defecto estaba en un camino y la suite vigilaba el otro. Green con
+el defecto presente. Anadidos los dos tests del camino real; quitando esa
+comprobacion cae **exactamente uno** (5 passed, 1 failed, rc=101) y el control de
+exito sigue verde, que es lo que tiene que pasar. Quinta vez en la sesion que
+**mutar el sujeto equivocado produce un PASS, no un fallo**, y la quinta vez el
+sintoma no fue un `SKIP` sino un verde limpio.
+
+### El paso 3n, y por que la forma del bucle es tan especifica
+
+Los siete `uat_ctx_*` ya son gates del camino de publicacion. No es una mejora
+de cobertura: **este commit es donde aparecio el defecto de `cycle start`**, y
+lo encontro un gate que llevaba semanas escrito y que nadie ejecutaba. Lo que
+el censo no cubre no es que no tenga defectos, es que no se ven.
+
+Las siete excepciones salen de `EXCEPTIONS` porque han caducado, y el censo se
+lo obliga solo («figura en EXCEPTIONS pero ya lo ejecuta el camino de release»),
+de modo que cablearlos sin retirarlas habria puesto el censo en rojo nombrando
+los siete. Excepciones: **de 12 a 5**.
+
+La forma del bucle se eligio a proposito, y las tres condiciones se midieron, no se
+supusieron:
+
+- **Lista explicita**, no un glob. Su `_TEST_PATH_RE` no acepta el comodin, luego
+  con el glob el censo seguia diciendo «NADIE lo ejecuta» para los siete
+  **mientras el release los ejecutaba**: cobertura real que el gate no ve, que
+  es peor que no tenerla.
+- **Variable de una letra**, `c`. `re.match(r"for\s+[a-z]\s+in\b", ...)` no casa
+  con una variable larga, y por eso los bucles del 1b usan `t` y `p`.
+- **Reconciliacion de recuento** entre lo ejecutado y lo que hay en disco. Un
+  octavo guard, o uno que ya no este, salen ahi **con su nombre**. Un glob no
+  puede dar eso.
+
+Falsado por partida doble: quitar `uat_ctx_004` de la lista hace que el censo
+vuelva a decir «NADIE lo ejecuta» con rc=1, y la rama de fallo del 3n, aislada
+con un guard roto a proposito, detiene la release nombrando al culpable.
+
+### Lo que queda declarado y NO arreglado
+
+1. **Orden de `candidates` inestable** en la ambiguedad de ciclo. El conjunto es
+   el mismo, luego no es una correccion, pero una lista de eleccion para una
+   persona deberia venir en un orden que el operador pueda reproducir. Decision
+   de producto.
+2. **525 candados `/tmp/sddk-excl.*` huerfanos** (session-84 bis 6). Leak del
+   mecanismo de exclusion, no bloquea.
+3. **`sddk-gateway` tiene el mismo catch-all** que se acaba de arreglar en el
+   engine: `Self::Storage(..) => "resolve the underlying storage error first"`.
+   Misma clase, otra superficie. No se toca aqui.
+4. **Dos caracteres CJK preexistentes** en `CHANGELOG.md:389` (linea 389,
+   cita literal de un mensaje del runtime). No introducidos en esta sesion y no
+   se corrigen: reescribir historia documental no es parte de este bloque.
+5. **Acoplamiento al orden en otros guards** que casan subcadenas de
+   `release.sh`: medidos M3 y M7, **no se ha buscado sistematicamente** el
+   alcance completo.
