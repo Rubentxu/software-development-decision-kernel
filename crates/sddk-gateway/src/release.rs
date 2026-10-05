@@ -81,6 +81,14 @@ pub struct ReleaseOutcome {
     /// carry both meanings, and reading one as the other is how a release
     /// gets reported as verified when nothing was verified.
     pub version_authority: VersionAuthority,
+    /// Which release product this outcome is about.
+    ///
+    /// A version without a product is the same ambiguity one level up, and a
+    /// record of a release that cannot say which product it released is a record
+    /// nobody can audit. It is an **identity**, not a report: the provenance of
+    /// the choice is the plan's business, and duplicating a narrative in the
+    /// durable record is how two versions of the same story start to disagree.
+    pub release_target: String,
 }
 
 /// Receipt of one executed release step.
@@ -421,6 +429,7 @@ pub fn apply_release(
     plan: &ReleasePlan,
     forge: &mut dyn Forge,
     version_authority: VersionAuthority,
+    release_target: String,
 ) -> Result<ReleaseOutcome, ReleaseError> {
     let mut applied = Vec::new();
     let mut skipped = Vec::new();
@@ -522,6 +531,7 @@ pub fn apply_release(
         skipped,
         converged,
         version_authority,
+        release_target,
     })
 }
 

@@ -124,6 +124,13 @@ pub(crate) struct ReleaseArgs {
     /// Release tag.
     #[arg(long)]
     pub(crate) tag: String,
+    /// Which release target, by its path relative to the repository root.
+    ///
+    /// Omit it when the repository holds exactly one target. Required as soon
+    /// as it holds more than one: two products and no way to tell them apart is
+    /// a refusal, and the refusal lists the paths so naming one is mechanical.
+    #[arg(long)]
+    pub(crate) target: Option<String>,
     /// Release cycle providing local verification and UAT evidence.
     #[arg(long)]
     pub(crate) cycle: Option<String>,
@@ -659,6 +666,32 @@ struct ReleasePlanOutput {
     head: Option<String>,
     steps: Vec<&'static str>,
     version_authority: VersionAuthority,
+    /// Which product this plan is about, and how it was chosen.
+    release_target: ResolvedTarget,
+}
+
+/// Which product a plan is about, and the evidence for the choice.
+///
+/// It is in the output and not only in the text because **a plan that does not
+/// say which product it is about cannot be reviewed**. A version number without
+/// a product is the ambiguity this block exists to remove, moved one level up:
+/// `1.0.0` of which target?
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct ResolvedTarget {
+    /// The target's identity, which is its path relative to the repository
+    /// root.
+    id: String,
+    /// The directory the providers read.
+    root: String,
+    /// Whether the repository root declared a product version, in which case
+    /// nothing below it was looked for.
+    root_resolved: bool,
+    /// How the candidates were gathered, in one sentence a human can check.
+    provenance: String,
+    /// Every candidate considered, so a plan that resolved one of several says
+    /// so without the operator having to go and look.
+    candidates: Vec<String>,
 }
 
 fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandOutput {
@@ -679,7 +712,10 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         // La variante `detailed` y no la que aplana: el plan declara de dónde
         // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
         // que reportar. Sigue fallando cerrado ante un desajuste.
-        let authority = version_authority_or_fail(git.root(), &args.tag)?;
+        let selected = resolve_release_target(git.root(), args.target.as_deref())?;
+        let authority =
+            ensure_version_lockstep_detailed(&version_registry(), &selected.target, &args.tag)
+                .map_err(|error| anyhow::anyhow!("{error}"))?;
         let head = git.inspect()?.head;
 
         // REQ-RDI-002 / REQ-RDI-003: gather manifest + receipt fields.
@@ -760,6 +796,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
             branch: args.branch.clone(),
             base: args.base.clone(),
             tag: args.tag.clone(),
+            release_target: selected.report.clone(),
             head,
             steps: match route {
                 ReleaseRoute::Local => vec![
@@ -909,6 +946,14 @@ fn apply_release_forge(
     // comprobó nada, porque no hay manifiesto contra el que
     // comparar. Sigue fallando cerrado ante un desajuste.
     let version_authority = version_authority_or_fail(root, &args.tag)?;
+    // La identidad del producto, de la MISMA seleccion que produjo la
+    // autoridad. Volver a resolverla aqui podria dar otra respuesta si el arbol
+    // cambiase entre medias, y un outcome que dice una cosa y el plan otra es
+    // un registro que no se puede auditar.
+    let release_target_id = resolve_release_target(root, args.target.as_deref())?
+        .report
+        .id
+        .clone();
     let input = ReleasePlanInput {
         project_id: project_id.to_string(),
         cycle_id: None,
@@ -940,7 +985,15 @@ fn apply_release_forge(
     with_github_releases_ticket::<_, sddk_gateway::ReleaseOutcome>(
         ticket_actor,
         &format!("release/{}", args.tag),
-        || Ok(apply_release(gateway, &plan, forge, version_authority)?),
+        || {
+            Ok(apply_release(
+                gateway,
+                &plan,
+                forge,
+                version_authority,
+                release_target_id.clone(),
+            )?)
+        },
     )
     .map_err(|e| match e {
         GithubReleasesTicketError::Denied(msg) => {
@@ -1003,7 +1056,8 @@ fn version_authority_or_fail(
     // y desvia la atencion de lo que hay que mirar. En el unico caso en que
     // si aplica, el mensaje ya trae el nombre: lo dice el provider de la
     // declaracion al responder que este target no declara nada.
-    ensure_version_lockstep_detailed(&version_registry(), &release_target(root), tag)
+    let selected = resolve_release_target(root, None)?;
+    ensure_version_lockstep_detailed(&version_registry(), &selected.target, tag)
         .map_err(|error| anyhow::anyhow!("{error}"))
 }
 
@@ -1017,14 +1071,78 @@ fn version_registry() -> sddk_domain::version_authority::VersionResolverRegistry
     sddk_gateway::version_provider::default_version_registry()
 }
 
-/// El target que se versiona: el repositorio entero.
+/// Elige el target, o explica por que no puede, y deja constancia de como.
 ///
-/// Deliberadamente **no** es «el repositorio» en el tipo. Es un producto, con
-/// nombre, y que hoy coincida con la raiz del repositorio es una decision de
-/// composicion —la que un monorepo con varios productos todavia no toma— y no
-/// una suposicion del modelo.
-fn release_target(root: &std::path::Path) -> ReleaseTarget {
-    ReleaseTarget::at("repository", root.display().to_string())
+/// Esta es la unica funcion de la CLI que decide **que producto** se
+/// versiona. Que el repositorio contenga uno o varios es una pregunta que se
+/// responde una vez y se registra, porque un plan que no dice que producto es
+/// su no es revisable: un numero de version sin producto es la ambiguedad que
+/// este bloque quita, movida un nivel mas arriba.
+fn resolve_release_target(
+    root: &std::path::Path,
+    requested: Option<&str>,
+) -> anyhow::Result<SelectedTarget> {
+    use sddk_domain::version_authority::{TargetSelector, select_target};
+
+    let set = sddk_gateway::version_provider::release_targets(root, &version_registry());
+    let selector = match requested {
+        Some(id) => TargetSelector::named(id),
+        None => TargetSelector::unsolicited(),
+    };
+    let selected = select_target(&set.targets, &selector).map_err(|error| match &error {
+        sddk_domain::version_authority::TargetSelectionError::NoTarget => anyhow::anyhow!(
+            "VERSION TARGET ERROR: no release target found under {}. {}.",
+            root.display(),
+            set.provenance()
+        ),
+        sddk_domain::version_authority::TargetSelectionError::AmbiguousTarget {
+            candidates,
+            requested,
+        } => anyhow::anyhow!(
+            "VERSION TARGET ERROR: {} release targets found{} and nothing names one: {}. \
+             Choose with --target <path>. Which product to release is a decision, and \
+             sddk will not make it.",
+            candidates.len(),
+            match requested {
+                Some(name) => format!(" (and the name {name} matches more than one)"),
+                None => String::new(),
+            },
+            candidates.join(", "),
+        ),
+        sddk_domain::version_authority::TargetSelectionError::UnknownTarget {
+            requested,
+            available,
+        } => anyhow::anyhow!(
+            "VERSION TARGET ERROR: no release target named {requested}. {}",
+            if available.is_empty() {
+                format!("None found under {}.", root.display())
+            } else {
+                format!("Available: {}.", available.join(", "))
+            }
+        ),
+    })?;
+
+    Ok(SelectedTarget {
+        target: selected.clone(),
+        report: ResolvedTarget {
+            id: selected.id().to_owned(),
+            root: selected.root().to_owned(),
+            root_resolved: set.root_resolved,
+            provenance: set.provenance(),
+            candidates: set.targets.iter().map(|t| t.id().to_owned()).collect(),
+        },
+    })
+}
+
+/// Un target elegido, con el registro de por que se eligio.
+///
+/// Los dos van juntos a proposito: el `ReleaseTarget` es lo que se resuelve y el
+/// `ResolvedTarget` es lo que se le dice a quien lee el plan. Separarlos
+/// permitio que uno se usara sin el otro, y un plan sin registro no dice que
+/// producto es su.
+struct SelectedTarget {
+    target: ReleaseTarget,
+    report: ResolvedTarget,
 }
 
 /// Si la regla del lockstep se cumplió. `true` **no** significa que la versión
@@ -1034,8 +1152,17 @@ fn release_target(root: &std::path::Path) -> ReleaseTarget {
 ///
 /// No es lo mismo que [`version_authority_or_fail`], y confundirlos es el
 /// defecto que este lote cierra: uno es una **puerta** y el otro un **registro**.
+/// La puerta local, con la **misma** seleccion de target que el plan.
+///
+/// Que use la misma funcion no es un detalle de estilo: si la puerta mirase un
+/// target distinto del que el plan autorizo, la puerta estaria comprobando una
+/// cosa y el release publicando otra, y un desajuste ahi es invisible porque
+/// los dos exits son cero.
 fn version_lockstep_satisfied(root: &std::path::Path, tag: &str) -> bool {
-    ensure_version_lockstep(&version_registry(), &release_target(root), tag).is_ok()
+    let Ok(selected) = resolve_release_target(root, None) else {
+        return false;
+    };
+    ensure_version_lockstep(&version_registry(), &selected.target, tag).is_ok()
 }
 
 fn local_release_preconditions(
@@ -1228,6 +1355,10 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
         output.tag,
         output.head.as_deref().unwrap_or("null")
     );
+    // Qué producto es este plan, y cómo se decidió. Va antes que la autoridad
+    // de versión porque es lo primero que hay que saber para leerla: un número
+    // sin producto no significa nada.
+    text.push_str(&release_target_text(&output.release_target));
     // La autoridad se imprime antes de los pasos: es la línea que decide si lo
     // que viene después fue comprobado o no tenía nada que comprobarlo.
     text.push_str(&version_authority_text(&output.version_authority));
@@ -1241,6 +1372,32 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
 /// Un solo render para los dos comandos: `release plan` y `release apply`
 /// declaran la autoridad y sus líneas no pueden divergir, porque salen de la
 /// misma función sobre el mismo tipo.
+/// Qué producto es este plan, y cómo se decidió.
+///
+/// Va **antes** de la autoridad de versión porque es lo primero que hay que
+/// saber para leerla: un número sin producto no significa nada, y por eso el
+/// target se declara aunque solo haya uno — un plan que nombra su producto
+/// puede compararse con otro; uno que no lo nombra, no.
+fn release_target_text(target: &ResolvedTarget) -> String {
+    let mut text = format!(
+        "release_target: {}\nrelease_target_root: {}\nrelease_target_candidates: {}\n",
+        target.id,
+        target.root,
+        target.candidates.join(", ")
+    );
+    text.push_str(&format!(
+        "release_target_provenance: {}\n",
+        target.provenance
+    ));
+    if !target.root_resolved && !target.candidates.is_empty() {
+        text.push_str(
+            "note: este repositorio contiene mas de un producto; el plan nombra uno. \
+             Los demas no se han resuelto.\n",
+        );
+    }
+    text
+}
+
 fn version_authority_text(authority: &VersionAuthority) -> String {
     use sddk_domain::version_authority::VersionProbe;
 
@@ -1347,6 +1504,7 @@ fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
     // El resultado de un release dice de dónde salió la versión, igual que el
     // plan. Informar solo `converged` deja al lector sin forma de saber si la
     // versión se comprobó contra algo o si no había nada que comprobar.
+    text.push_str(&format!("release_target: {}\n", output.release_target));
     text.push_str(&version_authority_text(&output.version_authority));
     for step in &output.applied {
         text.push_str(&format!("- {} {}\n", step.step, step.receipt_id));
@@ -2024,7 +2182,10 @@ mod tests {
         );
     }
 
-    use super::{ReleasePlanOutput, ReleaseRoute, VersionAuthority, release_plan_text};
+    use super::{
+        ReleasePlanOutput, ReleaseRoute, ResolvedTarget, VersionAuthority, release_plan_text,
+        release_target_text,
+    };
     use sddk_domain::version_authority::{
         ProductVersion, VersionEvidence, VersionObservation, VersionProbe,
     };
@@ -2102,6 +2263,30 @@ mod tests {
         }
     }
 
+    /// Un target, que es el caso normal: el repositorio es el producto.
+    fn single_target() -> ResolvedTarget {
+        ResolvedTarget {
+            id: ".".to_owned(),
+            root: "/repo".to_owned(),
+            root_resolved: true,
+            provenance: "la raiz del repositorio declara su propia version".to_owned(),
+            candidates: vec![".".to_owned()],
+        }
+    }
+
+    /// Varios productos, con el plan nombrando uno: el caso de un monorepo.
+    fn one_of_many() -> ResolvedTarget {
+        ResolvedTarget {
+            id: "packages/runtime".to_owned(),
+            root: "/repo/packages/runtime".to_owned(),
+            root_resolved: false,
+            provenance: "la raiz no declara version; se buscaron 2 raiz/raices hasta 2 \
+                         nivel(es), omitiendo nada"
+                .to_owned(),
+            candidates: vec!["packages/api".to_owned(), "packages/runtime".to_owned()],
+        }
+    }
+
     fn plan(authority: VersionAuthority) -> ReleasePlanOutput {
         ReleasePlanOutput {
             route: ReleaseRoute::Local,
@@ -2111,6 +2296,7 @@ mod tests {
             head: Some("abc1234".to_string()),
             steps: vec!["push_main"],
             version_authority: authority,
+            release_target: single_target(),
         }
     }
 
@@ -2378,6 +2564,48 @@ mod tests {
         assert!(super::version_authority_or_fail(dir.path(), "v9.9.9").is_err());
     }
 
+    /// Un plan de un monorepo nombra su producto Y dice que habia mas.
+    ///
+    /// La segunda mitad es la que importa: un plan que nombra su producto sin
+    /// decir que hay otros parece el plan de un repositorio con un producto, y
+    /// esa es la confusion que el bloque entero elimina. Un plan que solo
+    /// dice `release_target: packages/runtime` no permite a quien lo lee
+    /// saber si omite algo.
+    #[test]
+    fn un_plan_de_monorepo_dice_que_producto_es_y_que_hay_mas() {
+        let text = release_target_text(&one_of_many());
+        assert!(text.contains("release_target: packages/runtime"), "{text}");
+        assert!(
+            text.contains("release_target_candidates: packages/api, packages/runtime"),
+            "el plan lista los candidatos, para que la eleccion sea revisable: {text}"
+        );
+        assert!(
+            text.contains("no declara version") && text.contains("hasta 2 nivel"),
+            "y dice como se llego a la lista: {text}"
+        );
+        assert!(
+            text.contains("contiene mas de un producto"),
+            "un plan que nombra su producto sin decir que hay mas es \
+             indistinguible de un repositorio con un producto: {text}"
+        );
+    }
+
+    /// Y un repositorio con un solo producto NO dice que hay mas, porque no la
+    /// hay. La nota tiene que ser una afirmacion, no un aviso generico.
+    #[test]
+    fn un_plan_de_un_producto_no_inventa_una_advertencia() {
+        let text = release_target_text(&single_target());
+        assert!(text.contains("release_target: ."), "{text}");
+        assert!(
+            !text.contains("contiene mas de un producto"),
+            "no hay mas productos: {text}"
+        );
+        assert!(
+            text.contains("la raiz del repositorio declara su propia version"),
+            "y dice por que no se busco nada mas: {text}"
+        );
+    }
+
     /// El resultado de un apply declara la autoridad, igual que el plan. Este
     /// render no lo cubria nadie tampoco: `release apply --route forge` no es
     /// alcanzable sin red, y quitar el bloque entero no rompia nada.
@@ -2388,6 +2616,7 @@ mod tests {
             skipped: Vec::new(),
             converged: true,
             version_authority: release_ref_only(),
+            release_target: "packages/runtime".into(),
         });
         assert!(
             tag_only.contains("version_authority: release_ref_is_authority"),
@@ -2400,6 +2629,7 @@ mod tests {
             skipped: Vec::new(),
             converged: true,
             version_authority: cross_validated(),
+            release_target: "packages/runtime".into(),
         });
         assert!(
             checked.contains("version_authority: cross_validated"),
@@ -2649,6 +2879,7 @@ mod tests {
             base: "main".into(),
             title: "SDDK release".into(),
             tag: "v1.0.0".into(),
+            target: None,
             notes: String::new(),
             approve: true,
             cycle: None,

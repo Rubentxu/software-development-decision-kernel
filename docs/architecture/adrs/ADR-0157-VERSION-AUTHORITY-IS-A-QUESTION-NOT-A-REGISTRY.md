@@ -17,7 +17,7 @@ closes: []
 
 - **Status:** `accepted` (2026-10-05)
 - **Supersedes:** ADR-0153 (los nombres de fichero se quedan en el adapter)
-- **Relaciona:** ADR-0155 (la misma ley aplicada al puerto de code intelligence),
+- **Relaciona:** ADR-0158 (que producto es un release, y por que esa eleccion no se automatiza), ADR-0155 (la misma ley aplicada al puerto de code intelligence),
   ADR-0042 (kernel agnóstico), ADR-0152 (identidad de proyecto en storage),
   AGENTS.md §2.3
 - **Superficie:**

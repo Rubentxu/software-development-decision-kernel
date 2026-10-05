@@ -4780,6 +4780,129 @@ fn cli_release_plan_text_says_the_authority_out_loud() {
     );
 }
 
+/// Un monorepo: dos productos con versiones distintas, un repositorio.
+///
+/// ## Lo que estos tres tests fijan
+///
+/// 1. **Dos productos y nada que diga cuál es un rechazo**, con las dos rutas
+///    en el mensaje y el `--target` que lo resuelve. Antes de este bloque el
+///    caso no existía: la composición fabricaba un target con la raíz y
+///    publicaba, o se negaba, sin que la existencia de los otros dos productos
+///    tuviera ninguna consecuencia.
+/// 2. **Cada producto resuelve con SU versión**, y el plan nombra cuál.
+/// 3. **Un nombre que no existe no cae a otro producto**, y el error lista los
+///    que sí hay, que es lo que hace la corrección mecánica.
+///
+/// Un plan que dice `version: 1.0.0` sin decir de qué producto es la misma
+/// ambigüedad un nivel más arriba, y por eso el plan lo declara siempre.
+fn monorepo_with_two_products(fixture: &CliFixture) {
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    write(
+        fixture.root.join("packages/api/package.json"),
+        r#"{"name":"api","version":"1.0.0"}"#,
+    );
+    write(
+        fixture.root.join("packages/runtime/package.json"),
+        r#"{"name":"runtime","version":"0.47.0"}"#,
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+}
+
+/// `sddk release plan` con el `--tag` explicito.
+///
+/// El tag va como parametro y no como constante dentro porque cada producto de
+/// un monorepo tiene SU version, y un fixture que fija el tag obligaria a
+/// mentirse sobre uno de los dos para que el otro pasara.
+fn plan_for(fixture: &CliFixture, tag: &str, extra: &[&str]) -> std::process::Output {
+    let mut args = vec!["release", "plan", "--tag", tag, "--format", "json"];
+    args.extend_from_slice(extra);
+    args.extend_from_slice(&[
+        "--root",
+        fixture.root.to_str().unwrap(),
+        "--scope",
+        ".",
+        "--remote",
+        "https://example.com/acme/repo.git",
+    ]);
+    run_with_root(fixture, &args, &[])
+}
+
+#[test]
+fn cli_release_plan_refuses_a_monorepo_without_saying_which_product() {
+    let fixture = CliFixture::new("release-plan-monorepo-ambiguous");
+    monorepo_with_two_products(&fixture);
+
+    let plan = plan_for(&fixture, "v0.47.0", &[]);
+    assert!(
+        !plan.status.success(),
+        "dos productos y nada que diga cual tiene que ser un rechazo"
+    );
+    let err = String::from_utf8_lossy(&plan.stderr);
+    assert!(
+        err.contains("2 release targets found"),
+        "el rechazo dice cuantos hay: {err}"
+    );
+    assert!(
+        err.contains("packages/api") && err.contains("packages/runtime"),
+        "y los NOMBRA, porque elegir es del operador: {err}"
+    );
+    assert!(err.contains("--target"), "y dice como se resuelve: {err}");
+}
+
+#[test]
+fn cli_release_plan_names_the_product_it_resolved() {
+    let fixture = CliFixture::new("release-plan-monorepo-named");
+    monorepo_with_two_products(&fixture);
+
+    for (target, expected_version) in [("packages/api", "1.0.0"), ("packages/runtime", "0.47.0")] {
+        let plan = plan_for(&fixture, expected_version, &["--target", target]);
+        assert!(
+            plan.status.success(),
+            "{target} deberia resolver: {}",
+            String::from_utf8_lossy(&plan.stderr)
+        );
+        let json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+        assert_eq!(json["release_target"]["id"], target, "{json}");
+        assert_eq!(
+            json["version_authority"]["version"], expected_version,
+            "{json}"
+        );
+        // Y el plan deja ver que habia mas, en lugar de parecer un repositorio
+        // con un unico producto.
+        let candidates = json["release_target"]["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 2, "{json}");
+        assert!(
+            !json["release_target"]["root_resolved"].as_bool().unwrap(),
+            "{json}"
+        );
+    }
+}
+
+#[test]
+fn cli_release_plan_does_not_fall_back_to_another_product() {
+    let fixture = CliFixture::new("release-plan-monorepo-typo");
+    monorepo_with_two_products(&fixture);
+
+    let plan = plan_for(&fixture, "v1.0.0", &["--target", "packages/api2"]);
+    assert!(!plan.status.success(), "ese producto no existe");
+    let err = String::from_utf8_lossy(&plan.stderr);
+    assert!(
+        err.contains("no release target named packages/api2"),
+        "{err}"
+    );
+    assert!(
+        err.contains("Available: packages/api, packages/runtime"),
+        "el error lista los que SI hay: {err}"
+    );
+}
+
 #[test]
 fn cli_release_requires_explicit_route_for_legacy_forge_invocations() {
     let fixture = CliFixture::new("release-route-migration");

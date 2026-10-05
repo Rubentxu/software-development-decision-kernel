@@ -29,6 +29,7 @@ pub(crate) fn run_ship(
         repo: None,
         branch: "main".into(),
         base: "main".into(),
+        target: None,
         title: "SDDK release".into(),
         tag,
         cycle,

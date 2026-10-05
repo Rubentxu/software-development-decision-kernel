@@ -123,7 +123,14 @@ fn full_release_creates_pr_merges_and_publishes() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps.len(), 3);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
+    let outcome = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        resolved_version(),
+        target_id(),
+    )
+    .unwrap();
     assert_eq!(outcome.applied.len(), 3);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -243,13 +250,27 @@ fn interrupted_release_converges_without_duplicating_effects() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps, vec![sddk_gateway::ReleaseStep::MergePr]);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
+    let outcome = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        resolved_version(),
+        target_id(),
+    )
+    .unwrap();
     assert_eq!(outcome.applied.len(), 1);
     assert!(outcome.converged);
     assert_eq!(outcome.skipped.len(), 0);
     assert!(forge.is_merged(3));
 
-    let second = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
+    let second = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        resolved_version(),
+        target_id(),
+    )
+    .unwrap();
     assert!(second.applied.is_empty());
     assert_eq!(second.skipped.len(), 1);
     assert!(second.converged);
@@ -273,7 +294,14 @@ fn release_without_open_pr_creates_and_merges() {
             .is_none()
     );
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
+    let outcome = apply_release(
+        &mut gateway,
+        &plan,
+        &mut forge,
+        resolved_version(),
+        target_id(),
+    )
+    .unwrap();
     assert_eq!(outcome.applied.len(), 2);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -410,6 +438,7 @@ fn release_outcome_records_where_the_version_came_from() {
             version: ProductVersion::new("1.0.0").unwrap(),
             observations: declaring("1.0.0"),
         },
+        target_id(),
     )
     .unwrap();
     assert!(
@@ -436,6 +465,7 @@ fn release_outcome_records_where_the_version_came_from() {
                 },
             }],
         },
+        target_id(),
     )
     .unwrap();
     assert_eq!(
@@ -479,6 +509,15 @@ fn declaring_one(provider: &str, version: &str) -> VersionObservation {
     }
 }
 
+/// La identidad del producto en estos flujos.
+///
+/// Una constante y no un literal repetido, porque el nombre del producto es un
+/// **hecho** del resultado y repetirlo en cada llamada es exactamente como un
+/// registro acaba describiendo releases de productos distintos.
+fn target_id() -> String {
+    "runtime".to_owned()
+}
+
 /// Dos observaciones que declaran la misma version, de providers DISTINTOS.
 /// Que sean distintos es lo que las convierte en corroboracion: un provider
 /// consultado dos veces no se ha cruzado consigo mismo.
@@ -496,6 +535,7 @@ fn the_outcome_has_no_boolean_named_after_the_lockstep() {
         skipped: Vec::new(),
         converged: true,
         version_authority: resolved_version(),
+        release_target: "runtime".into(),
     })
     .unwrap();
     assert!(
@@ -507,6 +547,13 @@ fn the_outcome_has_no_boolean_named_after_the_lockstep() {
     // el resultado la registra.
     assert_eq!(json["version_authority"]["verdict"], "resolved", "{json}");
     assert_eq!(json["version_authority"]["version"], "1.0.0", "{json}");
+    // Y el outcome declara que producto es: una version sin producto es la
+    // misma ambiguedad un nivel mas arriba, y un registro de release que no
+    // dice que producto publico no se puede auditar.
+    assert_eq!(
+        json["release_target"], "runtime",
+        "el resultado de un release dice que producto es: {json}"
+    );
 }
 
 /// Test **estructural** del doc de `apply_release`. Un doc no se ejecuta, así
