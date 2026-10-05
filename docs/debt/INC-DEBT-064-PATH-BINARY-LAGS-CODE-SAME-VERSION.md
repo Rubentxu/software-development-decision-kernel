@@ -1,11 +1,14 @@
 ---
 id: INC-DEBT-064
 title: "El binario de sddk en el PATH va mas atras que el codigo y declara la MISMA version: la señal que se usa para saberlo sale verde"
-status: open
+status: resolved
 severity: high
 priority: P1
-revalidated_at: 2026-10-03
-revalidated_in_session: session-69s
+revalidated_at: 2026-10-05
+revalidated_in_session: session-81
+resolved_at: 2026-10-05
+resolved_in_session: session-81
+resolved_by: scripts/check_binary_freshness.sh + su guard + la regla en AGENTS.md 2.3.1
 fingerprint: "path_binary_lags_code_while_declaring_same_version"
 fingerprint_aliases: []
 cluster_id: CL-DIST
@@ -252,3 +255,139 @@ escalada que este documento ya declaraba —que una medición con el binario
 obsoleto llegue a un documento publicado como afirmación sobre el producto, o
 que `dev doctor` declare coherencia donde no la hay— **sigue sin cumplirse**, y
 por eso la severidad no se toca.
+
+---
+
+# RESOLUCION (session-81) — la DETECCION ya existia; lo que faltaba era que el JUICIO no vivia en el artefacto
+
+Lo de arriba se conserva: es el registro de lo que se creia al detectar y al
+revalidar en session-69s. **Dos de sus afirmaciones ya estan medidas como
+obsoletas** y se corrigen aqui.
+
+## 1. REVALIDADO, no supuesto: la deteccion existe y funciona
+
+MEDIDO contra HEAD, con el binario instalado:
+
+```
+$ sddk dev build-id --check
+commit: e9d368feb71415336652cfdcce95de929852e6cc
+checkout_head: 147f2bef3ffb47db787c79c3662a0f4d7f9be6b5
+relation: Behind
+reason: el commit del binario (e9d368fe) es ancestro del HEAD del checkout,
+        luego el checkout tiene trabajo que el binario no contiene
+
+$ sddk dev doctor | grep build_identity
+binary.build_identity: missing — FALLO: <el mismo motivo, nombrado>
+
+$ sddk dev doctor --strict >/dev/null; echo $?
+1
+```
+
+Las dos CADUCADAS de la seccion de session-69s lo eran de verdad:
+
+| Punto de «LO que NO se ha hecho» | Medido en session-81 |
+|---|---|
+| «la fase verify de `cl-build-identity` esta abierta» | **CADUCADO** — cerrada en `261a578c` |
+| «`dev doctor` no lo invoca» | **CADUCADO** — cableado en `a5c18b97`; `doctor` publica `binary.build_identity` y `--strict` sale con 1 |
+| «el binario del PATH sigue obsoleto» | **VIGENTE, y por diseno** — ver §3 |
+
+## 2. Lo que faltaba de verdad: el JUICIO vivia DENTRO del artefacto
+
+`dev build-id --check` se ejecuta **desde el binario que juzga**. Eso rompe
+la propiedad de dos maneras, y ninguna se arregla metiendo mas codigo dentro del
+binario:
+
+1. **No se puede comprobar algo antes de instalarlo.** Para correr el check
+   hace falta el artefacto, luego el artefacto solo se pronuncia sobre si
+   mismo cuando ya esta instalado y ya se ha usado.
+2. **Un artefacto viejo no puede ni declarar su propia ignorancia.** El
+   subcomando `dev build-id` entro en `032e9553`. Un binario anterior no lo
+   tiene: contesta `unrecognized subcommand` y sale con 2. **MEDIDO con un
+   stub.** Ese es el estado MAS VIEJO de todos, y desde dentro es invisible:
+   no hay nada que ejecutar que lo delate. El propio documento lo escribia
+   («el artefacto que tiene el problema no puede ejecutar el check que lo
+   encuentra, y tampoco puede decir que no lo tiene») y la conclusion que
+   faltaba era que por eso el check no puede vivir ahi.
+
+La separacion correcta es la que se implemento:
+
+- **HECHO** — el binario dice cual es su commit y si su arbol estaba sucio.
+  Un artefacto no puede mentir sobre lo que es, y eso no necesita su permiso
+  para ser dato (`dev build-id --format json`).
+- **JUICIO** — si ese commit esta antes o despues del HEAD de **este
+  checkout**. El punto de referencia es el checkout, luego el juicio es de
+  aqui.
+
+## 3. La condicion NO se elimina; se acota y se mide
+
+La condicion —el binario instalado va atrasado respecto al checkout— **no se
+puede eliminar**: el binario se instala desde un release y el workspace no
+bumpea entre releases, luego en cuanto haya un commit nuevo la condicion
+vuelve. Eso no es un defecto pendiente, es la forma del sistema.
+
+Lo que se cierra es el **dano**, que es lo que este documento decia que
+importaba: *medir con el binario viejo es evidencia sobre el codigo viejo, con
+toda la apariencia de ser evidencia sobre el actual*.
+
+## 4. Lo entregado
+
+- **`scripts/check_binary_freshness.sh`** — el juez del lado del checkout.
+  Siete relaciones, mismo vocabulario que el binario pero calculadas aqui:
+  `matches` y `ahead` en verde; `behind`, `diverged`, `dirty`,
+  `unknown-commit` y `no-build-id` **fallan cerrado**. `--format json` para
+  evidencia de gate.
+- **`tests/test_binary_freshness_checker.sh`** — el guard, hermetico (repo
+  git temporal y stubs), `10 checks 0 fallos`, cableado en el 1b. Con
+  **autofalsacion**: el mismo juego de expectativas contra una copia del
+  checker con las clasificaciones rotas, y las cinco se notan. Sin ese pase,
+  «el checker dice verde» y «el checker no mira nada» serian la misma
+  observacion.
+- **AGENTS.md §2.3.1** — la regla escrita donde se lee antes de medir, que es
+  la tercera salida que este documento proponia y la unica que faltaba.
+
+MEDIDO: contra el binario real da `behind` / `FALLO` / rc 1, nombrando los dos
+commits y diciendo **por que la comparacion de versiones sale verde**. Contra
+el stub sin subcomando da `no-build-id` / `FALLO`, nombrando `032e9553`.
+
+## 5. El guard cazo un bug real del checker en su primera corrida honesta
+
+`dirty` salia `matches` / **OK** para un binario construido sobre un arbol
+sucio. Dos causas, ambas del parser de JSON del checker, y **ninguna la vio la
+revision**:
+
+1. `dirty` es un **booleano sin comillas** en el JSON y el `sed` exigia
+   comillas, luego salia vacio y el checker caia en la rama de `matches`.
+2. Arreglado eso, el valor se capturaba como `true  ` —**con espacios al
+   final**— porque la clase de caracteres no los excluia, y la comparacion
+   contra `true` es exacta.
+
+La segunda vez que un guard cazaba al autor en la misma sesion, y la segunda
+que el sintoma apuntaba al sitio equivocado. La asercion del caso `dirty`
+tiene dientes porque se comprobo: si no hubiera estado, el checker habria
+dado verde a un artefacto no reproducible.
+
+## 6. El residuo, declarado y NO cerrado
+
+- **Nada obliga a mirar.** `scripts/check_binary_freshness.sh` sale con 1
+  cuando el binario no sirve, y `dev doctor --strict` sale con 1, pero **ningun
+  runner los invoca**: MEDIDO, `doctor --strict` no aparece en `scripts/`,
+  `.github/` ni `githooks/` mas que en un comentario, y el paso 11 de la
+  release corre `doctor` en modo advisory y solo mira `bundle_coherence` y
+  `all_present`. El cierre de este documento se apoya en la **regla** (que un
+  agente lee al cargar AGENTS.md), no en la imposibilidad de saltarsela. Quien
+  quiera cerrarlo de verdad tiene que cablear el veredicto en el camino que
+  **certifica** una medicion —la verify de un ciclo, o la UAT—, no en el 1b: en
+  el 1b el binario del PATH es viejo **por construccion** durante una release,
+  luego ahi el gate seria rojo siempre y no mediria nada.
+- **La medicion es de esta maquina** y de este checkout. El mecanismo
+  (`git merge-base --is-ancestor` en las dos direcciones) es el de cualquier
+  clon.
+- **`ahead` sale en verde** a proposito: significa que el problema es el
+  checkout, no el binario, y un binario mas nuevo que el codigo no puede hacer
+  que una medicion sea falsa sobre el.
+- **El estado `no-checkout` sale `N/A`, no `FALLO`**, siguiendo el precedente de
+  `flat_install` y de `NoCheckout`/`Unknown` en `build_id.rs`: «no se puede
+  saber» no debe ser rojo, porque un rojo para «no lo se» es peor que no tener
+  check. La diferencia con `unknown-commit` —que SI falla— es deliberada y
+  esta razonada en el codigo: sin checkout no hay nada respecto de que ser
+  viejo; un artefacto que no se identifica no es una medicion con nombre.
