@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-068
 title: "Un bump manual deja BUNDLE.toml y manifest.toml atras, y la release se abre en el 1b una vez por cada fichero, sin dejar estado parcial"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "manual_version_bump_moves_one_of_three_version_files"
@@ -98,3 +98,116 @@ ficheros atras sin que nada lo detecte antes de la release. Hoy el
 detectan, pero **en el paso 1b de la release**: cuando ya se ha gastado la suite
 completa. El criterio de cierre es **anterior**: fallar en el commit que bumpea,
 no en el release que publica.
+
+---
+
+## RESUELTA (session-85) — el control esta en el push, que es donde la
+## deuda pedia que estuviera
+
+### OBSERVED primero: el defecto seguia vivo, y el texto de la deuda se
+### habia quedado a medias
+
+La deuda decia que el mecanismo era un `BUNDLE.toml` **untracked** que el
+bump se dejaba por delante. **Medido: los tres ficheros estan TRACKEADOS**
+(`git ls-files` los devuelve a los tres, ninguno en `.gitignore`). Esa parte
+del encuadre ya no se sostiene y no se arrastra a la resolucion.
+
+Lo que si se sostenia, y se **falso con el hook real** antes de tocarlo:
+un rango que mueve `[workspace.package] version` en `Cargo.toml` y deja
+`manifest.toml` y `BUNDLE.toml` atras era **ADMITIDO** por `githooks/pre-push`
+(`ACCEPT`), con los quince gates de la release en verde. El hook leia la
+version —para admitir— pero no leia los otros dos ficheros.
+
+### Donde va el control, y por que ahi
+
+**En `githooks/pre-push`, y antes de cualquier ruta de admision.** No es un
+recordatorio mas: es la superficie semantica que ya decide que entra a
+`main`, y se ejecuta **antes** de la release, que es literalmente el
+criterio de cierre que esta deuda se fijo: *«fallar en el commit que bumpea,
+no en el release que publica»*.
+
+Es un **veto, no una cuarta ruta**. Una ruta ADMITE un push; no CERTIFICA
+que la version sea coherente. Por eso se evalua antes del primer `continue`:
+colocado despues, decoraria los rangos que las otras rutas ya admitieron,
+que es la mitad de los pushes de una release.
+
+Y se **alinea con la autoridad en vez de stricter que ella** —error propio
+de este bloque, medido y corregido antes de commitear—. La primera version
+buscaba la clave bajo `[pack]` y `[bundle]`; `release-bump.sh` sustituye
+por **ancla de linea** (`s/^version = "[^"]*"/…/`) y no sabe de tablas, y
+el guard del 1b hace lo mismo (`test_release_state_pointer.sh:173`). Un hook
+mas estricto que la autoridad no la vigila: la contradice, y el operador ve
+un rechazo sin causa real. El predicado del veto es **el mismo** que el de
+los 1b, no un tercero.
+
+### Criterio de cierre, comprobado uno a uno
+
+> *Cerrada cuando un bump manual de `Cargo.toml` no pueda dejar los otros
+> dos ficheros atras sin que nada lo detecte antes de la release.*
+
+| Que exige el criterio | Medido |
+|---|---|
+| el estado partido se detecta ANTES de la release | `REJECT` en el pre-push, no en el 1b |
+| cada uno de los tres portable por separado | 3 casos `REJECT`, uno por carrier |
+| el camino bueno no se rompe | el bump coherente de los tres `ACCEPT` |
+| el veto no es una quarta ruta | caso dentro de la ventana tag-baseline: `REJECT` |
+| un fichero ausente no es un fichero partido | los 48 casos previos siguen `ACCEPT`/`REJECT` como antes |
+
+Matriz `tests/test_push_prevention_hook.sh`: `PASS=55 FAIL=0` (48 previos +
+7 nuevos). Corre el hook **real** por `core.hooksPath`, no una copia.
+
+### HALLAZGO PROPIO: una rama que diagnostica y no decide
+
+`if [[ -z "$declared" ]]` —el carrier presente que no declara version— se
+midio y **resulto no ser decisoria**: cuando `Cargo.toml` ya fijo `first`,
+la rama siguiente (`elif declared != first`) reporta el mismo fichero por la
+misma discrepancia. O sea que el caso «BUNDLE.toml sin clave version»
+pasaba en verde **por la rama de discrepancia, no por la fail-closed**. Un
+caso verde por la razon equivocada, que es el mismo patron que este repo ha
+encontrado cuatro veces y que no se deja sin decir: el autofalsador lo
+mide con M2 y **exige que el veredicto NO cambie**, en vez de buscarle una
+mutacion que no existe. La rama se queda por su valor diagnostico —el
+mensaje distingue «ilegible» de «distinto»— y **no se cuenta como diente**.
+
+### El falsador, y sus tres instrumentos rotos
+
+`tests/test_push_prevention_coherence_mutation.sh`, siete mediciones. Las
+correcciones las puso **el falsador fallando**, no la inspeccion:
+
+1. **M1 y M5 caian y se reportaban como «no cayo».** El needle buscaba el
+   nombre del caso en la linea de contadores, que solo tiene numeros. Las
+   dos mutaciones habian tumbado la matriz entera.
+2. **M3 era M6 disfrazado.** La primera mutacion metia la llamada dentro
+   de `if [[ -n "$VERSION_BUMP" ]]`, y en un rango sin bump de `Cargo.toml`
+   ese bloque no se ejecuta: la llamada quedaba tan inalcanzable como si no
+   existiera, luego no mediaba la COLOCACION que pretedia medir.
+3. **M4 no se aplicaba y casi se contaba como deteccion.** Su ancla
+   (`    return 1` seguido de `}`) aparece **dos veces** en el hook. Por eso
+   `apply` exige que cada ancla case **exactamente una vez** y declara
+   `NOTAPPLIED` si no: una sustitucion no unica mutaria el sitio
+   equivocado, y una que no muta es `NOTAPPLIED`, nunca `PASS`.
+
+M7 no existia como distincion y se creo para ello: el veto tiene que mirar
+el **tip**, no el primer commit del rango, y el caso que lo separa es un
+rango que **parte y se realinea** —tip coherente, asi que admitirlo es lo
+correcto, y un veto que mirase el rango lo reprobaria por un estado partido
+que ya no existe.
+
+**El falsador corre la matriz ENTERA contra un hook mutado**, con
+`SDDK_PREPUSH_HOOKS_DIR` apuntando a la arena: los casos no se reescriben
+en el falsador, porque un falsador con sus propios casos prueba sus propios
+casos — el defecto que INC-DEBT-074 cerro. El hook real nunca se muta, y la
+trampa restaura y **compara el sha256** aun asi, porque una trampa que
+restaura «en theory» envenena la suite siguiente.
+
+### GATES
+
+- `tests/test_push_prevention_hook.sh` — `PASS=55 FAIL=0`
+- `tests/test_push_prevention_coherence_mutation.sh` — 7 mediciones
+- `shellcheck --severity=warning` limpio en los tres ficheros tocados
+
+### Lo que NO se corrige aqui
+
+La superficie de gates del 1b sigue siendo una lista escrita a mano —lo
+dejo escrito y medido la sesion anterior en INC-DEBT-076—, y este bloque no
+la toca: es otro concernimiento y no es lo que esta deuda pedia.

@@ -420,6 +420,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_reconcile_pointer_yaml_safety.sh \
             tests/test_release_admission.sh \
             tests/test_push_prevention_hook.sh \
+            tests/test_push_prevention_coherence_mutation.sh \
             tests/test_release_receipt_authority.sh \
             tests/test_authority_helper_lockstep.sh \
             tests/test_adr_promotion_format.sh \
@@ -456,6 +457,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
     fi
     for t in tests/test_guard_exit_code_fidelity_mutation.sh \
              tests/test_push_prevention_hook.sh \
+             tests/test_push_prevention_coherence_mutation.sh \
              tests/test_release_admission.sh \
              tests/test_cargo_target_attribution.sh \
              tests/test_release_receipt_authority.sh \

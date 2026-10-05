@@ -24,7 +24,13 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK_PATH="$REPO_ROOT/githooks/pre-push"
+# The hooks directory is overridable so the autofalsador can run THIS
+# matrix against a MUTATED copy of the hook. The cases are not restated
+# over there: a falsador with its own copy of the cases would prove the
+# copy, which is the defect INC-DEBT-074 closed (a guard that runs a
+# pasted copy of the code guards nothing).
+HOOKS_DIR="${SDDK_PREPUSH_HOOKS_DIR:-$REPO_ROOT/githooks}"
+HOOK_PATH="$HOOKS_DIR/pre-push"
 
 if [[ ! -f "$HOOK_PATH" ]]; then
     echo "RED phase: githooks/pre-push does not exist"
@@ -77,7 +83,7 @@ run_case() {
         cd "$clone" || exit 2
         git config user.email "t@example.com"
         git config user.name "T"
-        git config core.hooksPath "$REPO_ROOT/githooks"
+        git config core.hooksPath "$HOOKS_DIR"
         git checkout -b main >/dev/null 2>&1 || git branch -M main
 
         # Seed: two commits so the root-commit case has no bump, and the
@@ -238,7 +244,7 @@ hook_direct_case() { # <expect>
     remote_sha="$(git rev-parse --verify -q origin/main 2>/dev/null)" \
         || remote_sha="0000000000000000000000000000000000000000"
     in_line="refs/heads/main $(git rev-parse HEAD) refs/heads/main ${remote_sha}"
-    out=$(printf '%s\n' "$in_line" | bash "$REPO_ROOT/githooks/pre-push" 2>&1)
+    out=$(printf '%s\n' "$in_line" | bash "$HOOKS_DIR/pre-push" 2>&1)
     code=$?
     local got="ACCEPT"
     [[ $code -ne 0 ]] && got="REJECT"
@@ -595,7 +601,7 @@ res="$(
         cd "$dir/clone" &&
         git config user.email "t@example.com" &&
         git config user.name "T" &&
-        git config core.hooksPath "$REPO_ROOT/githooks" &&
+        git config core.hooksPath "$HOOKS_DIR" &&
         git checkout -b main >/dev/null 2>&1 &&
         seed_cargo "1.1.0" &&
         git add Cargo.toml &&
@@ -632,6 +638,98 @@ case "$verdict" in
           [[ -f "$TMPROOT/failclosed-direct.log" ]] && cat "$TMPROOT/failclosed-direct.log" ;;
     *) FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL  fixture error: tag query broken (fail-closed) [verdict=<${verdict}>]" ;;
 esac
+
+echo ""
+echo "=== version-coherence veto (INC-DEBT-068) ==="
+# The version lives in THREE files that have to move together, and
+# release-bump.sh is the only thing that moves all three. A hand bump moves
+# one and leaves the other two behind; until this veto existed, that state
+# was admissible to main and the release discovered it in step 1b — after
+# the full workspace suite. Measured: session-70, and twice in session-78
+# where the two 1b failures were the same cause found twice, one file each,
+# one full release cycle each.
+#
+# These cases run the REAL hook through core.hooksPath, and the fixtures
+# carry all three version files — a fixture with a Cargo.toml alone would
+# never reach the veto, because an absent file is not a split file.
+
+seed_version_files() { # $1 = version -> the two non-Cargo carriers
+    cat > manifest.toml <<EOF
+[pack]
+version = "$1"
+EOF
+    cat > BUNDLE.toml <<EOF
+[bundle]
+schema_version = 2
+version = "$1"
+binary_min_version = "$1"
+binary_max_version = "$1"
+EOF
+}
+
+# The pre-phase has to be ADMISSIBLE in its own right, and adding two
+# non-docs files without a version bump is not: (A) sees no bump, (A-v2)
+# sees a tip that does not beat v1.0.0, (B) sees a non-docs path. So the
+# carriers arrive with a coherent bump of all three. From here the tip is
+# 1.0.1 > the only published tag v1.0.0, which puts every case below
+# INSIDE the tag-baseline window — the veto is the only thing that can
+# reject them, which is what makes these cases falsifying rather than
+# decorative.
+p_add_version_files() {
+    seed_cargo "1.0.1"
+    seed_version_files "1.0.1"
+    git add -A
+    git commit -qm "chore(release): bump version 1.0.0 -> 1.0.1 and add bundle version carriers"
+}
+s_bump_all_three() { seed_cargo "1.1.0"; seed_version_files "1.1.0"; git add -A; git commit -qm "chore(release): bump version 1.0.1 -> 1.1.0"; }
+s_bump_cargo_only() { seed_cargo "1.1.0"; git add Cargo.toml; git commit -qm "chore(release): bump version 1.0.1 -> 1.1.0"; }
+s_bump_manifest_only() { sed -i 's/^version = "1.0.1"/version = "1.1.0"/' manifest.toml; git add manifest.toml; git commit -qm "chore(release): bump manifest 1.0.1 -> 1.1.0"; }
+s_bump_bundle_only() { sed -i 's/^version = "1.0.1"/version = "1.1.0"/' BUNDLE.toml; git add BUNDLE.toml; git commit -qm "chore(release): bump bundle 1.0.1 -> 1.1.0"; }
+# BUNDLE.toml exists but declares no version line: fail-closed, not a pass.
+s_unreadable_bundle() { printf '[bundle]\nschema_version = 2\n' > BUNDLE.toml; git add BUNDLE.toml; git commit -qm "chore(bundle): drop the version key"; }
+
+# THE DEFECT: each carrier left behind, one at a time. The pre-push used to
+# accept all three and the release died in 1b on each.
+run_case "INC-DEBT-068: bump de Cargo.toml solo deja los otros dos atras" REJECT s_bump_cargo_only p_add_version_files
+run_case "INC-DEBT-068: bump de manifest.toml solo deja los otros dos atras" REJECT s_bump_manifest_only p_add_version_files
+run_case "INC-DEBT-068: bump de BUNDLE.toml solo deja los otros dos atras" REJECT s_bump_bundle_only p_add_version_files
+
+# The good path. A veto that rejects this is a veto that contradicts the
+# authority, and it would block every release, not protect them.
+run_case "INC-DEBT-068: el bump coherente de los tres SE ADMITE" ACCEPT s_bump_all_three p_add_version_files
+
+# It is a VETO, not a fourth route. Every case above already sits inside the
+# tag-baseline window, where (A-v2) admits any non-empty range. This one
+# makes the window explicit and wide (2.0.0 against a single v1.0.0 tag):
+# if the check were one route among several, it would be admitted here and
+# the veto would be decoration on the ranges that happened to fall through.
+s_split_above_tag_baseline() {
+    seed_cargo "2.0.0"
+    git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.0.1 -> 2.0.0"
+}
+run_case "INC-DEBT-068: el veto gana a la ruta tag-baseline (A-v2)" REJECT s_split_above_tag_baseline p_add_version_files
+
+# Fail-closed on the unreadable carrier. A file that is there but says
+# nothing is not a file that is not there, and the two must not decide the
+# same thing.
+run_case "INC-DEBT-068: BUNDLE.toml sin clave version es fail-closed" REJECT s_unreadable_bundle p_add_version_files
+
+# El veto tiene que mirar el TIP, no el primer commit del rango. Este caso
+# es el que lo distingue: el rango PARTE y despues se realinea, y el estado
+# final es coherente. Un veto que mirase el primer commit del rango lo
+# rechazaria por un estado partido que ya no existe en el tip — o sea,
+# reprobaría un push que no pide reprobar. Y un veto que no mirase el tip
+# de ningun modo dejaría pasar el caso de arriba, que es el que importa.
+s_split_then_realign() {
+    seed_cargo "1.1.0"
+    git add Cargo.toml
+    git commit -qm "chore(release): bump version 1.0.1 -> 1.1.0 (a medias)"
+    seed_version_files "1.1.0"
+    git add -A
+    git commit -qm "chore(release): alinear manifest.toml y BUNDLE.toml"
+}
+run_case "INC-DEBT-068: rango que parte y se realinea, tip coherente, SE ADMITE" ACCEPT s_split_then_realign p_add_version_files
 
 echo ""
 echo "=== matrix result: PASS=$PASS_COUNT FAIL=$FAIL_COUNT ==="

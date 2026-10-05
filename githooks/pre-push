@@ -59,7 +59,10 @@
 DISCIPLINE="apply/release split"
 INC_IDENTIFIER="INC-MATRIX-LINT-CODES-APPLY-PUSH-VIOLATION"
 INC_CEREMONIAL="INC-A5-PUSH-RELEASE-MARKER-FRICTION"
+INC_COHERENCE="INC-DEBT-068"
 CARGO_TOML_PATH="Cargo.toml"
+MANIFEST_TOML_PATH="manifest.toml"
+BUNDLE_TOML_PATH="BUNDLE.toml"
 # Scratch file for the tag query result; recreated per push invocation.
 TMP_TAG_OUT="$(mktemp "${TMPDIR:-/tmp}/sddk-prepush-tags.XXXXXX")"
 
@@ -116,6 +119,92 @@ cargo_workspace_version() {
             exit
         }
     '
+}
+
+# The version a file declares, as a line-anchored `version = "..."`.
+#
+# POR QUE NO ES TABLE-AWARE, Y POR QUE ESO ES LO CORRECTO
+# La primera version de este predicado se escribio buscando la clave bajo
+# `[pack]` / `[bundle]`. Es mas estricto que la autoridad, y por eso
+# rechazaba ficheros que `release-bump.sh` mueve sin problema: el bump
+# sustituye por ANCLA DE LINEA —
+#
+#   sed -i "s/^version = \"[^\"]*\"/version = \"$NEXT\"/" manifest.toml
+#
+# — y no sabe de tablas. Lo mismo hace el guard del 1b
+# (`tests/test_release_state_pointer.sh:173`):
+#
+#   man_ver=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' manifest.toml | head -1)
+#
+# Un hook mas estricto que la autoridad no vigila la autoridad: la
+# contradice, y el operador ve un rechazo sin causa real. Este es el MISMO
+# predicado que los 1b, no un tercero: una sola definicion de "la version
+# de este fichero", para que el veto y los guards no puedan discrepar.
+#
+# Salida vacia = "este contenido no declara version", que NO es lo mismo
+# que "el fichero no existe". Confundirlas es exactamente el defecto de
+# INC-DEBT-072 (una clave que existe con null nunca dispara el default),
+# y el que decide el tratamiento es el que puede ver la diferencia.
+file_declared_version() { # $1 = content
+    printf '%s\n' "$1" | sed -n 's/^version *= *"\([^"]*\)".*/\1/p' | head -1
+}
+
+# Version coherence at the pushed tip (INC-DEBT-068).
+#
+# The version lives in THREE files that have to move together, and a bump
+# made by hand moves one:
+#
+#   Cargo.toml     [workspace.package] version   everything, incl. this hook
+#   manifest.toml  [pack] version                 test_release_state_pointer.sh (1b)
+#   BUNDLE.toml    [bundle] version               test_dev_install_source_guard.sh (1b)
+#
+# `scripts/release-bump.sh` moves all three at once. A manual `sed` over
+# Cargo.toml leaves the other two behind, and the release finds out in
+# step 1b — AFTER the full workspace suite and the whole shell-contract
+# battery have been spent. Measured three times: session-70, and twice in
+# session-78, where the two 1b failures were the SAME cause found twice,
+# one per file, one full release cycle each.
+#
+# This is a VETO, not a route. A route admits a push; it does not certify
+# that the version is coherent. An incoherent version is not admissible
+# through (A), nor through (A-v2), nor through (B).
+#
+# FAIL-CLOSED where being closed is meaningful: a file that EXISTS at the
+# tip but whose version cannot be read is a rejection. A file that does
+# not exist at the tip is not part of the set at all — that is a fact
+# about this repository, not an unknown, and failing closed there would
+# reject every fixture that legitimately carries a Cargo.toml alone.
+version_coherence_violation() { # $1 = tip sha -> prints a report, or nothing
+    local tip="$1"
+    local path declared="" first="" report=""
+
+    for path in "$CARGO_TOML_PATH" "$MANIFEST_TOML_PATH" "$BUNDLE_TOML_PATH"; do
+        # Absent at the tip: not part of the set. Not an error.
+        git cat-file -e "$tip:$path" 2>/dev/null || continue
+
+        local content
+        content="$(git show "$tip:$path" 2>/dev/null || true)"
+        declared="$(file_declared_version "$content")"
+
+        if [[ -z "$declared" ]]; then
+            report="${report}  $path: EXISTE en el tip pero NO declara version (ilegible) -> fail-closed"$'\n'
+            continue
+        fi
+        if [[ -z "$first" ]]; then
+            first="$declared"
+        elif [[ "$declared" != "$first" ]]; then
+            report="${report}  $path: $declared"$'\n'
+        fi
+    done
+
+    [[ -z "$report" ]] && return 0
+    printf 'ERROR: Push to main rejected — la version esta PARTIDA entre los tres ficheros que la llevan.' >&2
+    printf 'ERROR:   version de referencia: %s\n' "$first" >&2
+    printf '%s' "$report" | while IFS= read -r line; do printf 'ERROR:%s\n' "$line" >&2; done
+    printf 'ERROR: (%s | %s)\n' "$DISCIPLINE" "$INC_COHERENCE" >&2
+    printf 'ERROR: Ninguna ruta de admision cubre esto: una ruta ADMITE el push, no CERTIFICA que la version sea coherente.\n' >&2
+    printf 'ERROR: El bump se hace con scripts/release-bump.sh, que mueve los tres a la vez. Un bump a mano es lo que rompe esto.\n' >&2
+    return 1
 }
 
 # Closed documentation-only allowlist. Keep small and explicit.
@@ -211,6 +300,15 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     if [[ -z "$COMMITS_TO_CHECK" ]]; then
         echo "ERROR: Push to main rejected — empty commit range (nothing to admit)." >&2
         echo "ERROR: ($DISCIPLINE | $INC_IDENTIFIER)" >&2
+        exit 1
+    fi
+
+    # (INC-DEBT-068) Coherence veto. Placed here, BEFORE any admit route,
+    # because it is not a route: an incoherent version is not admissible
+    # through (A), nor through (A-v2), nor through (B). Checking it after
+    # the first `continue` would leave it reachable only when the other
+    # routes had already failed.
+    if ! version_coherence_violation "$local_sha"; then
         exit 1
     fi
 
