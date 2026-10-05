@@ -150,12 +150,13 @@ impl Locator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
     /// El manifiesto declara una versión, y hay algo con lo que comprobar.
-    Declares {
-        /// Cómo se lee el manifiesto.
-        format: ManifestFormat,
-        /// Dónde está el valor.
-        locator: Locator,
-    },
+    ///
+    /// El formato y el locator **ya no viven aquí**: viven en el candidato
+    /// ([`VersionCandidateSpec::extraction`]). Una variante con un solo
+    /// campo de datos —la clase— y el resto en el candidato es lo que
+    /// permite que dos ficheros del mismo ecosistema se lean con formatos
+    /// distintos, que es lo que losecosistemas reales exigen.
+    Declares,
     /// El ecosistema **no** declara versión; el tag es la declaración.
     ///
     /// Se concede solo a los ecosistemas cuya entrada lo dice, y el resultado
@@ -164,13 +165,48 @@ pub enum SourceKind {
     TagIsTheOnlyAuthority,
 }
 
+/// CÓMO se extrae la versión de UN candidato.
+///
+/// El extractor pertenece al **candidato**, no al ecosistema, y esa es la
+/// diferencia que cuesta caro cuando se atribuye al ecosistema. El registro
+/// declaraba
+///
+/// ```text
+/// jvm_gradle → ["gradle.properties", "build.gradle.kts", "build.gradle"]
+///              format: Properties,  locator: Tag("version")
+/// ```
+///
+/// es decir, los tres ficheros con UN solo formato. `build.gradle.kts` es un
+/// script de Kotlin, y leerlo con el parser de `clave=valor` de
+/// `gradle.properties` no es una aproximación: es una mentira sobre el
+/// formato, y una mentira que además es silenciosa cuando el fichero
+/// casualmente encaja.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CandidateExtraction {
+    /// Cómo se parsea **este** fichero.
+    pub format: ManifestFormat,
+    /// Dónde está el valor **en este** fichero.
+    pub locator: Locator,
+}
+
+/// Un candidato: un fichero y cómo se lee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VersionCandidateSpec {
+    /// Ruta relativa a la raíz del repositorio.
+    pub path: &'static str,
+    /// `None` para las fuentes que solo aportan un tag y no declaran valor
+    /// (`go.mod`, `MODULE.bazel`): escribirles un extractor sería inventar un
+    /// formato que no tienen.
+    pub extraction: Option<CandidateExtraction>,
+}
+
 /// Una fila del registro. Datos puros: no hay función, ni closure, ni código.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionSourceSpec {
     /// Identificador estable del ecosistema.
     pub ecosystem: &'static str,
-    /// Manifiestos candidatos, en orden de preferencia.
-    pub manifest_paths: &'static [&'static str],
+    /// Candidatos, en orden de preferencia.
+    pub candidates: &'static [VersionCandidateSpec],
     /// Qué clase de fuente es.
     pub kind: SourceKind,
 }
@@ -179,86 +215,177 @@ pub struct VersionSourceSpec {
 pub const REGISTRY: &[VersionSourceSpec] = &[
     VersionSourceSpec {
         ecosystem: "rust",
-        manifest_paths: &["Cargo.toml"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Toml,
-            // El ORDEN es la regla, y se aplicaba a mano en una función que
-            // ya no existe. Se conserva aquí, con su motivo, porque el orden
-            // es lo único que no se deduce solo:
-            //
-            //   1. `[workspace.package]` — la declaración del workspace.
-            //   2. `[workspace]`          — workspaces antiguos, y los tests de
-            //      este repo, que ponían la clave directamente en la tabla.
-            //   3. `[package]`            — un crate suelto no tiene tabla de
-            //      workspace; sin esta, el error sería el espejo del bug
-            //      original: abortar en un proyecto cuya versión está a la vista.
-            //
-            // Lo que NO es esta lista: «la primera clave `version` bajo
-            // cualquier tabla que empiece por `[workspace`». Eso es lo que
-            // hacía el parser de línea y leía `[workspace.dependencies]`
-            // (RED medido, session-65i: `left: "9.9.9" / right: "1.42.5"`),
-            // porque esa tabla también empieza por `[workspace`. El fallo era
-            // silencioso: un número seguro que describía una dependencia.
-            // Una lista de rutas exactas no puede repetirlo.
-            locator: Locator::AnyOfKeys(&[
-                &["workspace", "package", "version"],
-                &["workspace", "version"],
-                &["package", "version"],
-            ]),
-        },
+        candidates: &[
+            VersionCandidateSpec {
+                path: "Cargo.toml",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Toml,
+                    // El ORDEN de las claves es la regla. Se conserva aquí,
+                    // con su motivo, porque el orden es lo único que no se
+                    // deduce solo:
+                    //
+                    //   1. `[workspace.package]` — la declaración del workspace.
+                    //   2. `[workspace]`          — workspaces antiguos, y los
+                    //      tests de este repo, que ponían la clave
+                    //      directamente en la tabla.
+                    //   3. `[package]`            — un crate suelto no tiene
+                    //      tabla de workspace; sin esta, el error sería el
+                    //      espejo del bug original: abortar en un proyecto
+                    //      cuya versión está a la vista.
+                    //
+                    // Lo que NO es esta lista: «la primera clave `version`
+                    // bajo cualquier tabla que empiece por `[workspace`». Eso
+                    // es lo que hacía el parser de línea y leía
+                    // `[workspace.dependencies]` (RED medido, session-65i:
+                    // `left: "9.9.9" / right: "1.42.5"`), porque esa tabla
+                    // también empieza por `[workspace`.
+                    locator: Locator::AnyOfKeys(&[
+                        &["workspace", "package", "version"],
+                        &["workspace", "version"],
+                        &["package", "version"],
+                    ]),
+                }),
+            },
+        ],
+        kind: SourceKind::Declares,
     },
     VersionSourceSpec {
         ecosystem: "typescript",
-        manifest_paths: &["package.json"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Json,
-            locator: Locator::Keys(&["version"]),
-        },
+        candidates: &[
+            VersionCandidateSpec {
+                path: "package.json",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Json,
+                    locator: Locator::Keys(&["version"]),
+                }),
+            },
+        ],
+        kind: SourceKind::Declares,
     },
     VersionSourceSpec {
         ecosystem: "python",
-        manifest_paths: &["pyproject.toml", "setup.py"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Toml,
-            // PEP 621 primero; poetry después. Un proyecto no declara en los dos.
-            locator: Locator::AnyOfKeys(&[&["project", "version"], &["tool", "poetry", "version"]]),
-        },
+        candidates: &[
+            VersionCandidateSpec {
+                path: "pyproject.toml",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Toml,
+                    // PEP 621 primero; poetry después. Un proyecto no declara
+                    // en los dos.
+                    locator: Locator::AnyOfKeys(&[
+                        &["project", "version"],
+                        &["tool", "poetry", "version"],
+                    ]),
+                }),
+            },
+            // `setup.py` es PYTHON. Con el formato compartido del ecosistema
+            // se parseaba como TOML y el parseo fallaba, que es peor que no
+            // encontrarlo: el fallo venía de un fichero que el registro
+            // declaraba como si fuera de otro formato. MEDIDO: un proyecto
+            // con `package.json` CON versión y un `setup.py` no resolvía
+            // nada, porque el `Unparsable` del `setup.py` abortaba el bucle
+            // entero y se perdía la versión que ya se había encontrado.
+            //
+            // No se le da un extractor de Python aquí a propósito: un regex
+            // sobre `setup(...)` sería la misma mentira de formato que se
+            // acaba de quitar. Se declara como candidato SIN extracción, que
+            // es un hecho honesto —«este fichero existe y no es una fuente
+            // declarable»— en vez de una lectura equivocada.
+            VersionCandidateSpec {
+                path: "setup.py",
+                extraction: None,
+            },
+        ],
+        kind: SourceKind::Declares,
     },
     VersionSourceSpec {
         ecosystem: "jvm_gradle",
-        manifest_paths: &["gradle.properties", "build.gradle.kts", "build.gradle"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Properties,
-            locator: Locator::Tag("version"),
-        },
+        candidates: &[
+            VersionCandidateSpec {
+                path: "gradle.properties",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Properties,
+                    locator: Locator::Tag("version"),
+                }),
+            },
+            // Los dos ficheros de build NO son properties. Se declaran sin
+            // extracción por la misma razón que `setup.py`: un script de
+            // Kotlin leído con un parser de `clave=valor` no es una
+            // aproximación, es otro formato afirmando algo que
+            // no dice. Resolverlos de verdad exige un resolver que EVALÚA
+            // Gradle —bloque aparte, y no trivial: la versión puede venir de
+            // `providers`, de un catálogo de versiones o de un convention
+            // plugin—. Lo que se arregla aquí es que su presencia o su
+            // ausencia ya no apaguen la resolución de los demás.
+            //
+            // MEDIDO antes del arreglo: un `gradle.properties` de
+            // configuración legítima sin `version=` abortaba la resolución
+            // con «could not find `version`», y el `build.gradle.kts` de al
+            // lado —el siguiente candidato de la MISMA lista— no se leía.
+            VersionCandidateSpec {
+                path: "build.gradle.kts",
+                extraction: None,
+            },
+            VersionCandidateSpec {
+                path: "build.gradle",
+                extraction: None,
+            },
+        ],
+        kind: SourceKind::Declares,
     },
     VersionSourceSpec {
         ecosystem: "dotnet",
-        manifest_paths: &["Directory.Build.props", "Directory.Packages.props"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Xml,
-            locator: Locator::Tag("Version"),
-        },
+        candidates: &[
+            VersionCandidateSpec {
+                path: "Directory.Build.props",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Xml,
+                    locator: Locator::Tag("Version"),
+                }),
+            },
+            VersionCandidateSpec {
+                path: "Directory.Packages.props",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Xml,
+                    locator: Locator::Tag("Version"),
+                }),
+            },
+        ],
+        kind: SourceKind::Declares,
     },
     VersionSourceSpec {
         ecosystem: "cpp_cmake",
-        manifest_paths: &["CMakeLists.txt"],
-        kind: SourceKind::Declares {
-            format: ManifestFormat::Cmake,
-            locator: Locator::Tag("VERSION"),
-        },
+        candidates: &[VersionCandidateSpec {
+            path: "CMakeLists.txt",
+            extraction: Some(CandidateExtraction {
+                format: ManifestFormat::Cmake,
+                locator: Locator::Tag("VERSION"),
+            }),
+        }],
+        kind: SourceKind::Declares,
     },
     // Las dos que no declaran versión. Verificadas: `go.mod` es
     // `module path` + `go 1.x`; `MODULE.bazel` no lleva versión. Escribir una
     // aquí sería inventarles un fichero que no existe.
     VersionSourceSpec {
         ecosystem: "go",
-        manifest_paths: &["go.mod"],
+        candidates: &[VersionCandidateSpec {
+            path: "go.mod",
+            extraction: None,
+        }],
         kind: SourceKind::TagIsTheOnlyAuthority,
     },
     VersionSourceSpec {
         ecosystem: "bazel",
-        manifest_paths: &["MODULE.bazel", "WORKSPACE"],
+        candidates: &[
+            VersionCandidateSpec {
+                path: "MODULE.bazel",
+                extraction: None,
+            },
+            VersionCandidateSpec {
+                path: "WORKSPACE",
+                extraction: None,
+            },
+        ],
         kind: SourceKind::TagIsTheOnlyAuthority,
     },
 ];
@@ -532,14 +659,53 @@ pub fn resolve_project_version(root: &Path) -> Result<VersionAuthority, VersionS
 }
 
 /// La resolución por sí sola, sin mirar la declaración del proyecto.
+///
+/// ## La ley: *fail closed, but not fail first*
+///
+/// Un candidato produce exactamente uno de cuatro veredictos, y cada uno
+/// tiene una consecuencia distinta. Antes esta función sólo tenía dos, y por
+/// eso no podía distinguirlos:
+///
+/// | Veredicto | Qué es | Consecuencia |
+/// |---|---|---|
+/// | `Absent` | el fichero no existe | siguiente candidato |
+/// | `PresentButUndeclared` | existe, se leyó, y no declara versión | siguiente candidato |
+/// | `Declared` | existe y declara versión | candidato de autoridad |
+/// | `Invalid` | existe y **no se puede parsear** | **FALLA CERRADO** |
+///
+/// La cuarta fila es la que se conserva sin relajar, y es la que un test
+/// previo ya exigía para un solo ecosistema: un manifiesto que no se puede
+/// leer puede estar escondiendo algo, y ceder ahí cambiaría la autoridad de
+/// un proyecto en silencio.
+///
+/// Lo que cambia es la segunda fila, y antes de este arreglo no existía como
+/// categoría: `PresentButUndeclared` se colapsaba sobre `Invalid` por el
+/// camino del `?`, y una sola fila `NotDeclared` **abortaba la resolución
+/// entera**. MEDIDO, dos consecuencias, las dos reales:
+///
+/// - `gradle.properties` con configuración legítima y sin `version=` daba
+///   «could not find `version`» y el `build.gradle.kts` de al lado —el
+///   siguiente candidato de la MISMA lista— no se leía nunca.
+/// - `setup.py` (Python, declarado como TOML por el ecosistema) fallaba el
+///   parseo y **borraba la versión que `package.json` ya había declarado**,
+///   porque `typescript` va antes que `python` en el registro.
+///
+/// Que un fichero legítimo que no declara versión no bloquee a otro
+/// mecanismo es lo que hace la ley. Que un fichero corrupto no se ignore es
+/// lo que la mantiene honesta.
 fn resolve_from_manifests(root: &Path) -> Result<VersionAuthority, VersionSourceError> {
     let mut declared: Vec<VersionCandidate> = Vec::new();
     let mut tag_only: Vec<&'static str> = Vec::new();
     let mut searched: Vec<String> = Vec::new();
+    // Candidatos que existen y no declaran. No es decorativo: sin esto, un
+    // `NoSource` no puede decir por qué no encontró nada, y la diferencia
+    // entre «no hay ningún manifiesto» y «hay cuatro y ninguno declara» es
+    // la que hace falta para arreglarlo.
+    let mut undeclared: Vec<String> = Vec::new();
 
     for spec in REGISTRY {
-        for rel in spec.manifest_paths {
-            let path = root.join(rel);
+        for candidate in spec.candidates {
+            let path = root.join(candidate.path);
             searched.push(path.display().to_string());
             if !path.exists() {
                 continue;
@@ -548,7 +714,16 @@ fn resolve_from_manifests(root: &Path) -> Result<VersionAuthority, VersionSource
                 SourceKind::TagIsTheOnlyAuthority => {
                     tag_only.push(spec.ecosystem);
                 }
-                SourceKind::Declares { format, locator } => {
+                SourceKind::Declares => {
+                    // El extractor es del CANDIDATO. Un candidato sin
+                    // extracción no es un fallo: es un fichero que existe y
+                    // que este registro sabe que no es una fuente
+                    // declarable. Preguntarle igual sería repetir la mentira
+                    // que este arreglo quita.
+                    let Some(extraction) = candidate.extraction else {
+                        undeclared.push(path.display().to_string());
+                        continue;
+                    };
                     let content = std::fs::read_to_string(&path).map_err(|e| {
                         VersionSourceError::Unreadable {
                             ecosystem: spec.ecosystem,
@@ -556,25 +731,29 @@ fn resolve_from_manifests(root: &Path) -> Result<VersionAuthority, VersionSource
                             reason: e.to_string(),
                         }
                     })?;
-                    let version =
-                        extract_from(format, locator, &content).map_err(|why| match why {
-                            ExtractError::Parse(reason) => VersionSourceError::Unparsable {
+                    match extract_from(extraction.format, extraction.locator, &content) {
+                        Ok(version) => declared.push(VersionCandidate {
+                            ecosystem: spec.ecosystem,
+                            path,
+                            version,
+                        }),
+                        // `Absent` es el caso nuevo, y el que antes abortaba.
+                        Err(ExtractError::Absent) => {
+                            undeclared.push(path.display().to_string())
+                        }
+                        // `Parse` sigue fallando cerrado, y a propósito: es el
+                        // único caso en el que el fichero dice algo que no se
+                        // puede leer, y ceder aquí sería dejar que un
+                        // manifiesto roto decidiera por ausencia.
+                        Err(ExtractError::Parse(reason)) => {
+                            return Err(VersionSourceError::Unparsable {
                                 ecosystem: spec.ecosystem,
-                                path: path.clone(),
-                                format: format.label(),
+                                path,
+                                format: extraction.format.label(),
                                 reason,
-                            },
-                            ExtractError::Absent => VersionSourceError::NotDeclared {
-                                ecosystem: spec.ecosystem,
-                                path: path.clone(),
-                                locator: locator.describe(),
-                            },
-                        })?;
-                    declared.push(VersionCandidate {
-                        ecosystem: spec.ecosystem,
-                        path,
-                        version,
-                    });
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -612,7 +791,19 @@ fn resolve_from_manifests(root: &Path) -> Result<VersionAuthority, VersionSource
 
     Err(VersionSourceError::NoSource {
         root: root.to_path_buf(),
-        searched: searched.join(", "),
+        // Los candidatos que existían y no declaraban se nombran aparte. Sin
+        // esta línea el mensaje es indistinguible del caso «aquí no hay
+        // ningún manifiesto», y son dos problemas con arreglos opuestos: uno
+        // necesita un fichero, el otro necesita que el fichero declare.
+        searched: if undeclared.is_empty() {
+            searched.join(", ")
+        } else {
+            format!(
+                "{} (presentes-pero-sin-declarar: {})",
+                searched.join(", "),
+                undeclared.join(", ")
+            )
+        },
         declaration: AUTHORITY_DECLARATION,
     })
 }
@@ -779,7 +970,12 @@ fn scalar_to_string(value: Option<&toml::Value>) -> Option<String> {
 pub fn searched_manifests() -> BTreeMap<&'static str, Vec<&'static str>> {
     REGISTRY
         .iter()
-        .map(|s| (s.ecosystem, s.manifest_paths.to_vec()))
+        .map(|s| {
+            (
+                s.ecosystem,
+                s.candidates.iter().map(|c| c.path).collect::<Vec<_>>(),
+            )
+        })
         .collect()
 }
 
@@ -1039,18 +1235,44 @@ mod tests {
     }
 
     #[test]
+    /// Un manifiesto válido sin versión sigue siendo **otro hecho** que uno
+    /// roto, y la diferencia se sigue viendo: el roto dice que no se pudo
+    /// parsear, y este dice qué ficheros encontró y que ninguno declara.
+    ///
+    /// ## Por qué cambió de variante, y por qué el test no se borró
+    ///
+    /// Antes afirmaba `NotDeclared` y el mensaje «could not find `version`»,
+    /// porque el `?` del bucle convertía "no declara" en error. Ese `?` era el
+    /// defecto: **abortaba la resolución entera**, y con ella la de todos los
+    /// candidatos siguientes y de todos los ecosistemas posteriores. Con
+    /// `gradle.properties` presente y sin `version=`, un proyecto no resolví­
+    /// ba aunque tuviera un `package.json` al lado con su versión.
+    ///
+    /// Lo que este test protege NO era la variante: era la DISTINCIÓN entre
+    /// válido-sin-versión y roto, y esa distinción se conserva y se afina —
+    /// el mensaje ahora nombra el fichero bajo «presentes-pero-sin-declarar»,
+    /// que es información que el mensaje viejo no daba.
+    #[test]
     fn a_valid_manifest_without_a_version_is_a_different_fact_than_a_broken_one() {
         let d = tempfile::tempdir().unwrap();
         write(d.path(), "Cargo.toml", "[workspace]\nmembers = []");
         let err = resolve_project_version(d.path()).unwrap_err();
         let msg = err.to_string();
+        // Sigue sin ser un fallo de parseo: es un hallazgo, no una rotura.
         assert!(
-            matches!(err, VersionSourceError::NotDeclared { .. }),
-            "{msg}"
+            !matches!(err, VersionSourceError::Unparsable { .. }),
+            "un manifiesto válido no puede reportarse como roto: {msg}"
         );
         assert!(
-            msg.contains("could not find `version`"),
-            "el mensaje de paridad con el lockstep de Rust se conserva: {msg}"
+            matches!(err, VersionSourceError::NoSource { .. }),
+            "{msg}"
+        );
+        // Y ahora dice QUÉ encontró: sin esto, «no encuentro nada» y «encontré
+        // uno y no declara» son el mismo mensaje, y solo uno de los dos se
+        // arregla añadiendo un fichero.
+        assert!(
+            msg.contains("presentes-pero-sin-declarar") && msg.contains("Cargo.toml"),
+            "el mensaje tiene que nombrar el fichero presente que no declara: {msg}"
         );
     }
 
@@ -1084,28 +1306,27 @@ mod tests {
     fn a_new_ecosystem_is_data_and_needs_no_code() {
         let spec = VersionSourceSpec {
             ecosystem: "cargo_of_the_test",
-            manifest_paths: &["Cargo.toml"],
-            kind: SourceKind::Declares {
-                format: ManifestFormat::Toml,
-                locator: Locator::Keys(&["package", "version"]),
-            },
+            candidates: &[VersionCandidateSpec {
+                path: "Cargo.toml",
+                extraction: Some(CandidateExtraction {
+                    format: ManifestFormat::Toml,
+                    locator: Locator::Keys(&["package", "version"]),
+                }),
+            }],
+            kind: SourceKind::Declares,
         };
         let d = tempfile::tempdir().unwrap();
         write(d.path(), "Cargo.toml", "[package]\nversion = \"8.8.8\"");
 
         // El mismo lector, el mismo format, otro locator: sin una rama nueva.
+        // El format y el locator se leen ahora del CANDIDATO, que es donde
+        // viven; el test se actualiza porque cambió de sitio, no de
+        // comportamiento.
+        let extraction = spec.candidates[0]
+            .extraction
+            .expect("el candidato declara su extracción");
         let content = std::fs::read_to_string(d.path().join("Cargo.toml")).unwrap();
-        let got = extract_from(
-            match spec.kind {
-                SourceKind::Declares { format, .. } => format,
-                SourceKind::TagIsTheOnlyAuthority => unreachable!(),
-            },
-            match spec.kind {
-                SourceKind::Declares { locator, .. } => locator,
-                SourceKind::TagIsTheOnlyAuthority => unreachable!(),
-            },
-            &content,
-        );
+        let got = extract_from(extraction.format, extraction.locator, &content);
         assert_eq!(got.unwrap(), "8.8.8");
     }
 
@@ -1125,20 +1346,51 @@ mod tests {
     #[test]
     fn every_declaring_row_declares_a_format_and_a_locator() {
         for spec in REGISTRY {
-            match spec.kind {
-                SourceKind::Declares { format, locator } => {
-                    let _ = format.label();
+            for candidate in spec.candidates {
+                if let Some(extraction) = candidate.extraction {
+                    let _ = extraction.format.label();
                     assert!(
-                        !locator.describe().is_empty(),
+                        !extraction.locator.describe().is_empty(),
                         "{} produce un mensaje vacio",
                         spec.ecosystem
                     );
                 }
-                SourceKind::TagIsTheOnlyAuthority => {}
+            }
+            // El invariante real NO es «todo candidato tiene extractor»:
+            // `setup.py` y los ficheros de build de Gradle se registran SIN
+            // extractor a proposito, porque existen en el repositorio y no
+            // son fuente de versión declarable. Un invariante que exigiera un
+            // extractor a cada uno obligaria a inventarles uno —el mismo
+            // defecto que este arreglo quita—.
+            //
+            // Lo que sí tiene que ser cierto: un ecosistema que DECLARA
+            // versión tiene al menos un candidato que la lee. Si no, la fila
+            // dice una cosa y hace otra.
+            if matches!(spec.kind, SourceKind::Declares) {
+                assert!(
+                    spec.candidates
+                        .iter()
+                        .any(|c| c.extraction.is_some()),
+                    "{} declara version pero ninguno de sus candidatos se lee",
+                    spec.ecosystem
+                );
+            }
+            // Y ningun candidato puede repetirse dentro de su ecosistema: un
+            // duplicado haria que el segundo pasara siempre por la regla del
+            // primero, que es exactamente el defecto del formato compartido.
+            let mut seen: Vec<&str> = Vec::new();
+            for candidate in spec.candidates {
+                assert!(
+                    !seen.contains(&candidate.path),
+                    "{} repite el candidato {}",
+                    spec.ecosystem,
+                    candidate.path
+                );
+                seen.push(candidate.path);
             }
             assert!(
-                !spec.manifest_paths.is_empty(),
-                "{} no tiene rutas",
+                !spec.candidates.is_empty(),
+                "{} no tiene candidatos",
                 spec.ecosystem
             );
         }
@@ -1315,10 +1567,27 @@ mod tests {
         // Sin declaración: falla. Un `version=` que no está no es un
         // `version=` vacío, y degradar a "el tag manda" sin preguntar
         // convertiría un descuido en un release verde.
+        //
+        // ## El defecto que este test NO veía, y que le costó su premisa
+        //
+        // El caso de abajo es LITERALMENTE el de PipelineK: un
+        // `gradle.properties` de configuración legítima, sin `version=`. Y
+        // este test pasaba mientras el defecto estaba vivo, porque afirmaba
+        // que la resolución **falla** —y fallaba— sin afirmar que fallara
+        // **después de mirar todo lo demás**. Con el `?` del bucle, el
+        // `gradle.properties` apagaba la resolución entera: no se leía el
+        // `package.json` de al lado ni ningún otro ecosistema.
+        //
+        // Un test que afirma un resultado sin afirmar el orden en que se
+        // obtuvo está incompleto, y aquí la omisión era justo el defecto.
         let err = resolve_project_version(d.path()).unwrap_err();
         assert!(
-            matches!(err, VersionSourceError::NotDeclared { .. }),
+            matches!(err, VersionSourceError::NoSource { .. }),
             "{err}"
+        );
+        assert!(
+            err.to_string().contains("gradle.properties"),
+            "el fallo tiene que nombrar lo que encontró: {err}"
         );
 
         // Con declaración: el tag es su autoridad, y se dice que no hubo
