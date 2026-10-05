@@ -64,6 +64,8 @@ cd "$ROOT"
 source "$ROOT/scripts/release-assets-contract.sh"
 # shellcheck disable=SC1091  # existe en tests/test_release_diagnostics_wiring.sh
 source "$ROOT/scripts/lib/release_diagnostics.sh"
+# shellcheck disable=SC1091  # se valida su existencia en tests/test_release_exclusion.sh
+source "$ROOT/scripts/lib/release_exclusion.sh"
 
 # Isolate TMPDIR for the whole release run so the test gate is deterministic
 # regardless of the ambient TMPDIR. The scratch MUST live OUTSIDE the repo
@@ -135,6 +137,16 @@ release_on_exit() {
     # igual que lo hace `RELEASE_DIAGNOSED_FILE` unas lineas mas arriba.
     export RELEASE_PROCESS_CODE="$code"
     release_diagnose_exit "$diag" || true
+    # El candado de exclusion mutua se suelta AQUI, y no en un `trap` aparte:
+    # MEDIDO en session-82 que un `trap` EXIT nuevo REEMPLAZA al anterior, luego
+    # encadenarlos en dos sitios es como se pierde uno. Ademas se suelta DESPUES
+    # del diagnostico a proposito —el diagnostico puede entrar en el modo de
+    # "por que fallo" y hay que seguir teniendo el candado mientras dura— y con
+    # `RELEASE_EXCLUSION_KEY` vacio cuando el preflight no llego a tomarlo, en
+    # cuyo caso no hay nada que soltar.
+    if [ -n "${RELEASE_EXCLUSION_KEY:-}" ]; then
+        release_exclusion_release "$RELEASE_EXCLUSION_KEY" "$$" || true
+    fi
     cleanup_release_scratch
     return "$code"
 }
@@ -246,6 +258,47 @@ require tar
 require sha256sum
 require curl
 require jq
+
+# --- exclusion mutua -------------------------------------------------------
+#
+# MEDIDO en session-82 (INC-DEBT-075): dos sesiones ejecutaron este MISMO
+# release sobre el mismo checkout y la misma version, y las dos llegaron a
+# compilar. El aviso de retencion del target dir de mas abajo NO las para, y
+# no deberia: dos proyectos distintos compartiendo target dir es legitimo. Pero
+# dos releases del mismo tag no lo son, porque los dos pueden llegar al paso 9
+# y escribir el mismo artefacto.
+#
+# Se toma ANTES de cualquier trabajo caro, que es donde un candado que se toma
+# tarde ya no sirve de nada. El dry-run NO toma candado: no publica, asi que no
+# puede pisar a nadie, y un release de verdad no deberia quedar bloqueado
+# porque alguien este mirando los pasos 1-8.
+RELEASE_EXCLUSION_KEY=""
+release_exclusion_preflight() {
+    local version holder rc=0
+    version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml" 2>/dev/null | head -1)"
+    [ -n "$version" ] || version="sin-leer"
+    RELEASE_EXCLUSION_KEY="$(release_exclusion_key "$ROOT" "$version")"
+
+    if [ "$DRY_RUN" = "1" ]; then
+        holder="$(release_exclusion_holder "$RELEASE_EXCLUSION_KEY" 2>/dev/null || true)"
+        if [ -n "$holder" ] && [ -d "/proc/$holder" ]; then
+            warn "ya hay un release de $version en curso (pid $holder); un dry-run no lo bloquea porque no publica"
+        fi
+        return 0
+    fi
+
+    # `|| rc=$?` y no un `case $?` a continuacion: `release.sh` corre con
+    # `set -euo pipefail` (linea 55), y un simple comando que sale con 1 MATA el
+    # script antes de que el `case` lo pueda convertir en el mensaje que explica
+    # la causa. Con `||` el estado se captura y el `case` decide.
+    release_exclusion_acquire "$RELEASE_EXCLUSION_KEY" "$$" || rc=$?
+    case "$rc" in
+        0) ok "exclusion mutua tomada para $version (pid $$)" ;;
+        1) die "ya hay un release de $version en curso; este no continua porque dos releases del mismo tag se pisan" ;;
+        *) die "no se pudo garantizar la exclusion mutua de $version; publicar sin ella permitiria que dos releases escribieran el mismo tag" ;;
+    esac
+}
+release_exclusion_preflight
 
 # Los recursos van aqui, y no mas adelante, por una razon que sale de lo
 # MEDIDO: los sandboxes que crean los tests viven bajo TMPDIR, que este release
@@ -389,9 +442,12 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_changelog_coverage_baseline.sh \
             tests/test_changelog_coverage_baseline_mutation.sh \
             scripts/lib/release_diagnostics.sh \
+            scripts/lib/release_exclusion.sh \
             tests/test_release_diagnostics.sh \
             tests/test_release_diagnostics_wiring.sh \
             tests/test_release_diagnostics_mutation.sh \
+            tests/test_release_exclusion.sh \
+            tests/test_release_exclusion_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -432,6 +488,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_changelog_coverage_baseline.sh \
              tests/test_release_diagnostics.sh \
              tests/test_release_diagnostics_wiring.sh \
+             tests/test_release_exclusion.sh \
+             tests/test_release_exclusion_mutation.sh \
              tests/test_release_state_pointer.sh \
              tests/test_vault_coherence_alignment.sh \
              tests/test_build_identity_policy.sh \
