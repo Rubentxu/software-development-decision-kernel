@@ -40,7 +40,30 @@ COHERENCE_TRIGGER="release-archive-vault-complete"
 COHERENCE_REPORT="${COHERENCE_REPORT_DIR}/${COHERENCE_TRIGGER}.md"
 
 FIXTURE_DIR="$(mktemp -d)"
-trap 'rm -rf "$FIXTURE_DIR"' EXIT
+
+# MEDIDO: el trap era `trap 'rm -rf "$FIXTURE_DIR"' EXIT`. Con `set -e` un
+# borrado fallido ABORTA el script con 1, y ese 1 es indistinguible de "el guard
+# fallo". Este guard corre en el 1b del release, luego su codigo de salida tiene
+# que describir lo que midio, no como termino su limpieza. MEDIDO con la sonda
+# `probe-trap-exit5.sh`: sin preservar `$?`, un cuerpo-verde sale 1 y un
+# cuerpo-rojo sale 1, el mismo numero para las dos direcciones.
+# El patron es el de `test_release_receipt_authority.sh`, en el mismo 1b:
+# capturar `$?` antes de borrar, tolerar el fallo del borrado, y salir con el
+# codigo real. No se inventa uno nuevo.
+# SC2329, MEDIDO: shellcheck afirma que esta funcion no se invoca nunca, y es
+# FALSO: la invoca el `trap` de dos lineas mas abajo y shellcheck no traza los
+# `trap`. Mismo limite que ya esta documentado en `scripts/release.sh:99`
+# (`cleanup_release_scratch`), con la misma directiva y el mismo motivo. No se
+# silencia a ciegas: se dice POR QUE.
+# shellcheck disable=SC2329
+cleanup_fixture_dir() {
+    local exit_code=$?
+    if [[ -n "$FIXTURE_DIR" && -d "$FIXTURE_DIR" ]]; then
+        rm -rf "$FIXTURE_DIR" || true
+    fi
+    exit "$exit_code"
+}
+trap cleanup_fixture_dir EXIT
 
 PASS_COUNT=0
 FAIL_COUNT=0

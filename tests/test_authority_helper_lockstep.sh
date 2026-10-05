@@ -57,7 +57,29 @@ echo "Engine src: $ENGINE_SOURCE"
 
 # Temp directory
 WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
+
+# MEDIDO: el trap era `trap 'rm -rf "$WORK_DIR"' EXIT`. Con `set -e` un borrado
+# fallido ABORTA el script con 1, y ese 1 es indistinguible de "el guard fallo".
+# Este guard corre en el 1b del release, luego su codigo de salida tiene que
+# describir lo que midio, no como termino su limpieza. MEDIDO con la sonda
+# `probe-trap-exit5.sh`: sin preservar `$?`, un cuerpo-verde sale 1 y un
+# cuerpo-rojo sale 1 — el mismo numero para las dos direcciones.
+# El patron es el de `test_release_receipt_authority.sh`, que esta en el mismo
+# 1b y esta bien escrito: capturar `$?` antes de borrar, tolerar el fallo del
+# borrado, y salir con el codigo real. No se inventa uno nuevo.
+# SC2329, MEDIDO: shellcheck afirma que esta funcion no se invoca nunca, y es
+# FALSO — la invoca el `trap` de la linea siguiente y shellcheck no traza los
+# `trap`. Mismo limite y mismo motivo que `scripts/release.sh:99`
+# (`cleanup_release_scratch`). No se silencia a ciegas: se dice POR QUE.
+# shellcheck disable=SC2329
+cleanup_work_dir() {
+    local exit_code=$?
+    if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+        rm -rf "$WORK_DIR" || true
+    fi
+    exit "$exit_code"
+}
+trap cleanup_work_dir EXIT
 
 # Extract every `infer_actor_kind("<input>")` call from the engine test
 # module. The pattern is the only stable surface — any change to the
