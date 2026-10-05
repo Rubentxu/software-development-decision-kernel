@@ -591,6 +591,40 @@ pub enum ProviderError {
         /// Why.
         reason: String,
     },
+    /// The provider ran, and what it said is not something this build can read.
+    ///
+    /// ## Por que hace falta, y no es cosmetico
+    ///
+    /// MEDIDO: los doce sitios que construyen [`ProviderError::Unavailable`]
+    /// comparten un texto —*«el provider X no se pudo ejecutar»*— y **cuatro de
+    /// ellos son el caso contrario**: el fichero se leyó, se interpretó y
+    /// respondió, y lo que pasó es que su respuesta no cabe en lo que este build
+    /// entiende. Un `schema_version` a futuro, un `authority` que no existe, una
+    /// versión que no parsea y un JSON con sintaxis rota se reportaban todos como
+    /// «no se pudo ejecutar».
+    ///
+    /// Es la misma clase que el banner de Gradle que se corrigió en VA9: un
+    /// mensaje cierto para todos los fallos habidos no distingue ninguno. Y
+    /// distingue dos reparaciones **opuestas** —comprobar el binario cuando el
+    /// problema está en el fichero, o al revés—, luego el operador va al sitio
+    /// equivocado.
+    ///
+    /// ## La frontera, y por qué se puede aplicar sin criterio
+    ///
+    /// Una pregunta: **¿pudimos leer lo que el provider leyó?**
+    ///
+    /// - **no** — binario ausente, fichero ilegible por I/O — [`Self::Unavailable`]
+    /// - **sí, y no lo entendimos** — [`Self::Malformed`]
+    ///
+    /// `Unavailable` no se toca ni se deprecia: su semántica es cierta y es la
+    /// del binario que no se pudo lanzar.
+    #[error("el provider {provider_id} respondio algo que este build no entiende: {reason}")]
+    Malformed {
+        /// Which provider.
+        provider_id: String,
+        /// What it said, and why it is unreadable.
+        reason: String,
+    },
     /// The provider ran and does not speak the capability that was asked.
     #[error("el provider {provider_id} habla {speaks:?} y se le pidio {asked}")]
     CapabilityMismatch {

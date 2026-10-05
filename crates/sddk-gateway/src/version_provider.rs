@@ -326,7 +326,7 @@ impl VersionResolverPort for SingleDeclarationProvider {
             Err(ExtractError::Absent) => Ok(VersionProbe::Undeclared {
                 reason: format!("{} existe y no declara version", self.spec.path),
             }),
-            Err(ExtractError::Parse(reason)) => Err(ProviderError::Unavailable {
+            Err(ExtractError::Parse(reason)) => Err(ProviderError::Malformed {
                 provider_id: self.provider_id.clone(),
                 reason: format!(
                     "{} no se pudo interpretar como {}: {reason}",
@@ -532,13 +532,13 @@ impl VersionResolverPort for DeclaredAuthorityProvider {
 
         let doc: serde_json::Value =
             raw.parse()
-                .map_err(|e: serde_json::Error| ProviderError::Unavailable {
+                .map_err(|e: serde_json::Error| ProviderError::Malformed {
                     provider_id: self.provider_id.clone(),
                     reason: format!("{DECLARED_AUTHORITY_PATH} no se pudo interpretar: {e}"),
                 })?;
 
         if doc.get("schema_version").and_then(|v| v.as_u64()) != Some(1) {
-            return Err(ProviderError::Unavailable {
+            return Err(ProviderError::Malformed {
                 provider_id: self.provider_id.clone(),
                 reason: format!(
                     "{DECLARED_AUTHORITY_PATH} declara schema_version {:?} y este build entiende 1",
@@ -553,19 +553,81 @@ impl VersionResolverPort for DeclaredAuthorityProvider {
                     "el proyecto declara en {DECLARED_AUTHORITY_PATH} que su version la lleva la release ref"
                 ),
             }),
-            Some(other) => Err(ProviderError::Unavailable {
+            Some("version") => declared_version(&self.provider_id, &doc),
+            Some(other) => Err(ProviderError::Malformed {
                 provider_id: self.provider_id.clone(),
                 reason: format!(
-                    "{DECLARED_AUTHORITY_PATH} declara authority {other:?}; este build entiende \"tag\""
+                    "{DECLARED_AUTHORITY_PATH} declara authority {other:?}; este build \
+                     entiende \"tag\" o \"version\""
                 ),
             }),
-            None => Err(ProviderError::Unavailable {
+            None => Err(ProviderError::Malformed {
                 provider_id: self.provider_id.clone(),
                 reason: format!(
-                    "{DECLARED_AUTHORITY_PATH} no declara \"authority\" (se esperaba \"tag\")"
+                    "{DECLARED_AUTHORITY_PATH} no declara \"authority\" (se esperaba \
+                     \"tag\" o \"version\")"
                 ),
             }),
         }
+    }
+}
+
+/// El valor que el propio proyecto declara, y su evidencia.
+///
+/// ## Por que esta capacidad no es opcional para el agnosticismo
+///
+/// MEDIDO, y es lo que motivó el bloque: un proyecto con un `build.sbt` —Scala,
+/// fuera de las trece filas de `DEFAULT_DECLARATIONS`— que declara su versión
+/// aquí **no publicaba**, porque el contrato solo entendía `authority: "tag"`.
+///
+/// Peor: en un repo que declara `4.2.0` en `Cargo.toml` **y** aquí, el `Invalid`
+/// de esta rama **tapaba** la `Declared` buena y la puerta rechazaba. Un
+/// fichero que el proyecto escribe para ser más explícito no puede dejar de ser
+/// legible por no caber en lo que el build entendía.
+///
+/// ## Por qué no gana a la tabla de ficheros
+///
+/// Porque no es una autoridad: es **otra forma de decir lo mismo**. Si el
+/// proyecto dice `4.2.0` y su `Cargo.toml` dice `4.3.0`, eso es una
+/// contradicción y la contradicción falla cerrada —que es la ley del reducer,
+/// y este provider no decide nada que el reducer no vuelva a decidir.
+///
+/// ## `digest: None`, y por qué
+///
+/// La misma convención que las trece filas. El valor se **declara** en el
+/// fichero, no sale de evaluarlo, y un digest afirmaría que esos bytes
+/// determinan la versión sin que nadie lo haya comprobado.
+pub fn declared_version(
+    provider_id: &str,
+    doc: &serde_json::Value,
+) -> Result<VersionProbe, ProviderError> {
+    let Some(raw) = doc.get("version").and_then(|v| v.as_str()) else {
+        return Err(ProviderError::Malformed {
+            provider_id: provider_id.to_owned(),
+            reason: format!(
+                "{DECLARED_AUTHORITY_PATH} declara authority \"version\" pero no dice \
+                 CUAL es: falta el campo \"version\""
+            ),
+        });
+    };
+    match ProductVersion::new(raw) {
+        Ok(version) => Ok(VersionProbe::Declared {
+            version,
+            evidence: VersionEvidence {
+                source_kind: format!("declaracion-del-proyecto/{}", DECLARED_AUTHORITY_PATH),
+                digest: None,
+                location: Some(DECLARED_AUTHORITY_PATH.to_owned()),
+            },
+        }),
+        // No se inventa un valor ni se degrada a silencio: una declaracion que
+        // dice algo que no es una version es un error del proyecto, y|reportarlo
+        // como ausencia haria que el reducer la ignorase en silencio.
+        Err(_) => Err(ProviderError::Malformed {
+            provider_id: provider_id.to_owned(),
+            reason: format!(
+                "{DECLARED_AUTHORITY_PATH} declara version {raw:?}, que no es una version"
+            ),
+        }),
     }
 }
 
@@ -986,7 +1048,7 @@ impl BuildModelProvider {
 ///
 /// MEDIDO, durante la construccion de este fichero: un `ETXTBSY` —el binario
 /// existe y esta en uso por otro proceso— se reportaba con el mismo texto que
-/// un `ENOENT`. Medido de verdad: 4 de 15 ejecuciones de una suiteFallaron asi,
+/// un `ENOENT`. Medido de verdad: 4 de 15 ejecuciones de una suite fallo asi,
 /// con 1219 procesos en el host. Es un fallo del ENTORNO y su texto decia que
 /// faltaba una herramienta, que es justo la mentira que este bloque vino a
 /// arreglar.
@@ -1409,6 +1471,7 @@ pub fn release_targets(
             targets: vec![root_target],
             scan: None,
             root_resolved: true,
+            root_refusal: None,
         };
     }
 
@@ -1418,7 +1481,30 @@ pub fn release_targets(
         targets,
         scan: Some(scan),
         root_resolved: false,
+        root_refusal: refusal_legible(&root_authority),
     }
+}
+
+/// El motivo por el que una autoridad que **no** es una version impide sin
+/// embargo tratar la raiz como si no hubiera dicho nada.
+///
+/// `None` cuando el silencio es real: nadie declaro, y ahi el mensaje antiguo
+/// era cierto. `Some` cuando la raiz dijo algo que este build no entiende, que
+/// es un hecho distinto con una reparacion distinta.
+fn refusal_legible(authority: &sddk_domain::version_authority::VersionAuthority) -> Option<String> {
+    let sddk_domain::version_authority::VersionAuthority::Invalid { failures, .. } = authority
+    else {
+        return None;
+    };
+    let detalle = failures
+        .iter()
+        .map(|(quien, por_que)| format!("{quien}: {por_que}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Some(format!(
+        "la raiz declara version pero este build no la pudo leer, y eso NO es \
+         lo mismo que no declararla. Lo que dijo: {detalle}"
+    ))
 }
 
 /// The candidates a release may choose among, and the evidence for how they
@@ -1432,6 +1518,23 @@ pub struct TargetSet {
     pub scan: Option<TargetScan>,
     /// Whether the repository root declared a product version.
     pub root_resolved: bool,
+    /// Por que la raiz **no** se trato como producto, cuando no fue por
+    /// silencio.
+    ///
+    /// ## MEDIDO, y por que este campo existe
+    ///
+    /// Con `schema_version: 99` —o cualquier forma que este build no entienda—
+    /// el mensaje era `la raiz no declara version`. **Es falso**: la raiz si
+    /// declara version, declara una que este build no sabe leer, y el mensaje
+    /// mandaba a buscar un fichero que no faltaba.
+    ///
+    /// El motivo no habia que calcularlo: `registry.resolve` ya lo traia en el
+    /// `Invalid`, y `release_targets` lo **miraba y lo tiraba** para decidir solo
+    /// si hay version. Un hecho que se calcula y se descarta es un hecho que el
+    /// lector no puede comprobar.
+    ///
+    /// `None` es el silencio de verdad: nadie declaro nada.
+    pub root_refusal: Option<String>,
 }
 
 impl TargetSet {
@@ -1440,17 +1543,22 @@ impl TargetSet {
     pub fn provenance(&self) -> String {
         match &self.scan {
             None => "la raiz del repositorio declara su propia version".to_owned(),
-            Some(scan) => format!(
-                "la raiz no declara version; se buscaron {} raiz/raices hasta {} nivel(es), \
-                 omitiendo {}",
-                scan.roots.len(),
-                scan.depth,
-                if scan.skipped.is_empty() {
-                    "nada".to_owned()
-                } else {
-                    scan.skipped.join(", ")
+            Some(scan) => {
+                let busqueda = format!(
+                    "se buscaron {} raiz/raices hasta {} nivel(es), omitiendo {}",
+                    scan.roots.len(),
+                    scan.depth,
+                    if scan.skipped.is_empty() {
+                        "nada".to_owned()
+                    } else {
+                        scan.skipped.join(", ")
+                    }
+                );
+                match &self.root_refusal {
+                    Some(motivo) => format!("{motivo}; {busqueda}"),
+                    None => format!("la raiz no declara version; {busqueda}"),
                 }
-            ),
+            }
         }
     }
 }
