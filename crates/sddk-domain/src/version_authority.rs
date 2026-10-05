@@ -675,3 +675,152 @@ impl VersionResolverRegistry {
         reduce(observations)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Which target, when a repository holds more than one
+// ---------------------------------------------------------------------------
+
+/// What a caller asked for, when asking is possible.
+///
+/// The default is `Unsolicited`: nobody named anything, and this function will
+/// only answer if there is exactly one thing to answer about. A selector is
+/// not a hint that can be ignored — it is the difference between "the one
+/// target, if there is one" and "this specific target", and the second is not
+/// satisfied by falling back to the first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TargetSelector {
+    requested: Option<String>,
+}
+
+impl TargetSelector {
+    /// No target was named. Resolves only if the repository holds exactly one.
+    pub fn unsolicited() -> Self {
+        Self { requested: None }
+    }
+
+    /// A target was named, by identity or by location.
+    pub fn named(id: impl Into<String>) -> Self {
+        Self {
+            requested: Some(id.into()),
+        }
+    }
+
+    /// What was asked for, if anything.
+    pub fn requested(&self) -> Option<&str> {
+        self.requested.as_deref()
+    }
+}
+
+/// Why a target could not be chosen.
+///
+/// **Four cases, because the four fixes are four different actions.** Folding
+/// any pair of them into one "cannot select target" costs the operator the
+/// ability to act: being told there are several when you named one that does
+/// not exist sends you looking for a second product instead of for a typo, and
+/// being told the target is unknown when there are three of them sends you
+/// looking for a typo instead of for a decision you have to make.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetSelectionError {
+    /// Nothing to choose from. Not a conflict: there is no subject.
+    NoTarget,
+    /// More than one target and the request did not single one out.
+    ///
+    /// Closed on purpose. Guessing here would be the same move as picking a
+    /// version out of two that disagree, one level up: a tool choosing between
+    /// two equally-supported answers and reporting it as if it knew.
+    AmbiguousTarget {
+        /// The identities that were on the table, so the operator can name one.
+        candidates: Vec<String>,
+        /// What was asked for, when something was.
+        requested: Option<String>,
+    },
+    /// A target was named and it is not here.
+    ///
+    /// Distinct from [`AmbiguousTarget`](Self::AmbiguousTarget) on purpose:
+    /// here the fix is to correct the name, there the fix is to choose. The
+    /// available targets are listed so the correction is mechanical.
+    UnknownTarget {
+        requested: String,
+        available: Vec<String>,
+    },
+}
+
+impl TargetSelectionError {
+    /// The identities involved, whichever way it failed.
+    pub fn candidates(&self) -> &[String] {
+        match self {
+            Self::NoTarget => &[],
+            Self::AmbiguousTarget { candidates, .. } => candidates,
+            Self::UnknownTarget { available, .. } => available,
+        }
+    }
+
+    /// Whether the way out is to name one of the targets.
+    pub fn is_ambiguous(&self) -> bool {
+        matches!(self, Self::AmbiguousTarget { .. })
+    }
+}
+
+/// Chooses the target to resolve, or says why it cannot.
+///
+/// ## The laws
+///
+/// 1. **Nothing to choose from is not a conflict.** Zero targets is
+///    `NoTarget`, a distinct answer from "several".
+/// 2. **An unsolicited request resolves only against exactly one target.**
+///    One target and no request is not a guess; it is the only possible answer.
+/// 3. **Two targets and no request is closed.** `AmbiguousTarget`, never a
+///    preference between them.
+/// 4. **A named target is answered by name or not at all.** It never falls
+///    back to "the only one" — that would make the name a decoration.
+/// 5. **A name that matches more than one is ambiguous again.** Two targets
+///    claiming one identity is a real collision, and resolving it by order
+///    would make which one wins depend on how the list was built.
+///
+/// ## Why this is not a priority rule
+///
+/// The reducer's law is that no technology outranks another. This is not that:
+/// nothing here compares candidates by what they are made of, and the function
+/// cannot see a file. It answers *which entity was asked about*, which is a
+/// different question from *which answer is better*. The distinction matters
+/// because the second one must never be decided silently, and the first one
+/// has no sensible alternative — asked about two products, the honest answer
+/// is that there are two.
+pub fn select_target<'a>(
+    targets: &'a [ReleaseTarget],
+    selector: &TargetSelector,
+) -> Result<&'a ReleaseTarget, TargetSelectionError> {
+    // Orden canonico, por la misma razon que el reducer ordena las
+    // observaciones: un error cuyas variantes cambian al reordenar la lista
+    // de candidatos no es comparable, y un error que no se puede comparar es un
+    // error del que nadie puede depender. MEDIDO: la primera version de esta
+    // funcion construia la lista en orden de llegada, y un test que exige que
+    // los mismos dos productos den el mismo error en cualquier orden fallo.
+    let mut all: Vec<String> = targets.iter().map(|t| t.id().to_owned()).collect();
+    all.sort();
+
+    let Some(requested) = selector.requested() else {
+        return match targets {
+            [] => Err(TargetSelectionError::NoTarget),
+            [only] => Ok(only),
+            _ => Err(TargetSelectionError::AmbiguousTarget {
+                candidates: all,
+                requested: None,
+            }),
+        };
+    };
+
+    let matches: Vec<&ReleaseTarget> = targets.iter().filter(|t| t.id() == requested).collect();
+    match matches.as_slice() {
+        [only] => Ok(only),
+        [] => Err(TargetSelectionError::UnknownTarget {
+            requested: requested.to_owned(),
+            available: all,
+        }),
+        // Law 5: a collision is an ambiguity, not a first-one-wins.
+        _ => Err(TargetSelectionError::AmbiguousTarget {
+            candidates: all,
+            requested: Some(requested.to_owned()),
+        }),
+    }
+}
