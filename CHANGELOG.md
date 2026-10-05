@@ -20,6 +20,8 @@ All notable changes to this project are documented in this file.
   - docs(journal): session-84 bis 7, el defecto de `cycle start` y el paso 3n
   - docs(debt): el orden inestable de `candidates` queda declarado, no corregido
 
+  - docs(changelog): seccion 2.11.4, el defecto de cycle start y el paso 3n
+
 ## [2.11.3] - 2026-10-05
 
 ### Fixes
