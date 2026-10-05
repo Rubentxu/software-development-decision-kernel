@@ -199,7 +199,7 @@ fn the_fitness_scanner_can_actually_see_a_name() {
     let false_positives: Vec<&str> = FORBIDDEN
         .iter()
         .copied()
-        .filter(|needle| find_word(&innocent, needle))
+        .filter(|needle| find_word(innocent, needle))
         .collect();
     assert!(
         false_positives.is_empty(),

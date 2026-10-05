@@ -996,19 +996,15 @@ fn version_authority_or_fail(
     root: &std::path::Path,
     tag: &str,
 ) -> anyhow::Result<VersionAuthority> {
-    ensure_version_lockstep_detailed(&version_registry(), &release_target(root), tag).map_err(
-        |error| {
-            // El mensaje del motor dice lo que se pregunto y lo que contesto.
-            // La ayuda para salir de ahi la pone quien SABE que existe una
-            // declaracion del proyecto, que es esta capa: el motor no puede
-            // nombrar un fichero porque ya no conoce ninguno.
-            anyhow::anyhow!(
-                "{error}\nIf this project does not declare its version in any file, it can say \
-                 so explicitly in {}",
-                sddk_gateway::version_provider::DECLARED_AUTHORITY_PATH
-            )
-        },
-    )
+    // El mensaje del motor se pasa tal cual. Una version anterior de esta
+    // capa anadia encima «si tu proyecto no declara su version, puede
+    // declararlo en <fichero>» — y lo hacia SIEMPRE, incluso cuando el fallo
+    // era una discrepancia o un manifiesto roto, donde ese consejo no aplica
+    // y desvia la atencion de lo que hay que mirar. En el unico caso en que
+    // si aplica, el mensaje ya trae el nombre: lo dice el provider de la
+    // declaracion al responder que este target no declara nada.
+    ensure_version_lockstep_detailed(&version_registry(), &release_target(root), tag)
+        .map_err(|error| anyhow::anyhow!("{error}"))
 }
 
 /// Los providers que el release usa para preguntar.

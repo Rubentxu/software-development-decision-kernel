@@ -180,10 +180,16 @@ fn refusal(authority: &VersionAuthority, target: &ReleaseTarget) -> Option<Strin
                 .join("; ");
             Some(format!(
                 "VERSION LOCKSTEP ERROR: {} declarations disagree about the version: {detail}. \
-                 Which one is authoritative is a human decision, and sddk will not pick one \
-                 (observations: {}).",
+                 Which one is authoritative is a human decision, and sddk will not pick one. \
+                 {} provider(s) were asked in total; these are the ones that declared: {}.",
                 candidates.len(),
-                summarise(observations)
+                observations.len(),
+                observations
+                    .iter()
+                    .filter(|o| o.probe.declares())
+                    .map(VersionObservation::summary)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ))
         }
         VersionAuthority::Invalid { failures, .. } => Some(format!(
@@ -252,14 +258,6 @@ fn describe(observation: &VersionObservation) -> String {
         | sddk_domain::version_authority::VersionProbe::Undeclared { reason } => reason.clone(),
         other => format!("{other:?}"),
     }
-}
-
-fn summarise(observations: &[VersionObservation]) -> String {
-    observations
-        .iter()
-        .map(|o| format!("{}={}", o.provider_id, o.summary()))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 #[cfg(test)]
