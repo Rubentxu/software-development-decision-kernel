@@ -107,6 +107,30 @@ def caso(nombre: str) -> None:
     print(f"\n--- {nombre} ---")
 
 
+def falsacion_muerta(tag: str, donde: str) -> None:
+    """Una mutacion que no se aplica es una FALSACION MUERTA, y cuenta como FAIL.
+
+    MEDIDO: los siete sitios de este fichero degradaban a `SKIP` cuando el texto
+    que casan ya no existia en el sujeto, y `SKIP` nunca es `PASS`, luego el
+    resultado «honesto» era un falsador que en verde habia dejado de medir
+    parte de lo que vigilaba. La caso que lo disparo esta medida y es de este
+    mismo trabajo: anadir una entrada al bucle del 1b partio el texto que M3 y
+    M7 casan —M7 exige que el bloque de los cinco termine en `; do`— y ambos
+    pasaron a `SKIP` sin que nada dijera que era un fallo.
+
+    MEDIDO el alcance: en este falsador TODOS los sujetos son COPIAS del repo
+    real (`release_bak`, `gate_bak`), nunca un sujeto sintetico. Asi que un
+    needle que no casa no es «este caso no aplica hoy»: es que el repo se movio
+    y la falsacion quedo obsoleta. Eso se arregla actualizando el needle, y si
+    no se actualiza tiene que verse.
+
+    `SKIP` queda reservado para lo que de verdad puede no aplicar, que es un
+    sujeto sintetico al que la mutacion no le aplica por diseno. MEDIDO: hoy
+    ningun caso de este fichero llega aqui, y el cierre exige `SKIP=0`.
+    """
+    asert(False, f"{tag}: FALSACION MUERTA (no se aplico)", donde)
+
+
 def main() -> int:
     global SKIP
 
@@ -160,9 +184,9 @@ def main() -> int:
         for tag, nombre, viejo, nuevo, desc in mutaciones:
             caso(f"{tag}: {desc}")
             if not mutate(release, viejo, nuevo):
-                SKIP += 1
-                print(f"  [SKIP] {tag}: el texto viejo no casaba exactamente una vez; "
-                      f"la mutacion NO se aplico")
+                falsacion_muerta(tag, f"el texto viejo no casa exactamente una vez "
+                                      f"en la copia de {RELEASE_REL}: la falsacion "
+                                      f"esta obsoleta")
                 continue
             rc, out = run_gate(tmp)
             asert(rc != 0, f"{tag}: el gate CAE ({nombre})", f"rc={rc}")
@@ -197,8 +221,7 @@ def main() -> int:
                   out.strip()[-300:])
             asert("solo en CI:   0" in out, "M4: y sigue contando cero runners solo-CI", out)
         else:
-            SKIP += 1
-            print("  [SKIP] M4: alguna mutacion no casaba; no aplicada")
+            falsacion_muerta("M4", "alguna mutacion no casa en la copia del repo")
         gate.write_text(gate_bak, encoding="utf-8")
         release.write_text(rel_bak, encoding="utf-8")
 
@@ -212,8 +235,7 @@ def main() -> int:
                   "M6: y nombra el cajon de sastre como la causa", out.strip()[-300:])
             gate.write_text(gate_bak, encoding="utf-8")
         else:
-            SKIP += 1
-            print("  [SKIP] M6: el ancla de EXCEPTIONS no casaba; mutacion no aplicada")
+            falsacion_muerta("M6", "el ancla de EXCEPTIONS no casa en la copia del gate")
 
         # --- M5: el extractor, que es la pieza critica ------------------------
         #
@@ -238,8 +260,7 @@ def main() -> int:
                   "M5: y reporta SIN runner donde antes habia cero", out)
             gate.write_text(gate_bak, encoding="utf-8")
         else:
-            SKIP += 1
-            print("  [SKIP] M5: el needle del extractor no casaba; mutacion no aplicada")
+            falsacion_muerta("M5", "el needle del extractor no casa en la copia del gate")
 
         # --- M7: los cinco guards huerfanos ----------------------------------
         #
@@ -273,8 +294,9 @@ def main() -> int:
                       f"M7: nombra {nombre} como NADIE lo ejecuta", out[-400:])
             release.write_text(rel_bak, encoding="utf-8")
         else:
-            SKIP += 1
-            print("  [SKIP] M7: el bloque de los cinco no casaba; mutacion no aplicada")
+            falsacion_muerta("M7", "el bloque de los cinco no casa en la copia de "
+                                   "release.sh: M7 exige que ese bloque termine en "
+                                   "`; do`, luego insertar una entrada dentro lo rompe")
 
         # --- M8: el censo vuelve a depender del NOMBRE ------------------------
         #
@@ -299,8 +321,7 @@ def main() -> int:
                   out[-400:])
             gate.write_text(gate_bak, encoding="utf-8")
         else:
-            SKIP += 1
-            print("  [SKIP] M8: el needle del censo no casaba; mutacion no aplicada")
+            falsacion_muerta("M8", "el needle del censo no casa en la copia del gate")
 
         # --- M9: el censo vuelve a filtrar por BIT de ejecucion ---------------
         #
@@ -326,8 +347,7 @@ def main() -> int:
                   "M9: y acusa a un fichero que SI existe de no existir", out[-400:])
             gate.write_text(gate_bak, encoding="utf-8")
         else:
-            SKIP += 1
-            print("  [SKIP] M9: el needle del filtro por bit no casaba; no aplicada")
+            falsacion_muerta("M9", "el needle del filtro por bit no casa en la copia del gate")
 
         # --- M10: NOT_GUARDS sin las reglas que la mantienen honesta -----------
         #
@@ -373,8 +393,7 @@ def main() -> int:
                       f"vigila NOT_GUARDS con ella", f"rc={rc} out={out[-200:]}")
                 gate.write_text(gate_bak, encoding="utf-8")
             else:
-                SKIP += 1
-                print(f"  [SKIP] {tag}: la regla no casaba; mutacion no aplicada")
+                falsacion_muerta(tag, "la regla no casa en la copia del gate")
 
         # --- El sujeto real quedo intacto ------------------------------------
         #
