@@ -499,6 +499,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_build_identity.sh \
              tests/test_binary_freshness_checker.sh \
              tests/test_release_state_pointer_mutation.sh \
+             tests/test_guard_exit_code_fidelity_mutation.sh \
              tests/test_release_final_state_figures.sh \
              tests/test_release_final_state_figures_mutation.sh \
              tests/test_lint_gate_scope_severity_mutation.sh \
