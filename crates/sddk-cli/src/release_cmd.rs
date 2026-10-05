@@ -93,6 +93,8 @@ pub(crate) struct HandoffArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
+    #[command(flatten)]
+    pub(crate) ask: BuildAskArgs,
 }
 
 /// La referencia que el sobre lleva.
@@ -167,6 +169,8 @@ pub(crate) struct VersionMatchesArgs {
     /// How a release reference names a product version. See `release --naming`.
     #[arg(long, default_value = "v_prefixed")]
     pub(crate) naming: String,
+    #[command(flatten)]
+    pub(crate) ask: BuildAskArgs,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -178,6 +182,74 @@ fn run_release_version(action: VersionAction) -> CommandOutput {
         VersionAction::Inspect(args) => run_release_version_inspect(args),
         VersionAction::Matches(args) => run_release_version_matches(args),
     }
+}
+
+/// Las dos banderas que deciden si se pregunta al build tool.
+///
+/// ## Por qué un tipo y no dos campos por `Args`
+///
+/// MEDIDO: `release` y `release version inspect` las declaraban, y
+/// `release version matches` y `release handoff` **no**. Los dos primeros
+/// podían preguntar; los dos segundos contestaban sobre la version sin poder
+/// hacerlo, y por eso su respuesta no dependia de lo preguntado —con un tag
+/// correcto y con uno falso, `matches` devolvia byte a byte la misma salida—.
+///
+/// Copiar las banderas es copiar esa deriva. Un solo tipo que los cuatro
+/// `Args` aplanan hace que **no se pueda** volver a tener un comando que
+/// responda sin poder preguntar, que es exactamente el defecto.
+///
+/// Y el par viaja junto porque el segundo sin el primero es un provider que
+/// lanza un proceso con el nombre equivocado: de ahi `BuildAsk`.
+///
+/// ## Una medicion que se lleva por delante, y por que
+///
+/// El doc de `ReleaseArgs` decia que sin `--evaluate-build`
+/// `ensure_release_ref_lockstep` devolvia `Ok` con un tag que el proyecto
+/// contradecia, porque sin version no hay lockstep que incumplir. **Es falso, y
+/// es la premisa que la adenda correctiva de ADR-0164 ya retiro**: `refusal()`
+/// corre en `version.rs:182`, antes del `let Some(...)` de `:190`, y devuelve
+/// `Err` para `Unresolved`, `Ambiguous` e `Invalid`. El `return Ok` de `:190`
+/// solo se alcanza con `ReleaseRefIsAuthority`, que exige declaracion
+/// explicita.
+///
+/// No se reescribe aqui porque medir de nuevo sale de otro bloque, pero no se
+/// arrastra tampoco: una medicion que el codigo contradice, escrita al lado de
+/// la bandera que se va a reutilizar, volveria a tener autoridad por vecindad.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct BuildAskArgs {
+    /// Ask the build tool what its model says, instead of only reading files.
+    ///
+    /// Opt-in porque **paga**: MEDIDO, `gradle properties --offline` tarda 3 s
+    /// y levanta una JVM, por target. Sin esta bandera el informe dice
+    /// explicitamente que el modelo del build no se evaluo, porque no
+    /// evaluarlo por defecto es una decision y callarla seria otra.
+    ///
+    /// Y el motivo por el que esta en `matches` y en `handoff`, que antes no la
+    /// tenian: un comando que responde sobre la version y **no puede** preguntar
+    /// no mide la version, contesta que no la ha mirado. MEDIDO sobre un build
+    /// Gradle con `version = '1.2.3'`: `release version matches` decia «no hay
+    /// nada contra que comparar» para `v1.2.3` y para `v9.9.9` por igual.
+    #[arg(long)]
+    pub(crate) evaluate_build: bool,
+    /// The build tool to ask, when `--evaluate-build` is given.
+    ///
+    /// MEDIDO: no es un detalle. Un proyecto con wrapper usa `./gradlew` y uno
+    /// sin wrapper usa el `gradle` del PATH, que ademas puede estar detras de un
+    /// shim de asdf que **exige** `.tool-versions` —sin el responde `No version
+    /// is set for command gradle` y sale 126—. Suponer cual de los dos es
+    /// suponer, y es la misma palabra que usa el resto de este bloque para lo
+    /// que se declara en vez de deducirse.
+    ///
+    /// Sin default. MEDIDO, con un ejecutable instrumentado: `--build-tool mvn`
+    /// hacia que `mvn` corriera `properties --offline` —un goal que no existe en
+    /// Maven— y el informe atribuyera la respuesta a `build.gradle`, un fichero
+    /// que Maven nunca abrio. El default era la causa: sin nombre, la bandera
+    /// aceptaba cualquier palabra y respondia siempre en Gradle.
+    ///
+    /// Un nombre que SDDK no sepa preguntar es un error de la linea de comandos,
+    /// no una suposicion.
+    #[arg(long)]
+    pub(crate) build_tool: Option<String>,
 }
 
 /// Los argumentos de `release version inspect`.
@@ -195,30 +267,8 @@ pub(crate) struct VersionInspectArgs {
     /// `release plan`: dos productos y nada que diga cuál es un rechazo.
     #[arg(long)]
     pub(crate) target: Option<String>,
-    /// Ask the build tool what its model says, instead of only reading files.
-    ///
-    /// Opt-in porque **paga**: MEDIDO, `gradle properties --offline` tarda 3 s
-    /// y levanta una JVM, por target. Sin esta bandera el informe dice
-    /// explícitamente que el modelo del build no se evaluó, porque no
-    /// evaluarlo por defecto es una decisión y callarla sería otra.
-    #[arg(long)]
-    pub(crate) evaluate_build: bool,
-    /// The build tool to ask, when `--evaluate-build` is given.
-    ///
-    /// MEDIDO: no es un detalle. Un proyecto con wrapper usa `./gradlew` y uno
-    /// sin wrapper usa el `gradle` del PATH, que ademas puede estar detras de un
-    /// shim de asdf que **exige** `.tool-versions` —sin el responde `No version
-    /// is set for command gradle` y sale 126—. Suponer cual de los dos es
-    /// suponer, y es la misma palabra que usa el resto de este bloque para lo
-    /// que se declara en vez de deducirse.
-    ///
-    /// Sin default. MEDIDO, con un ejecutable instrumentado: `--build-tool mvn`
-    /// hacia que `mvn` corriera `properties --offline` —un goal que no existe en
-    /// Maven— y el informe atribuyera la respuesta a `build.gradle`, un fichero
-    /// que Maven nunca abrio. El default era la causa: sin nombre, la bandera
-    /// aceptaba cualquier palabra y respondia siempre en Gradle.
-    #[arg(long)]
-    pub(crate) build_tool: Option<String>,
+    #[command(flatten)]
+    pub(crate) ask: BuildAskArgs,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -323,35 +373,8 @@ pub(crate) struct ReleaseArgs {
     /// release records the convention it was authorised under.
     #[arg(long, default_value = "v_prefixed")]
     pub(crate) naming: String,
-    /// Ask the build tool what its model says, instead of only reading files.
-    ///
-    /// ## Por qué esto pertenece a la puerta y no solo al diagnóstico
-    ///
-    /// MEDIDO sobre un build Gradle que declara `1.2.3`, con un tag `v9.9.9`:
-    /// `release version matches` decia «no hay nada contra que comparar», y
-    /// `ensure_release_ref_lockstep` devolvia **`Ok`** — porque sin version no hay
-    /// lockstep que incumplir. O sea: la puerta **aceptaba** el tag que el
-    /// proyecto contradecia, y no por decision sino porque no veia.
-    ///
-    /// Un default que no mira no puede rechazar nada, luego no puede autorizar
-    /// nada. Esta bandera es lo que hace que mirar sea una decision del
-    /// operador y no un accidente del provider.
-    #[arg(long)]
-    pub(crate) evaluate_build: bool,
-    /// The build tool to ask, when `--evaluate-build` is given.
-    ///
-    /// ## Por que esto no tiene un default
-    ///
-    /// MEDIDO, con un ejecutable instrumentado: `--build-tool mvn` sobre un build
-    /// Gradle hacia que `mvn` corriera `properties --offline` —un goal que no
-    /// existe en Maven— y el informe atribuyera la respuesta a `build.gradle`, un
-    /// fichero que Maven nunca abrio. Ese default era la causa: sin nombre, la
-    /// bandera aceptaba cualquier palabra y respondia siempre en Gradle.
-    ///
-    /// Un nombre que SDDK no sepa preguntar es un error de la linea de comandos,
-    /// no una suposicion.
-    #[arg(long)]
-    pub(crate) build_tool: Option<String>,
+    #[command(flatten)]
+    pub(crate) ask: BuildAskArgs,
     /// What this target is responsible for in the release.
     ///
     /// `full_publisher` (the default) publishes. `candidate_producer` stops at
@@ -513,7 +536,7 @@ fn run_release_version_inspect(args: VersionInspectArgs) -> CommandOutput {
         // La MISMA seleccion que usa `release plan`, porque un diagnostico que
         // mira un target distinto del que se publico no explica el rechazo que
         // se quiere explicar.
-        let ask = BuildAsk::of_inspect(&args)?;
+        let ask = BuildAsk::of_parts(&args.ask)?;
         let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
         let mut inspection = ask.registry().resolve_inspecting(
             sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
@@ -528,7 +551,7 @@ fn run_release_version_inspect(args: VersionInspectArgs) -> CommandOutput {
         // haya pedido, asi que sin esta linea el informe seria internamente
         // contradictorio: diria «estos fueron los providers mirados» nombrando
         // uno que no se ejecuto.
-        if !args.evaluate_build {
+        if !args.ask.evaluate_build {
             inspection
                 .not_checked
                 .push(sddk_domain::version_inspection::NotChecked {
@@ -698,34 +721,40 @@ fn run_release_version_matches(args: VersionMatchesArgs) -> CommandOutput {
     let result = (|| -> anyhow::Result<VersionMatchOutput> {
         let root = resolve_inspection_root(&args.runtime)?;
         let naming = resolve_naming(&args.naming)?;
-        // `release version matches` NO tiene `--evaluate-build`: MEDIDO, sus Args
-        // no declaran la bandera. Asi que aqui no hay pregunta que hacer, y se
-        // dice con el valor en vez de dejar que se deduzca de un default.
-        let ask = BuildAsk::never();
+        // MEDIDO antes de este bloque: aqui vivia `BuildAsk::never()` con el
+        // comentario «no hay pregunta que hacer», y la salida de `matches` no
+        // dependia del tag —`v1.2.3` y `v9.9.9` daban byte a byte lo mismo— sobre
+        // un build Gradle que si declara `1.2.3`. Un comando que contesta
+        // «no hay nada contra que comparar» sin haber preguntado no mide la
+        // comparacion: mide su propia ausencia de pregunta.
+        //
+        // La pregunta se lee de la linea de comandos como en `plan` e `inspect`, y
+        // por la misma funcion, porque un segundo camino para decidir si se observa
+        // seria el defecto que este bloque vino a cerrar.
+        let ask = BuildAsk::of_parts(&args.ask)?;
         let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
         let version = ask.registry().resolve(
             sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
             &selected.target,
         );
-        // Un proyecto sin version declarada no tiene nada contra lo que
-        // comparar, y eso NO es un fallo de la regla: es la respuesta
-        // `release_ref_is_authority`, que ADR-0157 introdujo precisamente para
-        // que estos proyectos no se parecieran a los que se olvidaron.
         let Some(declarada) = version.version() else {
-            let es_referencia = matches!(version, VersionAuthority::ReleaseRefIsAuthority { .. });
+            // Un proyecto sin version declarada no tiene nada contra lo que
+            // comparar, y eso NO es un fallo de la regla: es la respuesta
+            // `release_ref_is_authority`, que ADR-0157 introdujo precisamente para
+            // que estos proyectos no se parecieran a los que se olvidaron.
+            //
+            // Lo que NO es admisible es que las cuatro razones por las que no hay
+            // version produzcan el mismo texto: eso lo cuenta `sin_version`, y la
+            // razon esta en el nombre de la funcion.
+            let sin_version = sin_version(&version, ask.evaluate());
             return Ok(VersionMatchOutput {
                 release_target: selected.report.id.clone(),
                 release_reference: args.tag.clone(),
                 naming: naming.style().to_owned(),
                 product_version: None,
-                matches: es_referencia,
-                detail: if es_referencia {
-                    "this target declares no product version; the release reference carries it"
-                        .to_owned()
-                } else {
-                    "this target declares no product version, so there is nothing to compare against"
-                        .to_owned()
-                },
+                matches: matches!(&version, VersionAuthority::ReleaseRefIsAuthority { .. }),
+                measured: sin_version.measured,
+                detail: sin_version.detail,
             });
         };
         let outcome = binds(
@@ -739,10 +768,125 @@ fn run_release_version_matches(args: VersionMatchesArgs) -> CommandOutput {
             naming: naming.style().to_owned(),
             product_version: Some(declarada.to_string()),
             matches: outcome.is_bound(),
+            measured: true,
             detail: outcome.message(declarada),
         })
     })();
     render_result(result, format, version_match_text)
+}
+
+/// Que hay —o que no hay— una version de producto contra la que comparar, y si
+/// eso es una **medicion** o su ausencia.
+///
+/// ## Por que el campo `measured` existe, y es lo que hace falsable el bloque
+///
+/// MEDIDO, y el dato es que `release version matches --tag v1.2.3` y
+/// `release version matches --tag v9.9.9` devolvian **byte a byte la misma
+/// salida** sobre un build Gradle que declara `1.2.3`. Un comando cuya
+/// respuesta no depende de lo preguntado no esta midiendo la pregunta.
+///
+/// Arreglar solo el texto no cierra eso: si preguntar y no preguntar dieran el
+/// mismo `matches: false` y solo cambiasen las frases, la salida estructurada
+/// seguiria sin depender de lo que se hizo —el mismo defecto un nivel mas
+/// arriba—. Por eso el `measured` va en el campo, no solo en la prosa.
+#[derive(Debug, Clone)]
+struct SinVersion {
+    /// `false` solo cuando **nadie ha mirado lo suficiente**: no se pregunto al
+    /// build tool y ningun fichero respondio.
+    ///
+    /// En cualquier otro caso se miro, y lo que se encontro —nada, una
+    /// contradiccion, un fichero ilegible— es un hecho. Un `Conflict` con sus dos
+    /// declaraciones es lo mas mirado que hay, no lo menos.
+    measured: bool,
+    /// Lo que se hizo, y lo que no se puede concluir.
+    detail: String,
+}
+
+/// La razon por la que no hay version, en las palabras de quien la observo.
+///
+/// ## MEDIDO, y por que esta funcion y no cuatro textos
+///
+/// Antes de este bloque, los cuatro hechos que dejan a `matches` sin version
+/// produzcan todos `this target declares no product version`:
+///
+/// | hecho | lo que decia | lo que era |
+/// |---|---|---|
+/// | dos ficheros se contradicen | «no declara version» | declara **dos**, y discrepan |
+/// | un fichero no se pudo leer | «no declara version» | declara, y es ilegible |
+/// | nadie pregunto al build tool | «no declara version» | no se pregunto |
+/// | se pregunto y no hay version | «no declara version» | cierto —el unico de los cuatro— |
+///
+/// Los tres primeros son lo contrario de lo que dice el texto, y el que peor
+/// parado sale es el primero: `Cargo.toml` en 4.2.0 y la declaracion del proyecto
+/// en 9.9.9 dan `productVersion: none` y `matches: false` con **codigo de
+/// salida 0**, sobre un proyecto que no se ha olvidado nada.
+///
+/// ## Por que nombra las dos declaraciones y no fourteen
+///
+/// Misma medida que tomo VA10 en el rechazo de una discrepancia: el lector viene
+/// a ver **las que discrepan**, no a ver las catorce. Y no reimplementa el
+/// informe de `release version inspect` —que ya lo dice bien—: nombra el
+/// veredicto y remite ahi, que es una autoridad y no una segunda.
+fn sin_version(authority: &VersionAuthority, asked: bool) -> SinVersion {
+    match authority {
+        VersionAuthority::ReleaseRefIsAuthority { .. } => SinVersion {
+            measured: true,
+            detail: "this target declares no product version; the release reference carries it"
+                .to_owned(),
+        },
+        VersionAuthority::Ambiguous { candidates, .. } => {
+            let declaraciones = candidates
+                .iter()
+                .map(|(quien, version)| format!("{quien} says {version}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            SinVersion {
+                measured: true,
+                detail: format!(
+                    "the sources disagree ({declaraciones}), which is not the same as this \
+                     target declaring no version: it is this target declaring more than one, \
+                     and this build refuses to pick. The reference cannot be compared until \
+                     the project says which one it is. Run `sddk release version inspect` \
+                     for the full list."
+                ),
+            }
+        }
+        VersionAuthority::Invalid { failures, .. } => {
+            let ilegibles = failures
+                .iter()
+                .map(|(quien, por_que)| format!("{quien}: {por_que}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            SinVersion {
+                measured: true,
+                detail: format!(
+                    "a source exists and could not be read ({ilegibles}), which is not the \
+                     same as this target declaring nothing: a source that exists and cannot \
+                     be read is not silence. Run `sddk release version inspect` to see which \
+                     one and why."
+                ),
+            }
+        }
+        VersionAuthority::Unresolved { .. } if asked => SinVersion {
+            measured: true,
+            detail: "the build tool was asked and no source produced a version. There is \
+                     nothing to compare against, and that is a fact rather than an absence \
+                     of looking."
+                .to_owned(),
+        },
+        // El unico caso que NO es una medicion, y por eso es el unico que puede
+        // llevar la bandera en el texto: sin `--evaluate-build` nadie leyo el
+        // modelo del build, y un build script no se lee con un patron.
+        _ => SinVersion {
+            measured: false,
+            detail: "this build did not ask the build tool, so this is NOT a measurement: \
+                     only declaration files were read, and a build script is not one of \
+                     them. Ask the build tool with `--evaluate-build --build-tool <tool>`, \
+                     or run `sddk release version inspect` to see what was and was not \
+                     looked at."
+                .to_owned(),
+        },
+    }
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -754,6 +898,18 @@ struct VersionMatchOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     product_version: Option<String>,
     matches: bool,
+    /// Si `matches` es una **comparacion** o la ausencia de ella.
+    ///
+    /// MEDIDO, y es lo que hace falsable el bloque: antes, `matches` con un tag
+    /// correcto y con uno erroneo salia byte a byte igual, porque el comando
+    /// contestaba que no habia nada contra que comparar sin haber preguntado a
+    /// quien lo sabia. Con esto, `false` significa dos cosas distintas y el
+    /// consumidor puede distinguirlas sin leer la prosa.
+    ///
+    /// MEDIDO antes de tocar la forma: ningun script, workflow ni otro repositorio
+    /// lee el JSON de este comando; los unicos consumidores son tests Rust y la
+    /// documentacion.
+    measured: bool,
     detail: String,
 }
 
@@ -767,6 +923,7 @@ fn version_match_text(output: &VersionMatchOutput) -> String {
         None => text.push_str("productVersion: none\n"),
     }
     text.push_str(&format!("matches: {}\n", output.matches));
+    text.push_str(&format!("measured: {}\n", output.measured));
     text.push_str(&format!("detail: {}\n", output.detail));
     text
 }
@@ -824,31 +981,38 @@ fn run_release_handoff(args: HandoffArgs) -> CommandOutput {
             ));
         }
 
-        // Igual que `matches`: `HandoffArgs` no declara `--evaluate-build`, asi
-        // que un handoff sobre un build Gradle se resuelve sin preguntar al build
-        // tool. Es una limitacion DECLARADA de este comando, no un olvido, y por
-        // eso el valor va escrito aqui y no sale de un default.
-        let ask = BuildAsk::never();
+        // MEDIDO antes de este bloque: aqui vivia `BuildAsk::never()` y, debajo,
+        // `version_registry()` en vez de `ask.registry()` — **doble** partida: por
+        // un lado los `Args` no declaraban las banderas, y por otro la resolucion
+        // iba al registro que no pregunta. Poner las banderas sin cambiar el
+        // registro habria dado un handoff que acepta `--evaluate-build` y lo
+        // ignora, que es peor que no aceptarlas.
+        let ask = BuildAsk::of_parts(&args.ask)?;
         let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
 
-        // La MISMA resolución que usa `release plan`. Una segunda llamada al
-        // registry sería una segunda autoridad, y la que acaba dentro del sobre
-        // es la que el certificador leería como si la hubiera emitido SDDK.
-        let authority = version_registry().resolve(
+        // La MISMA resolución que usa `release plan`, y por la MISMA `ask`: una
+        // segunda llamada al registry sería una segunda autoridad, y la que acaba
+        // dentro del sobre es la que el certificador leería como si la hubiera
+        // emitido SDDK.
+        let authority = ask.registry().resolve(
             sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
             &selected.target,
         );
+        // El mismo texto que `matches`, por la misma funcion y por la misma razon:
+        // las cuatro razones por las que no hay version no son la misma razon, y
+        // un productor que lee «no hay nada que entregar» cuando lo que hay es una
+        // contradiccion entre dos declaraciones va a arreglarlo en el sitio
+        // equivocado.
+        //
+        // Y el texto de `sin_version` **ya** remite a `inspect` donde hace falta,
+        // luego aqui no se repite: un mensaje que dice dos veces lo mismo no
+        // informa mas, entrena al lector a leer el primero y saltar el segundo.
+        // Ese defecto es de VA10 y lo corrigio entonces; repetirlo aqui seria
+        // perderlo en la translation.
         let product_version = authority.version().cloned().ok_or_else(|| {
             anyhow::anyhow!(
-                "this target declares no product version, so there is nothing to hand \
-                 off. Run `sddk release version inspect` to see what was and was not \
-                 looked at: {}",
-                match &authority {
-                    sddk_domain::version_authority::VersionAuthority::ReleaseRefIsAuthority { .. } =>
-                        "this target declares that the release reference carries the version, which is a \
-                         different answer and not one a producer can fill in for SDDK.",
-                    _ => "no provider produced a version.",
-                }
+                "this target has no product version to hand off: {}",
+                sin_version(&authority, ask.evaluate()).detail
             )
         })?;
 
@@ -1571,7 +1735,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         // La variante `detailed` y no la que aplana: el plan declara de dónde
         // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
         // que reportar. Sigue fallando cerrado ante un desajuste.
-        let ask = BuildAsk::of(&args)?;
+        let ask = BuildAsk::of_parts(&args.ask)?;
         let selected = resolve_release_target(git.root(), args.target.as_deref(), &ask)?;
         let authority =
             ensure_version_lockstep_detailed(&ask.registry(), &selected.target, &args.tag, &naming)
@@ -1699,7 +1863,7 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
         // un `Result`: dentro no hay donde propagar un fallo. Y es tambien donde
         // tiene que estar: una pregunta que se valida despues de decidir es una
         // pregunta que a veces no se valida.
-        let ask = BuildAsk::of(&args)?;
+        let ask = BuildAsk::of_parts(&args.ask)?;
         let local_preconditions = matches!(route, ReleaseRoute::Local)
             .then(|| {
                 local_release_preconditions(
@@ -1830,7 +1994,7 @@ fn apply_release_forge(
     // se resuelven con el mismo registro a proposito: si cada una construyera el
     // suyo, la autoridad seria de una pregunta y el target de otra, y un outcome
     // asi no se puede auditar.
-    let ask = BuildAsk::of(args)?;
+    let ask = BuildAsk::of_parts(&args.ask)?;
     let version_authority = version_authority_or_fail(root, &args.tag, &naming, &ask)?;
     // La identidad del producto, de la MISMA seleccion que produjo la
     // autoridad. Volver a resolverla aqui podria dar otra respuesta si el arbol
@@ -2113,62 +2277,68 @@ pub(crate) struct BuildAsk {
     dialect: Option<sddk_gateway::version_provider::BuildToolDialect>,
 }
 
-impl From<BuildAsk> for (bool, Option<String>) {
-    /// El dialecto vuelve a su NOMBRE porque `ReleaseArgs` los recibe de la
-    /// linea de comandos. El viaje de ida —nombre a dialecto— ya ocurrio y ya
-    /// fallo cerrado; este no vuelve a interpretar nada.
+impl From<BuildAsk> for BuildAskArgs {
+    /// El dialecto vuelve a su NOMBRE porque `ReleaseArgs` recibe las banderas de
+    /// la linea de comandos. El viaje de ida —nombre a dialecto— ya ocurrio y ya
+    /// fallo cerrado; este no vuelve a interpretar nada, solo lo devuelve a la
+    /// forma que la linea de comandos entiende.
+    ///
+    /// El viaje de vuelta si ocurre, en `ship`, y es el mismo `dialect_asked` que
+    /// fallo cerrado a la ida: no hay una segunda interpretacion, hay la misma dos
+    /// veces, y un nombre que se parseo una vez se parsea igual la segunda.
     fn from(ask: BuildAsk) -> Self {
-        (ask.evaluate, ask.dialect.map(|d| d.id().to_owned()))
+        Self {
+            evaluate_build: ask.evaluate,
+            build_tool: ask.dialect.map(|d| d.id().to_owned()),
+        }
     }
 }
 
 impl BuildAsk {
-    /// Lo que dice la línea de comandos.
-    pub(crate) fn of(args: &ReleaseArgs) -> anyhow::Result<Self> {
-        Ok(Self {
-            evaluate: args.evaluate_build,
-            dialect: dialect_asked(args.evaluate_build, args.build_tool.as_deref())?,
-        })
-    }
-
-    /// La misma pregunta, leida de `VersionInspectArgs`.
-    ///
-    /// No un `From` porque las dos banderas viven en dos `Args` distintos y
-    /// un `From` que aceptara cualquiera dejaria abierta la pregunta de «de
-    /// donde salio esto» — que es justo la que este bloque vino a cerrar.
-    pub(crate) fn of_inspect(args: &VersionInspectArgs) -> anyhow::Result<Self> {
-        Ok(Self {
-            evaluate: args.evaluate_build,
-            dialect: dialect_asked(args.evaluate_build, args.build_tool.as_deref())?,
-        })
-    }
-
     /// La misma pregunta, desde banderas sueltas.
     ///
-    /// Existe para `ship`, que recibe su `ReleaseArgs` ya construido y no tiene
-    /// uno desde el que derivar. La ley es la misma en las dos entradas, que es
-    /// lo que importa: que una ruta pueda responder en Gradle cuando se pidio
-    /// otra cosa seria el defecto medido por la otra puerta.
-    pub(crate) fn of_parts(evaluate: bool, tool: Option<&str>) -> anyhow::Result<Self> {
+    /// **Una sola entrada**, y es la que usan los cuatro comandos. Existieron
+    /// hasta tres —`of`, `of_inspect` y esta— porque las banderas vivian en tres
+    /// `Args` distintos, y la razon que el propio codigo daba era «no un `From`
+    /// porque dejaria abierta la pregunta de de donde salio esto». Al aplanar un
+    /// unico tipo `BuildAskArgs` en los cuatro, **la razon desaparece**: ahora si
+    /// se sabe de donde sale, y tres constructores para el mismo valor eran tres
+    /// sitios donde olvidar la mitad de la pregunta.
+    ///
+    /// La ley es la misma en las cuatro entradas, que es lo que importa: que una
+    /// ruta pueda responder en Gradle cuando se pidio otra cosa seria el defecto
+    /// medido por la otra puerta.
+    pub(crate) fn of_parts(args: &BuildAskArgs) -> anyhow::Result<Self> {
         Ok(Self {
-            evaluate,
-            dialect: dialect_asked(evaluate, tool)?,
+            evaluate: args.evaluate_build,
+            dialect: dialect_asked(args.evaluate_build, args.build_tool.as_deref())?,
         })
     }
 
-    /// Lo que se responde cuando nadie ha pedido nada.
-    ///
-    /// Con nombre propio porque es el caso que **cambia la conducta** de la
-    /// puerta, y un `Default` implícito no dice cuál de los dos es.
-    fn never() -> Self {
-        Self {
-            evaluate: false,
-            dialect: None,
-        }
-    }
-
+    // `never()` **ya no existe** como constructor, y su ausencia es la prueba
+    // estructural de que el hueco se cerro.
+    //
+    // MEDIDO antes de este bloque: lo llamaban `release version matches` y
+    // `release handoff`, y ambos contestaban sobre la version sin poder
+    // preguntar — con el tag correcto y con el erroneo, `matches` salia byte a
+    // byte igual—.
+    //
+    // Los dos leen ahora `of_parts(&args.ask)`, luego este constructor se queda
+    // sin un solo uso y desaparece. No es limpieza: es la prueba de que ya no
+    // existe el camino de codigo que produce una `BuildAsk` sin banderas, y
+    // reintroducirlo exigiria escribir el `Self` a mano.
     fn registry(&self) -> sddk_domain::version_authority::VersionResolverRegistry {
         version_registry_asking(self.evaluate, self.dialect)
+    }
+
+    /// Si se pregunto al build tool.
+    ///
+    /// Lo necesita `sin_version` porque **«no hay version» tiene dos causas
+    /// opuestas** y el texto tiene que distinguirlas: nadie pregunto, o se
+    /// pregunto y no habia. Sin este getter, el que redacta el mensaje deduce
+    /// una de las dos de un valor implicito.
+    pub(crate) fn evaluate(&self) -> bool {
+        self.evaluate
     }
 }
 
@@ -3640,7 +3810,11 @@ mod tests {
             dir.path(),
             "v1.0.0",
             &VersionNaming::v_prefixed(),
-            &super::BuildAsk::never(),
+            &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None,
+            })
+            .expect("sin preguntar no falla"),
         )
         .unwrap();
         assert!(
@@ -3677,7 +3851,11 @@ mod tests {
             dir.path(),
             "v1.0.0",
             &VersionNaming::v_prefixed(),
-            &super::BuildAsk::never(),
+            &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None,
+            })
+            .expect("sin preguntar no falla"),
         )
         .unwrap();
         assert!(
@@ -3700,7 +3878,11 @@ mod tests {
             dir.path(),
             "v1.0.0",
             &VersionNaming::v_prefixed(),
-            &super::BuildAsk::never(),
+            &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None,
+            })
+            .expect("sin preguntar no falla"),
         )
         .unwrap();
         assert!(
@@ -3738,7 +3920,11 @@ mod tests {
             dir.path(),
             "v1.0.0",
             &VersionNaming::v_prefixed(),
-            &super::BuildAsk::never(),
+            &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None,
+            })
+            .expect("sin preguntar no falla"),
         )
         .unwrap();
         assert_eq!(
@@ -3760,7 +3946,11 @@ mod tests {
                 dir.path(),
                 "v1.0.0",
                 &VersionNaming::v_prefixed(),
-                &super::BuildAsk::never(),
+                &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                    evaluate_build: false,
+                    build_tool: None
+                })
+                .expect("sin preguntar no falla"),
             )
             .is_err(),
             "silencio no es una declaracion de convencion"
@@ -3780,7 +3970,11 @@ mod tests {
                 dir.path(),
                 "v1.0.0",
                 &VersionNaming::v_prefixed(),
-                &super::BuildAsk::never(),
+                &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                    evaluate_build: false,
+                    build_tool: None
+                })
+                .expect("sin preguntar no falla"),
             ),
             "un proyecto sin version declarada no tiene contra que comparar, y eso no es una infraccion"
         );
@@ -3795,14 +3989,22 @@ mod tests {
             dir.path(),
             "v1.0.0",
             &VersionNaming::v_prefixed(),
-            &super::BuildAsk::never(),
+            &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None
+            })
+            .expect("sin preguntar no falla"),
         ));
         assert!(
             !super::version_lockstep_satisfied_asking(
                 dir.path(),
                 "v9.9.9",
                 &VersionNaming::v_prefixed(),
-                &super::BuildAsk::never(),
+                &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                    evaluate_build: false,
+                    build_tool: None
+                })
+                .expect("sin preguntar no falla"),
             ),
             "un tag que no coincide con la version declarada tiene que cerrar la puerta"
         );
@@ -3811,7 +4013,11 @@ mod tests {
                 dir.path(),
                 "v9.9.9",
                 &VersionNaming::v_prefixed(),
-                &super::BuildAsk::never(),
+                &super::BuildAsk::of_parts(&super::BuildAskArgs {
+                    evaluate_build: false,
+                    build_tool: None
+                })
+                .expect("sin preguntar no falla"),
             )
             .is_err()
         );
@@ -4138,8 +4344,10 @@ mod tests {
             tag: "v1.0.0".into(),
             target: None,
             naming: "v_prefixed".into(),
-            evaluate_build: false,
-            build_tool: None,
+            ask: super::BuildAskArgs {
+                evaluate_build: false,
+                build_tool: None,
+            },
             role: "full_publisher".into(),
             notes: String::new(),
             approve: true,

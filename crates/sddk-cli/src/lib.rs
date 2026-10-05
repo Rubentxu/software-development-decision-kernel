@@ -1044,7 +1044,11 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             // comandos y tiene que salir como tal: si llegara mas adentro se
             // reportaria como una fuente que no se pudo leer, que es otro hecho
             // con otra reparacion.
-            let ask = match release_cmd::BuildAsk::of_parts(evaluate_build, build_tool.as_deref()) {
+            let ask_flags = release_cmd::BuildAskArgs {
+                evaluate_build,
+                build_tool,
+            };
+            let ask = match release_cmd::BuildAsk::of_parts(&ask_flags) {
                 Ok(ask) => ask,
                 Err(error) => {
                     return CommandOutput {
