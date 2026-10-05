@@ -9,8 +9,11 @@ All notable changes to this project are documented in this file.
 
 ### Other
   - test(release): el guard del merge ejecuta el codigo que vigila, y su autofalsador cae 7 de 7 — `tests/test_changelog_merge.sh` reescrito entero: `PASS=34 FAIL=0`, sourceando la libreria y llamándola. Los cuatro casos originales mas el **no duplicado** (que es el defecto mismo, con la forma exacta que tuvo la 2.10.0), la **prosa que sobrevive al dedup** (el otro lado: un dedup que se lleva la prosa deja la seccion sin leer), group-headers ni vacios ni duplicados, el item no clasificable conservado y declarado, y el caso en que la seccion destino es la ULTIMA del changelog. Sin el idiom `[ ... ] && ok || bad` porque dispara SC2015 y el gate del 1b corre `shellcheck` **sin filtro** sobre los `.sh` tocados, luego un aviso mataria el release: es INC-DEBT-073 cobrando su primera vez, en este mismo bloque, y sin querer. `tests/test_changelog_merge_mutation.sh` con `PASS=9 FAIL=0 SKIP=0`: siete mutaciones, cada una por su comprobacion, mas el sha de la libreria real intacto al final —un falsificador que se lleva el codigo por delante no ha medido nada—. **Cinco de las siete estaban rotas DE ORIGEN**: les faltaba el texto de reemplazo, luego BORRABAN la linea, rompian la libreria y el guard caia por todo en vez de por su comprobacion, y durante un rato eso hizo parecer que cinco comprobaciones eran la misma. Ademas el par de una mutacion mia `$'\n'`, que CIERRA la cadena de comillas simples que lo contiene. Rehecho con heredocs de comillas y separador `%%` en vez de un TAB escrito a mano
-  - docs(debt): INC-DEBT-074 resuelta, con los cuatro defectos de la construccion declarados en la propia deuda
+  - docs(debt): INC-DEBT-074 resuelta — el merge deduplica y su test ejecuta el codigo que vigila; y con los cuatro defectos que aparecieron al construirlo, declarados en la propia deuda
   - docs(journal): session-82 cierra con INC-DEBT-074 resuelta, y un **A cirilico** cazado antes de tocar el repo
+
+  - docs(changelog): seccion 2.11.0, escrita despues de los commits que describe
+  - docs(journal): session-81b cierra con REL-2.10.0 publicada e instalada, e INC-DEBT-064 resuelta
 
 ## [2.10.0] - 2026-10-05
 
