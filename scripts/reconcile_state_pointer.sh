@@ -198,11 +198,24 @@ tmp=$(mktemp "${STATE}.XXXXXX") || { echo "FATAL: mktemp fallo" >&2; exit 1; }
 trap 'rm -f "$tmp"' EXIT
 
 python3 - "$STATE" "$tmp" "$target_sha" "$target_short" "$real_ver" "$current_sha" "$current_ver" "$sha_reconcilable" <<'PY'
+import json
 import re
 import sys
 
 (state_path, out_path, target_sha, target_short,
  real_ver, current_sha, current_ver, sha_reconcilable) = sys.argv[1:9]
+
+# MEDIDO (session-83): con la version de workspace ilegible, este bloque
+# escribia `workspace_version_at_current: ""` — un puntero que DECLARA una
+# version vacia, que es peor que no declarar nada porque parece un dato.
+# Falla cerrado aqui, antes de escribir nada: sin version real no hay puntero
+# que_valga, y seguir adelante produciria un fichero con forma de verdad.
+if not real_ver:
+    sys.exit(
+        "no pude leer [workspace.package] version de Cargo.toml; el puntero "
+        "declara la version del workspace, luego sin ella no hay nada que "
+        "reconciliar. STATE.yaml intacto."
+    )
 
 with open(state_path, encoding="utf-8") as fh:
     text = fh.read()
@@ -232,14 +245,33 @@ else:
 # superseded_pointer: se inserta SOLO si no existia, y solo cuando se
 # movio el SHA (mover el puntero sin dejar constancia de a donde venia
 # seria reescribir historia por la puerta de atras).
+#
+# MEDIDO (session-83): el texto de este bloque se construia concatenando
+# f-strings en varias LINEAS FISICAS, luego el escalar resultante llevaba
+# newlines dentro de un escalar YAML con comillas dobles. Eso es YAML
+# INVALIDO, y el repo real no lo notaba porque aqui `superseded_pointer`
+# ya existe desde hace tiempo y la rama de abajo no se ejecuta: el defecto
+# es LATENTE y solo se dispara en un puntero que aun no tenga
+# `superseded_pointer`, o sea en un bootstrap — que es justo donde un
+# reconciliador roto hace mas dano.
+#
+# Y lo que si lo notaba lo decia mal (ver el bloque de validacion de mas
+# abajo): decia "no hay PyYAML" cuando la causa era el YAML invalido, y
+# salia con 0. Un exit 0 sin efecto es peor que un fallo, porque el
+# llamante cree que se reconcilio.
+#
+# El arreglo: el texto se compone en UNA linea y se serializa con json.dumps,
+# que produce un escalar de comillas dobles VALIDO para YAML. No se sustituye
+# el escapado a mano porque a mano es donde estaba el defecto.
 if sha_reconcilable != "1" and not re.search(r'^  superseded_pointer:.*$', text, flags=re.M):
-    superseded = (
-        f'  superseded_pointer: "{current_sha or "<none>"}/{current_ver or "<none>"}'
-        f' (auto-registrado por scripts/reconcile_state_pointer.sh al reconciliar'
-        f' {state_path}). La evidencia del puntero anterior se conserva en'
-        f' SESSION-JOURNAL.md; este script no reescribe historia, solo mueve el'
-        f' puntero y deja constancia de a donde venia.'
+    superseded_note = (
+        f"{current_sha or '<none>'}/{current_ver or '<none>'} "
+        f"(auto-registrado por scripts/reconcile_state_pointer.sh al reconciliar "
+        f"{state_path}). La evidencia del puntero anterior se conserva en "
+        f"SESSION-JOURNAL.md; este script no reescribe historia, solo mueve el "
+        f"puntero y deja constancia de a donde venia."
     )
+    superseded = "  superseded_pointer: " + json.dumps(superseded_note, ensure_ascii=False)
     text, n5 = re.subn(r'^(  head_at_state_sync:.*)$', rf'\1\n{superseded}',
                        text, count=1, flags=re.M)
     if n5 != 1:
@@ -266,26 +298,48 @@ write_rc=$?
 # produce YAML invalido es peor que no escribir: el proximo guard no
 # podria ni leer el puntero.
 #
+# MEDIDO (session-83), y aqui estaba la parte mas grave: el `else` de este
+# bloque salia con 0. Con una sola causa apparentemente declarada —
+# "no hay PyYAML" — cuando en realidad ese `if` falla por DOS motivos, y el
+# segundo era el que se daba: el YAML GENERADO estaba invalido. O sea que el
+# reconciliador se decia a si mismo que no podia validar, senalaba una
+# capacidad ausente que si estaba presente, y se marchaba con 0 sin haber
+# reconciliado nada. Un exit 0 sin efecto no es un resultado: es una mentira
+# que el llamante se lleva puesta.
+#
+# Ahora las DOS causas se separan y se NIEGAN las dos: o falta la capacidad
+# (que se instala) o el fichero generado es invalido (que es un defecto de
+# este script). En ninguno de los dos casos se puede decir "reconciliado".
+# El temporal se conserva en los dos, porque inspeccionarlo sigue sirviendo.
+#
 # if-then-else explicito y NO `A && B || C` (SC2015): aqui `mv` puede
 # fallar de verdad, y con la forma `&&`/`||` el fallback se ejecutaria
-# tambien, moviendo el temporal por segunda vez. La forma explicita
-# distingue "no se puede validar" de "la escritura fallo".
-if python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1],encoding='utf-8'))" "$tmp" 2>/dev/null; then
-  if mv "$tmp" "$STATE"; then
-    echo "  escritura: OK (YAML valido, fichero sustituido)"
-  else
-    echo "FATAL: mv fallo, STATE.yaml intacto" >&2
-    exit 1
-  fi
-else
-  # Sin PyYAML no se puede validar, pero el temporal tampoco se descarta:
-  # se conserva para que un humano pueda inspeccionarlo.
+# tambien, moviendo el temporal por segunda vez.
+if ! python3 -c "import yaml" 2>/dev/null; then
   backup="${STATE}.reconcile-candidate"
   mv "$tmp" "$backup"
-  echo "  escritura: SIN VALIDAR (no hay PyYAML instalado)"
-  echo "  el resultado quedo en $backup; revisalo y muevelo a mano si es correcto:"
-  echo "    mv $backup $STATE"
-  exit 0
+  echo "FATAL: no se puede validar el YAML porque falta PyYAML." >&2
+  echo "  temporal conservado en $backup para inspeccionarlo" >&2
+  echo "  instalar:  python3 -m pip install pyyaml" >&2
+  echo "  por que no se degrada: un exit 0 aqui hace que el llamante" >&2
+  echo "  crea que el puntero se reconcilio cuando no se movio, y el" >&2
+  echo "  guard del 1b lo mata mas tarde sin relacion con la causa." >&2
+  exit 2
+fi
+if ! python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1],encoding='utf-8'))" "$tmp" 2>/dev/null; then
+  backup="${STATE}.reconcile-candidate"
+  mv "$tmp" "$backup"
+  echo "FATAL: el YAML que este script ha generado NO es valido." >&2
+  echo "  temporal conservado en $backup para inspeccionarlo" >&2
+  echo "  PyYAML SI esta presente, luego esto NO es una limitacion del" >&2
+  echo "  entorno: es un defecto de la generacion. STATE.yaml intacto." >&2
+  exit 3
+fi
+if mv "$tmp" "$STATE"; then
+  echo "  escritura: OK (YAML valido, fichero sustituido)"
+else
+  echo "FATAL: mv fallo, STATE.yaml intacto" >&2
+  exit 1
 fi
 
 echo
