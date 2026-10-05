@@ -31,6 +31,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB="$ROOT/scripts/lib/release_diagnostics.sh"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/sddk-atrib.XXXXXX")"
 
+# MEDIDO: este guard NO era hermetico respecto al entorno, y por eso daba verde
+# en una shell y rojo en el 1b de la release 2.11.3. La razon es una asimetria
+# entre las dos mitades del experimento:
+#
+#   - el SUJETO se lanza con `env -u CARGO_TARGET_DIR` (linea 78), luego su
+#     target efectivo sale de `build.target-dir` del mini-repo, que es $T3;
+#   - la PREGUNTA la hace `_cargo_effective_target`, que corre `cargo metadata`
+#     en el proceso del propio guard y por lo tanto HEREDA su entorno.
+#
+# MEDIDO que esa es la causa y no otra: con la variable puesta, el mini-repo
+# declara el target global y el sujeto —que corre sin ella— no aparece nunca en
+# el aviso; quitandola, el aviso aparece con el pid correcto.
+#
+# Y la semántica de la libreria es CORRECTA y no se toca: «el target que cargo
+# usaria con este cwd» se resuelve como lo resolvería el proceso que pregunta,
+# que es lo unico que un preflight puede afirmar. El guard es el que estaba mal
+# armado:hacer una pregunta con un entorno que su propio sujeto no tiene.
+# Por eso la variable se quita UNA vez, aqui, y no en cada invocacion.
+unset CARGO_TARGET_DIR
+
 # shellcheck disable=SC2329
 cleanup() { rm -rf "$WORK" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -129,7 +149,22 @@ mkdir -p "$D3/.cargo" "$D3/src" "$T3"
 printf '[package]\nname="simulado"\nversion="0.1.0"\nedition="2021"\n' > "$D3/Cargo.toml"
 printf '[build]\ntarget-dir = "%s"\n' "$T3" > "$D3/.cargo/config.toml"
 printf 'fn main() {}\n' > "$D3/src/main.rs"
-efectivo="$( cd "$D3" && cargo metadata --no-deps --format-version 1 2>/dev/null \
+# MEDIDO: esta invocacion era `cargo metadata` a secas, sin `env -u
+# CARGO_TARGET_DIR`, y eso hacia que E3 DIESE en el 1b de la release 2.11.3 con
+# `cargo metadata dice: '/var/home/rubentxu/cargo-targets'`. La causa: una
+# variable de entorno `CARGO_TARGET_DIR` AMBIENTAL gana a `build.target-dir` del
+# `.cargo/config.toml` del mini-repo, luego el escenario no declaraba el target
+# que dice declarar y el control no probaba nada. MEDIDO con el mini-repo a
+# mano: sin la variable, `cargo metadata` devuelve `$T3`; con ella, devuelve el
+# target global.
+#
+# `lanzar` ya usaba `env -u CARGO_TARGET_DIR` en su rama de target vacio (linea
+# 78) — la asimetria era la senal, y por eso el sujeto se reportaba mientras
+# el escenario que lo levanta no. Por que no lo delata antes: E3 es el unico caso
+# que exige que el sujeto SI se reporte, luego es el unico cuyo rojo delata un
+# escenario roto. E1 y E2 pasaban con el escenario contaminado porque esperan
+# «NO se reporta», y un escenario que no se construye nunca lo cumple.
+efectivo="$( cd "$D3" && env -u CARGO_TARGET_DIR cargo metadata --no-deps --format-version 1 2>/dev/null \
     | tr ',' '\n' | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p' | head -1 )"
 asert "E3: el escenario declara de verdad que el target efectivo es el preguntado" \
     "$([ "$(readlink -f "$efectivo" 2>/dev/null || echo "$efectivo")" = "$(readlink -f "$T3")" ] && echo 1 || echo 0)" \
