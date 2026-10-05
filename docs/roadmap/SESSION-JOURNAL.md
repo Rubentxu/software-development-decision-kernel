@@ -15579,3 +15579,125 @@ los 6 que el gate anterior no podia ni ver.
 - **`NOT_GUARDS` no esta vigilada de hecho**, medido y escrito.
 - **La superficie de gates del 1b sigue siendo una lista escrita a mano.** Este
   commit garantiza que se ve lo que hay en `tests/`; no cambia quien lo ejecuta.
+
+---
+
+## session-84 (bis 3) — el codigo de salida de un guard tiene que describir lo que midio
+
+> Continuacion directa de session-84 bis (INC-DEBT-077, censo de guards). El
+> punto de partida no fue una decision sino una medicion que no cuadraba: al
+> intentar confirmar por ejecucion que los seis `uat_ctx_*` funcionan con un
+> binario, varios guards imprimieron PASS y salieron con codigo de rojo.
+
+### MEDIDO: un guard verde que sale 1
+
+`uat_ctx_001_adoption_convergence.sh` imprimia `PASS: 20/20 applies complete` y
+salia 1, con `mavis-trash: failed to trash` como ultima linea. Un guard que
+aprueba y devuelve codigo de rojo.
+
+### La causa, y las tres hipotesis que hubo que descartar antes
+
+`probe-trap-exit5.sh` (`PASS=3 FAIL=0`) aisla la causa: con `set -euo pipefail`
+y `trap 'rm -rf "$DIR"' EXIT`, un borrado fallido **ABORTA el script con 1**, y
+ese 1 es indistinguible de «el guard fallo» porque cuerpo-verde y cuerpo-rojo
+salen los dos con 1.
+
+Las tres hipotesis anteriores se descartaron **midiendo**, no inspeccionando, y
+esa cadena es la parte que hay que recordar:
+
+| hipotesis | veredicto |
+|---|---|
+| un trap que borra sin preservar `$?` pisa el codigo | FALSO sin `set -e` |
+| `local code=$?` no captura el codigo real | FALSO: captura 7 y sale 7 |
+| el fallo de la limpieza pisa el codigo | FALSO, por la primera |
+| **`set -e` + trap que borra** | **se sostiene** |
+
+Un rojo de la herramienta no es un rojo de la propiedad: `set -e` dentro de la
+sonda abortaba antes del `exit "$code"` y se atribuia al trap lo que hacia
+`set -e`.
+
+### Alcance, y por que el arreglo es una copia
+
+29 guards shell con `trap EXIT`; 3 con `set -e` y borrado dentro del trap. **2
+expuestos** y 1 ya bien escrito: `test_release_receipt_authority.sh`. Los tres
+son hoy consistentes, y la sonda lo dice sin declararlos aptos. Se copia el
+patron que el repo ya considera correcto — capturar `$?`, tolerar el borrado,
+salir con el codigo real — en vez de inventar uno nuevo.
+
+Commits: `358016e2` (fix), `c5aa02b0` (falsador), `6c309e47` (orden), `cc864e0c`
+(SKIP -> FAIL), `8e6651ea` (changelog).
+
+### El falsador se cazo a si mismo dos veces
+
+Las dos son la misma clase que el resto de la sesion, y por eso se documentan:
+
+1. **El bloque B contaba prosa como codigo.** Veia el `trap` antiguo en el
+   COMENTARIO que lo explica y daba rojo. «MENCIONAR no es EJECUTAR» por
+   tercera vez, dentro del falsador que existe para cazarla. Y la leccion no es
+   «filtra los comentarios»: es que **un detector que cuenta prosa obliga a
+   degradar el codigo para quedar verde**, que es al reves. El comentario que
+   documenta el arreglo es justo lo que hay que poder escribir.
+
+2. **El bloque C daba `[ok] rc 127 con y sin borrado roto`** para un guard que no
+   habia arrancado. Dos no-arranques producen el mismo codigo, y el bloque lo
+   leia como la propiedad. Ahora exige la marca de llegada.
+
+Metodo: shim de `rm` por `PATH`, **nunca mutacion del sujeto** — el falsador de
+INC-DEBT-076 se delato a si mismo por mutar `tests/` desde el 1b. Y la v1 de
+este uso `sed` con delimitador `|` sobre un patron con `||`, que da
+`sed: opcion desconocida para 's'` (rc=1 medido): una mutacion INAPLICABLE de
+forma silenciosa, justo lo que el falsador existe para cazar.
+
+### El hallazgo que no era el que buscaba: ACOPLAMIENTO AL ORDEN
+
+Anadir el falsador al bucle del 1b produjo `SKIP=1`. La causa era **mia**, y se
+aislo comparando commits: M7 casa en `HEAD~1` y no casa en `HEAD`.
+
+**M3 y M7 no detectan un nombre, detectan un TEXTO EXACTO.** M7 exige que el
+bloque de los cinco termine en `; do`. Mi entrada se colaba entremedias y partia
+el texto que ambos casan, luego la mutacion era INAPLICABLE y el falsador caia
+en `SKIP`.
+
+> **La clase, que no cubren INC-DEBT-076 ni INC-DEBT-077:** un guard que casa un
+> texto exacto queda **acoplado al orden** de las lineas que lo rodean. Insertar
+> una linea inocua —que es justo lo que se hace para AÑADIR cobertura— desactiva
+> una falsacion sin tocar ni el guard ni el falsador. El sintoma es un `SKIP`
+> que parece inocuo.
+
+Se corrigio moviendo la entrada al principio del bucle: `SKIP=0`, `PASS` de 27 a
+33. Y de ahi sale el commit siguiente, que es el que evita que vuelva.
+
+### De SKIP a FALSACION MUERTA
+
+Los siete sitios del falsador degradaban a `SKIP` cuando el needle no casaba. Y
+en ese fichero **todos los sujetos son COPIAS del repo real**, luego un needle
+que no casa no es «este caso no aplica» sino que el repo se movio y la
+falsacion quedo obsoleta. Los siete cuentan ahora FAIL.
+
+Medido que tiene dientes: con el needle de M7 corrupto en un espejo del repo,
+`[FAIL] M7: FALSACION MUERTA (no se aplico)` con rc=1, donde antes era un `SKIP`
+que no rompia nada. `SKIP` queda reservado para un sujeto sintetico al que la
+mutacion no aplica por diseno, que hoy no ocurre en ningun caso.
+
+### Estado al cerrar
+
+`test_gate_coverage` PASS (92 tests, 0 sin runner) · `test_gate_coverage_ci_mutation`
+`PASS=33 FAIL=0 SKIP=0` · `test_guard_exit_code_fidelity_mutation` `PASS=9 FAIL=0
+SKIP=0` · `test_changelog_coverage` `PASS=9 FAIL=0` · `test_debt_index_coherence`
+PASS · shellcheck rc=0 sin filtro · puntero de estado reconciliado.
+
+Workspace **2.11.3**, declarada y **sin publicar** (ultimo tag remoto `v2.11.2`).
+
+### Lo que queda abierto, dicho aqui para no perderlo
+
+- **El paso que ejecutaria los seis `uat_ctx_*` no existe todavia.** Depende de
+  donde quepa un binario release sin que el release pague dos builds. Declarado
+  en INC-DEBT-077; sin decidir.
+- **`NOT_GUARDS` no esta vigilada de hecho** (M10a/b/c lo demuestra). Se conserva
+  con la declaracion escrita de que hoy no vigila.
+- **Acoplamiento al orden: alcance parcial.** Medidos M3 y M7; no se ha buscado
+  sistematicamente que otros guards casen subcadenas de `release.sh`, luego puede
+  haber mas. Declarado, no medido.
+- **No se ha verificado si el `cargo` de otro repo (PID 4149790, retiene el lock
+  de `release/`) sigue vivo.** No es de este repo y no se toca, pero un build
+  release esperaria por ese lock.
