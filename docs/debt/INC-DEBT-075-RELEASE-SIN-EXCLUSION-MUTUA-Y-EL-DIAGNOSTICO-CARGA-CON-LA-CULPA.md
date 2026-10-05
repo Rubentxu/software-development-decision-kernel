@@ -1,10 +1,10 @@
 ---
 id: INC-DEBT-075
-title: "release.sh no tiene exclusion mutua: dos releases del mismo tag pueden coexistir, y cuando lo hacen el diagnostico de retencion dice la verdad mientras el test que lo vigila le echa la culpa al producto"
-status: open
+title: "release.sh no tiene exclusion mutua, y el diagnostico de retencion atribuye a un cargo un target dir que no era suyo: dos releases del mismo tag podian coexistir, y el aviso que deberia haberlo detenido senalaba el directorio equivocado"
+status: resolved
 severity: high
 priority: P1
-fingerprint: "release_has_no_mutual_exclusion_and_retention_diagnostic_is_blamed_for_real_contention"
+fingerprint: "release_has_no_mutual_exclusion_and_retention_diagnostic_blames_the_product_for_real_contention"
 fingerprint_aliases: []
 cluster_id: CL-AUTHORITY-SPLIT
 created: 2026-10-05
@@ -12,119 +12,139 @@ created_by: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
 owner: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
 detected_at: 2026-10-05
 detected_in_session: session-82
+resolved_at: 2026-10-05
 component: release pipeline / diagnostico
-surface: scripts/release.sh y tests/test_release_diagnostics.sh (caso C9)
+surface: scripts/release.sh, scripts/lib/release_exclusion.sh, scripts/lib/release_diagnostics.sh, tests/test_release_diagnostics.sh
 related: [INC-DEBT-073, INC-DEBT-074]
 references:
   - scripts/release.sh
-  - tests/test_release_diagnostics.sh
+  - scripts/lib/release_exclusion.sh
   - scripts/lib/release_diagnostics.sh
+  - tests/test_release_diagnostics.sh
+  - tests/test_release_exclusion.sh
+  - tests/test_release_exclusion_mutation.sh
+  - tests/test_cargo_target_attribution.sh
 ---
 
-# INC-DEBT-075 — release.sh no tiene exclusion mutua, y el diagnostico de retencion carga con la culpa de un entorno contendsido
+# INC-DEBT-075 — RESUELTO — dos releases del mismo tag ya no pueden convivir, y el aviso de retencion se refiere al target dir que el cargo USA
+
+## EL ENCUADRE INICIAL ERA PARCIALMENTE FALSO, y se corrige aqui
+
+Este documento se abrio diciendo que el defecto era «el supuesto del test C9».
+**No lo era, o no solo**: el diagnostico moria sobre QUE target dir. Las dos
+sesiones que tocaron el fallo concluyeron, con razon, que el diagnostico no
+mintio porque la contencion era real. Cierto. Lo que ninguna de las dos midio
+es sobre que target decia la contencion.
 
 ## Que se midio
 
-**MEDIDO, no hipotetico.** Intentando publicar la 2.11.0 (session-82)
-convivieron **dos ejecuciones del release sobre el MISMO checkout, el MISMO
-HEAD y la MISMA version**:
+**MEDIDO, no hipotetico.** Convivieron dos ejecuciones del release sobre el
+mismo checkout, el mismo HEAD y la misma version:
 
 | pid | sesion | log | PPID |
 |---|---|---|---|
-| 38340 | session-82 (este bloque) | `release-2110-try4.log` | 26812 |
-| 99022 | otra sesion | `/tmp/rel-2.11.0.log` | 3001 (`systemd --user`) |
+| 38340 | session-82 | `release-2110-try4.log` | 26812 |
+| 99022 | session-83 | `/tmp/rel-2.11.0.log` | 3001 (`systemd --user`) |
 
-Ambas con `HEAD = a0a59dd2` y workspace `2.11.0`.
+El `cargo test --workspace --offline` de la otra sesion (pid 100388) retuvo el
+`CARGO_TARGET_DIR` compartido y las 4 aserciones de C9 cayeron.
 
-## La consecuencia, medida
+**La DIRECCION, que dos sesiones pusieron al reves**: el C9 que cayo fue el de
+session-82 —el pid aparece 5 veces en su log y **0** en el de la otra sesion—,
+el cargo retenedor era de la OTRA sesion (`PPID 100388 = 99022`), y el release
+de session-82 **no sobrevivio**: pid 38340 no existe y su log cierra
+`RELEASE_RC=1` a las 09:31:22. El C9 de la otra sesion pasa (`PASS=20 FAIL=0`).
 
-El `cargo test --workspace --offline` del release ajeno (pid **100388**,
-`PPID 99022`) retuvo el `CARGO_TARGET_DIR` compartido mientras corria
-`test_release_diagnostics.sh`. Las 4 aserciones de **C9** cayeron con:
+No era un huerfano de una sesion anterior: eran dos ejecuciones simultaneas e
+independientes del mismo tag, y **nadie lo impidio**.
 
-    el target dir compartido esta retenido: pid 100388, lleva 98s esperando
+## El defecto del diagnostico, que es el que hacia que C9 cayera
 
-**El diagnostico no mintio: habia retencion real.** Lo que fallo fue el
-*supuesto* del test, que afirma «sin retencion no inventa ninguna» sin
-comprobar que el target dir compartido este libre. El release de esta sesion
-murio con `RELEASE_RC=1` en el paso 1b por eso; el de la otra sesion paso esa
-misma prueba porque la contencion ya no existia.
+`_cargo_uses_target` tenia un tercer criterio escrito en prosa: *«un cargo
+lanzado aqui sin declarar target compila donde le digan, **que suele ser
+este**»*. Ese «suele» es una suposicion, y se MIDIO que es falsa:
 
-## La DIRECCION, medida, porque cambia el arreglo
+    ~/.cargo/config.toml -> [build] target-dir = "/var/home/rubentxu/cargo-targets"
 
-`CURRENT.md` (session-83) atribuye el proceso competidor a session-82: *«dejo
-un release.sh corriendo en background ... que sobrevivio al cierre»*. **Es al
-reves**, y la distincion decide el remedio:
+O sea que **todo** proyecto Rust del host compila en un unico target
+compartido. Un `cargo` con nuestro mismo cwd y sin `CARGO_TARGET_DIR` puede
+estar compilando AHI, que no es el target que se le preguntaba — y el aviso
+decia «el target dir compartido esta retenido: pid N» sobre un pid que no
+esperaba ese target.
 
-| hecho | medicion |
-|---|---|
-| El C9 que cayo fue el de session-82 | pid `100388` aparece **5 veces** en `release-2110-try4.log` y **0** en `/tmp/rel-2.11.0.log` |
-| El `cargo` retenedor era de la otra sesion | `PPID 100388 = 99022 = bash scripts/release.sh`, cuyo `PPID 3001` es `systemd --user` |
-| El release de session-82 no sobrevivio | pid 38340 no existe; su log cierra `RELEASE_RC=1` a las 09:31:22 |
-| El C9 de la otra sesion pasa | `autofalsacion del diagnostico de release: PASS=20 FAIL=0 SKIP=0` |
+Un aviso que se refiere a otro directorio es peor que no avisar, porque se lee
+como un dato sobre el release en curso.
 
-Las dos sesiones **lanzaron un release por su cuenta** —session-82 a las 09:24
-y la otra a las 09:29:30— y **nada impidio que coexistieran**. La lectura
-«un agente dejo un huerfano» se arregla con higiene del agente y vuelve a
-pasar la proxima vez que dos agentes trabajen a la vez. La lectura medida se
-arranca con **exclusion mutua en el release**, y sobrevive a que el operador
-cambie de sesion.
+## Que se resolvio, con las tres salidas
 
-Lo que **si** coincide con session-83, y no se pisa: el diagnostico no
-mintio. La contencion era real.
+1. **El aviso se refiere al target que el cargo USA.** Se le pregunta a
+   `cargo metadata` que target resolveria para ese cwd, y solo se cuenta si
+   coincide. **No se reimplementa la resolucion de cargo**, porque
+   `build.target-dir` puede cambiar y una copia de esa regla se quedaria vieja
+   sin que nadie lo note. La severidad NO cambia: sigue siendo un aviso y no una
+   muerte, porque dos proyectos distintos compartiendo target dir es el uso
+   normal de una maquina de desarrollo.
 
-## Lo que NO es este defecto
+2. **Exclusion mutua** en `release.sh`, por repo **y version**. El segundo
+   intento ABORTA nombrando el pid del primero. Sin directorio de candados
+   ABORTA, que es distinto de avisar. El `--dry-run` no toma candado, porque no
+   publica y no puede pisar a nadie.
 
-- **No** es un falso positivo del diagnostico: existia un `cargo` real
-  esperando el lock. La deteccion fue correcta.
-- **No** es un fallo de `test_release_diagnostics.sh` sobre lo que mide: sabe
-  nombrar el pid ajeno y distinguir un descendiente propio. Lo que no sabe es
-  que la contencion pueda provenir de **otro release**, y por eso el caso
-  «sin retencion» necesita una precondicion que nadie comprueba.
-- **No** se ha medido que dos releases hayan llegado ambos al paso 9 ni que
-  un tag se haya publicado dos veces. La ventana existe; el incidente, no.
+3. **Huerfanos**: se resuelve por la RECUPERACION del candado huerfano, que se
+   DECLARA en vez de bloquear para siempre. Un candado cuyo dueno murio —con o
+   sin su `trap`, por ejemplo al apagarse el host— se recupera y se dice que se
+   hacia y con que pid.
 
-## Por que es P1
+## LO QUE NO SE TOCO, y por que la distincion es el Nucleo
 
-1. **Consecuencia destructiva posible**: dos releases del mismo tag pueden
-   coexistir y ambos llegar al paso 9. Quien gane escribe el artefacto; quien
-   pierda, falla o sobrescribe con `--force`.
-2. **Envenena el diagnostico hacia el conjunto de la herramienta**: un guard
-   que blames al producto cuando el entorno esta contendsido **entrena a
-   ignorar al guard**. Este fallo se leyo como «el diagnostico no dice la
-   verdad» (FAIL=4 en C9) cuando la causa raiz eran dos sesiones
-   publicando la misma version.
-3. **Deja procesos huerfanos**: al morir un release, su `cargo` encolado puede
-   sobrevivir (medido: pid 100388, **4+ minutos despues** de que su release
-   murio). El `trap` de cleanup no alcanza a un proceso que cargo dejo
-   esperando el lock, y el siguiente intento hereda una contencion que ya no
-   pertenece a nadie.
+`release.sh` ya avisaba de la retencion del target dir, y con buen criterio. Se
+separa en dos casos que no son el mismo:
 
-## Salidas (para el bloque que lo cierre)
+    dos proyectos distintos en un target dir compartido  -> AVISAR (correcto)
+    dos releases del MISMO repo y la MISMA version      -> ABORTAR
 
-1. **Exclusion mutua en `release.sh`**: lock por repo+version, y el segundo
-   intento ABORTA nombrando el pid del primero, no compite por el lock de
-   cargo.
-2. **Precondicion declarada en C9**: antes de afirmar «sin retencion»,
-   comprobar que el target dir esta libre; si no lo esta, declarar el caso
-   **NO APLICABLE con su motivo**, nunca `[FAIL]`.
-3. **Reaper de procesos huerfanos** al morir un release en el paso 1.
+El segundo tiene consecuencia destructiva: los dos podrian llegar al paso 9 y
+escribir el mismo artefacto, o uno sobrescribir al otro con `--force`.
 
-## Falsador previsto
+## GATES
 
-- **M1**: lanzar dos `release.sh` a la vez -> el segundo aborta con el pid
-  del primero (no compite por el lock de cargo).
-- **M2**: con un `cargo` ajeno reteniendo el target dir, C9 declara el caso
-  **no aplicable** con motivo, nunca `[FAIL]`.
-- **M3**: matar un release a mitad del paso 1 y comprobar que no queda
-  ningun `cargo` suyo vivo esperando el lock.
+    tests/test_cargo_target_attribution.sh     PASS=5  FAIL=0
+    tests/test_release_exclusion.sh            PASS=17 FAIL=0
+    tests/test_release_exclusion_mutation.sh   PASS=10 FAIL=0 SKIP=0
+    tests/test_release_diagnostics.sh          PASS=43 FAIL=0
+    tests/test_release_diagnostics_mutation.sh PASS=20 FAIL=0 SKIP=0
+    shellcheck SIN filtro sobre los 5 tocados   0 avisos
 
-## Requisito de correccion
+Dientes verificados por medicion y no por argumento: contra la rama 3 sin el
+arreglo, `test_cargo_target_attribution.sh` da `PASS=4 FAIL=1` y `RESULT: FAIL`,
+con su control de deteccion real (E3) en verde — o sea cae por SU comprobacion
+y no porque este roto.
 
-Ninguno de los tres se resuelve con `--force` ni repitiendo el release. Si la
-2.11.0 llegara a publicarse mientras corrian dos releases, habria que
-verificar el artefacto contra la API y el CDN antes de aceptarlo, igual que
-con cualquier release. La 2.11.0 **si** se publico y **si** se verifico
-contra API y CDN (9 assets, `draft=false`, `prerelease=false`, sha256
-coincidente), pero bajo concurrencia: ese es el estado en que quedo, y por
-eso esta deuda es P1 y no P3.
+## LO QUE NO SE HA MEDIDO, y se declara
+
+- **NO se ha medido que dos releases lleguen ambos al paso 9.** La ventana
+  existia; el incidente no. La 2.11.0 se publico bajo concurrencia y se
+  verifico igual contra API y CDN —9 assets, `draft=false`,
+  `prerelease=false`, sha256 declarado == real—, que es la comprobacion que
+  toca cuando se publica bajo un estado no limpio.
+
+- **La exclusion tiene una ventana declarada**: dos procesos que vean el MISMO
+  candado huerfano a la vez pueden escribir encima los dos. Exige que el dueno
+  previo muera en ese instante, y el caso que de verdad importa —dos releases
+  VIVOS— no la comparte, porque ahi el pid esta vivo y nadie escribe encima.
+  Esta escrito en la libreria, no escondido aqui.
+
+- **Un flake preexistente de C9 NO se ha cerrado.** MEDIDO con dos campanas
+  paralelas de 20 corridas cada una: con el arreglo **1/20**, con la libreria
+  intacta **2/20**. O sea que es **preexistente** y el cambio no lo empeora, pero
+  su causa **NO esta establecida**. `obtenido` es una ruta del propio root del
+  test, lo que apunta a una salida que se filtra dentro del `$( )` del caso, y
+  no se ha medido cual. No se toca el codigo de ese test sin reproducirlo.
+
+- **La exclusion se entrego en un checkout COMPARTIDO con otra sesion**, que
+  revirtio `scripts/lib/release_diagnostics.sh` mientras se escribia. MEDIDO: el
+  arreglo se perdio una vez y hubo que reaplicarlo. Es la TERCERA vez que la
+  misma clase aparece en este bloque —el guard que copiaba el codigo, el test
+  que copiaba el script, y ahora el arbol que se comparte— y la leccion
+  operativa es la misma: **lo que no esta commiteado no existe**, ni siquiera
+  durante veinte minutos.
