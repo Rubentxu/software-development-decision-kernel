@@ -113,6 +113,52 @@ RELEASE_RUNNERS = [
 CI_RUNNERS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 RUNNERS = RELEASE_RUNNERS + CI_RUNNERS
 
+# --- Que cuenta como GUARD, y que no -----------------------------------------
+#
+# MEDIDO: el censo era `tests/test_*.sh` mas `tests/test_*.py`, y el glifo
+# `test_` en el nombre era la unica condicion de entrada. En `tests/` hay
+# ejecutables que NO casan, y cinco de ellos son guards de verdad:
+#
+#   uat_ctx_001_adoption_convergence.sh
+#   uat_ctx_003_durable_deltas.sh
+#   uat_ctx_005_explicit_cycle_migration.sh
+#   uat_ctx_006_skill_runtime_alignment.sh
+#   uat_ctx_007_context_expand.sh
+#
+# MEDIDO: los cinco son hermeticos (0 red, 0 contenedores) y NADIE los
+# ejecutaba — ni el 1b, ni `ci.yml`, ni ningun otro script. Y los cinco salen
+# **2** cuando se lanzan hoy, porque exigen el binario release construido, que
+# no existe: `error: binary not found or not executable`. O sea que el defecto
+# no es que estuvieran rotos, es que no se ejecutaban, y su nombre era la
+# unica razon por la que el gate no los habia visto nunca.
+#
+# Un censo por prefijo de nombre es un censo que hay que actualizar cuando
+# alguien nombra un guard `uat_*` en vez de `test_*`, y ese recordatorio es
+# justo lo que falla. Por eso el censo ahora es **todo ejecutable en
+# `tests/`**, y lo que no es un guard se declara aqui con su motivo.
+NOT_GUARDS: dict[str, str] = {
+    "lib_public_release_gate.sh": (
+        "no es un guard: es una LIBRERIA. Define `run_public_release_gate` y "
+        "la sourcean `scripts/release-assets-contract.sh` y "
+        "`tests/test_release_public_gate.sh`. Ejecutarla directamente no hace "
+        "nada porque no tiene main. Censusarla como guard seria el mismo error "
+        "al reves: llamar guard a una libreria."
+    ),
+    "ext_provider_gate.sh": (
+        "no es un guard autonomous: es un LAUNCHER de frontera MCP_EXTERNAL. "
+        "Sin argumentos sale 3 (not_run) y con un provider ausente sale 2 "
+        "(blocked_external_dependency), que por contrato NUNCA es pass — "
+        "cablearlo al 1b mataria toda release en una maquina sin `chronos-mcp`. "
+        "Su otro mitad, el enum de estados, esta pineado por un test de "
+        "produccion (`ext_outcome_states_match_the_launcher_contract`)."
+    ),
+    "falsify-ci-anchor-real.sh": (
+        "falsificador del anchor de CI: requiere un tag publicado y red. "
+        "Sufijo `_real` explicito, para que la regla de nombres de C3n (3f) "
+        "pueda exigir que un nombre asi declare frontera."
+    ),
+}
+
 # --- Que es EJECUTAR un test, y que es NOMBRARLO --------------------------------
 #
 # MEDIDO, y es la segunda mitad del mismo defecto. La primera version de la
@@ -198,6 +244,63 @@ EXCEPTIONS: dict[str, str] = {
         "PASS=1 FAIL=0. Cablearlo devolveria un verde vacio (misma forma que "
         "INC-DEBT-054). Requiere `cargo build --release -p sddk-engine` antes."
     ),
+    # Los cinco `uat_ctx_*`: integracion end-to-end que exige el BINARIO
+    # release construido. Misma condicion que `test_h05_isolation.sh` de
+    # arriba, y el motivo se escribe una vez y aqui se referencia.
+    #
+    # MEDIDO, y el motivo NO es "no son hermeticos" —que serian: 0 red, 0
+    # contenedores—, sino ORDEN. Los cinco salen 2 hoy con
+    # `sddk binary not found or not executable`, y el binario lo construye el
+    # release en el paso **3**, mientras el 1b corre en el **1b**: no puede
+    # estar en el 1b por una razon de secuencia, no por una limitacion de la
+    # maquina. Con `--bin <ruta>` si accepts, luego no estan rotos: no se
+    # ejecutaban, y su unica razon para no estar en el censo era no llevar el
+    # glifo `test_` en el nombre.
+    "uat_ctx_001_adoption_convergence.sh": (
+        "integracion E2E: exige el binario release construido, que el release "
+        "construye en el paso 3 y el 1b corre antes. Ver `uat_ctx_007` para el "
+        "motivo comun a los cinco."
+    ),
+    "uat_ctx_003_durable_deltas.sh": (
+        "integracion E2E: exige el binario release construido (paso 3, "
+        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
+    ),
+    "uat_ctx_005_explicit_cycle_migration.sh": (
+        "integracion E2E: exige el binario release construido (paso 3, "
+        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
+    ),
+    "uat_ctx_006_skill_runtime_alignment.sh": (
+        "integracion E2E: exige el binario release construido (paso 3, "
+        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
+    ),
+    "uat_ctx_007_context_expand.sh": (
+        "integracion E2E: exige el binario release construido, que el release "
+        "construye en el paso 3 y el 1b corre antes. No es una limitacion de la "
+        "maquina: los cinco aceptan `--bin <ruta>` y con un binario presente "
+        "ejercitan de verdad. Lo que NO puede ser es un gate del 1b, porque "
+        "aun no existe el binario que necesitan. Su sitio natural es un paso "
+        "posterior al 3, y cablearlos ahi es la decision pendiente, no un "
+        "detalle de este commit."
+    ),
+    "clean_machine_uat.sh": (
+        "levantador de una maquina limpia: 39 llamadas a `docker`/`podman` y "
+        "4 de red. Monta contenedores de verdad, luego no es reproducible en "
+        "el 1b local. Lo ejecuta `.github/workflows/clean-machine-uat.yml`, "
+        "que ademas lo gatilla por tag; AGENTS.md 2.5 dice que el CI no "
+        "bloquea, luego es evidencia asincrona por diseno, no un hueco."
+    ),
+    "uat_ctx_002_context_bootstrap.sh": (
+        "integracion E2E: exige el binario release construido, igual que los "
+        "otros cuatro `uat_ctx_*`. Ver `uat_ctx_007` para el motivo comun. Lo "
+        "Ejecuta `ci.yml`, que segun AGENTS.md 2.5 no bloquea."
+    ),
+    "uat_ctx_004_cycle_inference.sh": (
+        "integracion E2E: exige el binario release construido, igual que los "
+        "cinco anteriores. Ver `uat_ctx_007` para el motivo comun. MEDIDO: sale "
+        "2 con `sddk binary not found`, acepta `--bin <ruta>`, y es el sexto de "
+        "la familia — se habria colado porque `ci.yml` lo nombra, que es "
+        "justamente el patron que este cambio viene a cerrar."
+    ),
     "test_release_routes_parity.sh": (
         "necesita `act` + `podman` y monta contenedores; la ruta cloud no se "
         "puede reproducir en local. Comprobacion opt-in."
@@ -242,8 +345,20 @@ def main() -> int:
     release_ejecuta = ejecuta_de(RELEASE_RUNNERS)
     ci_ejecuta = ejecuta_de(CI_RUNNERS)
 
-    tests = sorted(TESTS_DIR.glob("test_*.sh")) + sorted(TESTS_DIR.glob("test_*.py"))
-    names = [t.name for t in tests]
+    # El censo es TODO lo ejecutable en `tests/`, no lo que lleva `test_` en el
+    # nombre. Ver NOT_GUARDS para por que esa condicion se quedo corta.
+    #
+    # MEDIDO, y es un defecto de la v1 de este cambio: el censo filtraba por
+    # `os.X_OK`, con lo que `test_release_routes_parity.sh` y
+    # `test_release_bundle_parity.sh` —que existen y estan en EXCEPTIONS—
+    # desaparecian del censo, y la Regla 1 los acusaba de "el fichero no
+    # existe". El mensaje era falso y la propiedad que de verdad importa es la
+    # de la Regla 3: enumerado sin bit se SALTA en silencio. Son dos
+    # preguntas distintas y el filtro las mezclaba. El censo es **todo `.sh`
+    # y `.py` de `tests/`**; el bit lo comprueba la Regla 3, que es donde vive
+    # y donde ya vivia.
+    tests = sorted(TESTS_DIR.glob("*.sh")) + sorted(TESTS_DIR.glob("*.py"))
+    names = [t.name for t in tests if t.name not in NOT_GUARDS]
 
     failures: list[str] = []
     notes: list[str] = []
@@ -293,6 +408,30 @@ def main() -> int:
         failures.append(
             f"{name}: figura en EXCEPTIONS pero el fichero no existe; "
             "la excepcion quedo obsoleta y hay que borrarla"
+        )
+
+    # Regla 5: `NOT_GUARDS` con la misma exigencia que EXCEPTIONS.
+    #
+    # Sin esto, la lista que acabo de crear seria un cajon de sastre con mejor
+    # vocabulario: un guard que se declara "no es un guard" se queda fuera del
+    # censo para siempre y nadie vuelve a mirar por que. Las tres condiciones
+    # que la mantienen honesta son las de EXCEPTIONS, y por la misma razon.
+    presentes = {p.name for p in TESTS_DIR.glob("*.sh")}
+    for name in sorted(set(NOT_GUARDS) - presentes):
+        failures.append(
+            f"{name}: figura en NOT_GUARDS pero el fichero no existe; "
+            "la nota quedo obsoleta y hay que borrarla"
+        )
+    for name in sorted(set(NOT_GUARDS) & release_cubierto):
+        failures.append(
+            f"{name}: figura en NOT_GUARDS pero el camino de release lo "
+            "ejecuta; la razon caducó y dejarla convertiria NOT_GUARDS en un "
+            "cajon de sastre"
+        )
+    for name in sorted(set(EXCEPTIONS) & set(NOT_GUARDS)):
+        failures.append(
+            f"{name}: esta a la vez en EXCEPTIONS y en NOT_GUARDS; son dos "
+            "salidas distintas para lo mismo y una de las dos esta caducada"
         )
 
     # Regla 2: excepcion para un test que ya se ejecuta en el camino de
