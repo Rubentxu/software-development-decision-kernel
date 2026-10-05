@@ -15701,3 +15701,101 @@ Workspace **2.11.3**, declarada y **sin publicar** (ultimo tag remoto `v2.11.2`)
 - **No se ha verificado si el `cargo` de otro repo (PID 4149790, retiene el lock
   de `release/`) sigue vivo.** No es de este repo y no se toca, pero un build
   release esperaria por ese lock.
+
+---
+
+## session-84 (bis 4) — el 1b paro la 2.11.3, y el guard que fallo no era hermetico
+
+> La 2.11.3 se lanzo con el pipeline de 15 pasos. El 1b la **paro** en el
+> cuarto shell test. No se publico nada: no existe `v2.11.3` en el remoto. Eso
+> es el gate haciendo su trabajo, y no es un incidente.
+
+### El fallo, textual
+
+```
+[FAIL] E3: el escenario declara de verdad que el target efectivo es el
+        preguntado -- cargo metadata dice: '/var/home/rubentxu/cargo-targets'
+[FAIL] E3: un cargo que SI usa el target preguntado se sigue reportando
+RESULT: FAIL — hay ramas que atribuyen a un cargo un target que no es suyo.
+```
+
+`test_cargo_target_attribution.sh`, el guard de INC-DEBT-075, que se escribio en
+esta misma sesion. **Un guard de tres dias encontro un defecto que un guard de
+sesenta no.**
+
+### La causa: asimetría entre las dos mitades del experimento
+
+El experimento tiene un sujeto y una pregunta, y los dos deben ser coherentes
+entre si:
+
+| mitad | como resuelve el target | valor |
+|---|---|---|
+| el **sujeto** | `env -u CARGO_TARGET_DIR` + `build.target-dir` del mini-repo | `$T3` |
+| la **pregunta** | `cargo metadata` en el proceso del guard, que **hereda su entorno** | el target global |
+
+MEDIDO con el mini-repo a mano, que es lo que lo convierte en hecho: sin la
+variable, `cargo metadata` devuelve `$T3`; con ella, devuelve
+`/var/home/rubentxu/cargo-targets`. Y `release.sh` la exporta.
+
+**La asimetria estaba a la vista desde el principio**: `lanzar` ya usaba
+`env -u CARGO_TARGET_DIR` en su rama de target vacio (linea 78) mientras la
+linea 132 invocaba `cargo metadata` a secas. La senal estaba en el fichero.
+
+### Lo que NO se toco, y por que
+
+La semantica de `_cargo_effective_target` es **correcta**: «el target que cargo
+usaria con este cwd» se resuelve como lo resolveria el proceso que PREGUNTA. Un
+preflight no puede saber que entorno tendra un cargo ajeno, luego afirmar por el
+del suyo es lo unico honesto. Reimplementar la resolucion de cargo en la
+libreria habria sido empeorarla.
+
+El guard era el que estaba mal armado: preguntaba con un entorno que su propio
+sujeto no tenia. Arreglo: `unset CARGO_TARGET_DIR` una vez al principio, y
+`env -u` en la invocacion que construye el escenario.
+
+### Por que no lo delato antes (lo instructivo)
+
+**E3 es el UNICO caso que exige que el sujeto SI se reporte.** E1 y E2 esperan
+«NO se reporta», y un escenario que no se construye nunca cumple esa
+expectativa: pasan con el escenario roto.
+
+> La falsacion que faltaba no era «el sujeto se detecta» — E1 y E2 ya la
+> cubrían — sino **«el escenario es el que dice ser»**. Y esa asercion existe,
+> en E3, y fue lo unico que cayo.
+
+Es la misma clase que el falsador que contaba prosa: **un caso que no puede
+darse rojo no es un caso, es decoracion**, y se distingue mirando que
+expectativa impone, no contando quantos hay.
+
+### Verificacion en las dos condiciones, y autofalsacion
+
+Un arreglo que solo se ejecuta en la condicion que fallo no esta verificado:
+
+- con `CARGO_TARGET_DIR` exportado (la del 1b): `PASS=5 FAIL=0`
+- sin la variable: `PASS=5 FAIL=0`
+- **autofalsado**: quitar el `unset` de una copia reproduce el fallo exacto del
+  1b — `PASS=4 FAIL=1`, E3 en rojo, rc=1. El arreglo es load-bearing.
+
+Commit `dd974308`, changelog `26601896`.
+
+### Un defecto mio de instrumentacion, en el mismo rato
+
+Los sondeos de progreso usaban `pgrep -f 'scripts/release.sh'`, y **el patron
+coincide con la propia linea de comandos del sondeo**: el `pgrep` se detectaba a
+si mismo y el bucle de espera nunca veía `TERMINADO`.-annunciaba «release VIVO»
+con el release ya muerto. Sondeado por PID real (`/proc/$PID`) en el relanzamiento.
+
+> **Un instrumento que se detecta a si mismo informa de si mismo.** Un verde o un
+> «sigue vivo» de un instrumento asi no es un dato: es el ruido del patron de busqueda no dice nada del proceso que lo busco.
+
+### Estado al cerrar
+
+`test_cargo_target_attribution` `PASS=5 FAIL=0` en ambas condiciones, autofalsado
+· shellcheck rc=0 · gate 2b `PASS=10 FAIL=0` con los 7 commits representados ·
+release 2.11.3 relanzada desde `26601896`.
+
+**Lo que sigue abierto, sin cambios:** el paso que ejecutaria los seis
+`uat_ctx_*` **ya tiene sitio medido** — los pasos 3b/3c pasan el binario con
+`SDDK_GUARD_BIN="$BIN"` y `$BIN` es el del paso 3, luego el mismo patron con
+`--bin "$BIN"` los ejecuta sin segundo build. Los siete aceptan `--bin` y
+`SDDK_BIN` de forma uniforme, MEDIDO. Queda implementarlo, no decidirlo.
