@@ -9,6 +9,12 @@ rust-version.workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+# El provider de declaraciones parsea TOML. MEDIDO: la version 1.x rechaza
+# el encabezado de tabla punteado que el workspace usa, de modo que este
+# crate alineado con el motor (0.8) lee lo que el motor lee. Fijar la
+# version a mano y no por el workspace es lo que evita que dos crates del
+# mismo binario acaben con dos parseadores distintos.
+toml = "0.8"
 serde-saphyr = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }

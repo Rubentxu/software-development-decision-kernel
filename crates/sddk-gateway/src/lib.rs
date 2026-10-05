@@ -27,6 +27,7 @@ mod runner;
 pub mod runner_receipt;
 mod semantic;
 pub mod test_runner;
+pub mod version_provider;
 mod uat_policy;
 
 pub use artifact_store::{ArtifactMeta, ArtifactStore, ArtifactStoreError, write_atomic};
