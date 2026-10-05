@@ -14748,3 +14748,72 @@ con la vineta — se encontraron por tests bien lanzados. Los dos que **si**
 eran mios se encontraron porque un test se colgo y nadie daba credito a un
 colgado sin mirar por que colgada. Un sintoma raro merece una pregunta
 antes que una teoria.
+
+### Fallo no reproducido: `cli_dev_install_default_layout_is_executable_and_verify_passes`
+
+**NO es una deuda y no se registra como una.** No hay ninguna propiedad
+que se haya demostrado falsa: hay un fallo que no se ha vuelto a ver. Declarar
+una deuda sin defecto demostrado es el error al reves del que este bloque
+empieza — «alerta de deuda sin verificar no es deuda real» — y una alerta
+sin verificar aqui tampoco es deuda.
+
+**Lo que se vio, literalmente**:
+
+```
+thread 'cli_dev_install_default_layout_is_executable_and_verify_passes' panicked
+  at crates/sddk-cli/tests/cli.rs:9058:5:
+installed binary version must succeed; stderr=
+```
+
+Muerte en el paso 1 del release 2.11.0. El aserto es que el binario
+**instalado** arranca, y `stderr=` vacio con estado distinto de cero.
+
+**Lo que se ha medido, con el binario ya compilado (sin recompilar, luego
+la variable aislada es el entorno y no el codigo)**:
+
+| corrida | condicion | resultado |
+|---|---|---|
+| 1 | aislado, el par de tests | ok |
+| 2 | `cargo test --workspace` completo | 196/196 ok |
+| 3 | binario `cli`, repeticion 1 | 196/196 ok |
+| 4 | binario `cli`, repeticion 2 | 196/196 ok |
+| 5 | binario `cli`, repeticion 3 | 196/196 ok |
+| 6 | binario `cli` con `TMPDIR` en el scratch del release | 196/196 ok |
+| 0 | **dentro del release 2.11.0** | **FALLO** |
+
+**1 fallo en 7. La causa NO esta establecida, y dos hipotesis quedaron
+DESCARTADAS por medicion, no por opinion:**
+
+**Descartada la memoria.** El preflight de esa corrida reportaba 64 Gi en
+uso de 94, pero `dmesg -T` y `journalctl -k` **no registran ningun OOM
+kill** ni `Killed process` en la ventana. Sin OOM no hay muerte por
+senal que explique un `stderr=` vacio.
+
+**Descartado el cambio de sistema de ficheros de las fixtures.** El
+release hace `export TMPDIR="$RELEASE_SCRATCH"` (`release.sh:86`) y
+`CliFixture::new` usa `tempfile::tempdir()`, que honra `TMPDIR` — el
+propio test lo reconoce en su comentario. O sea que **durante una release
+las 196 fixtures pasan de `/tmp` (tmpfs) al scratch en `/var/home` (NVMe)**,
+y eso es un hecho real que nunca se ha caracterizado. MEDIDO: correr el
+mismo binario con `TMPDIR` en el scratch da **196/196**, luego el cambio de
+sistema de ficheros **no es la causa**. Y `noexec` tampoco: `/tmp` esta
+montado `nosuid,nodev` pero **no** `noexec`, y `/var/home` es disco.
+
+**Lo que queda sin explicar, escrito como pregunta y no como teoria**: la
+unica diferencia medible que queda entre la corrida 0 y las otras seis es
+que la 0 corria **dentro del arbol de procesos del release**, con
+`RELEASE_DIAGNOSED_FILE` tambien exportado y con el resto de los tests del
+workspace compilandose y ejecutandose a la vez. Eso no se ha aislado.
+
+**SIGUIENTE MEDICION, si vuelve a aparecer**: correr el binario con
+`RELEASE_DIAGNOSED_FILE` exportado y apuntando a un scratch. Es la unica
+variable del entorno del release que queda sin probar, y es la que el
+propio release documenta como estado compartido entre `die` y el manejador
+de salida.
+
+**NO se toca el codigo de ese test.** Un test que falla una vez en siete y
+cuya causa no se conoce no se «arregla» cambiando lo que afirma: se deja
+constar. Y por que no se toca: la regla de este bloque es que un test que
+cae en la condicion completa y no se reproduce **no esta arreglado, esta
+medido una vez**, y la tentacion de tocarlo es exactamente la que produce
+un test que ya no mide lo que decia.
