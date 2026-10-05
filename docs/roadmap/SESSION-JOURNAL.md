@@ -15400,3 +15400,72 @@ equivoca en el nombre delata al que lo escribe antes que al sujeto.
 - **Firma**: `SDDK_SKIP_SIGNING=1`; el ancla y
   `SDDK_RELEASE_VERIFY_KEY_BODY` son placeholder. `UNSIGNED` declarado. No se
   fabrica clave ni ancla.
+
+## session-84 (cierre) — REL-2.11.2 publicada e instalada, verificada contra API y CDN, y verificado EN VIVO que los ocho tests se ejecutan
+
+### LA 2.11.2, verificada
+
+    tag anclado (git ls-remote)   v2.11.2 -> 606b55ba
+    draft / prerelease            false / false
+    assets                        9, y 9/9 con el tamano IDENTICO entre API y CDN
+    sha256 del bundle             declarado == servido (70db4cee...)
+    instalado                     sddk 2.11.2, framework/current -> 2.11.2
+    MANIFEST.sha256               presente en el bundle instalado
+    candados                      vacios: la exclusion solto el suyo
+
+A diferencia de la 2.11.1, aqui los nombres de asset se **leyeron de la API** en
+lugar de escribirse de memoria. La campana anterior habia pedido
+`sddk-v2.11.1-linux-x86_64-musl.tar.gz` cuando el asset real se llama
+`sddk-v2.11.1-sddk-linux-x86_64-musl.tar.gz`, y salio un 404 que era del
+instrumento y no del release. Un instrumento que se equivoca en el nombre
+delata al que lo escribe antes que al sujeto.
+
+### LO QUE ESTE BLOQUE TENIA QUE DEMOSTRAR, Y SE DEMOSTRO
+
+El arreglo no era «dejar el gate mas estricto»: era que **los ocho tests se
+ejecuten**. Y se ejecutaron, dentro del 1b que decidio publicar. MEDIDO sobre
+los dos logs:
+
+    1b de la 2.11.1 (sin)   56 tests   (44 shell + 12 python)
+    1b de la 2.11.2 (con)   65 tests   (50 shell + 15 python)
+
+Los nueve nuevos —los ocho mas el falsador— y su coste al paso:
+
+    test_workflow_contract.py                   0,12 s
+    test_golden_dataset_contract.py             1,56 s
+    test_release_state_pointer_mutation.sh      4,80 s
+    test_release_final_state_figures.sh         0,74 s
+    test_release_final_state_figures_mutation   8,09 s
+    test_lint_gate_scope_severity_mutation      0,96 s
+    test_release_bump_pointer_sync.sh           3,14 s
+    test_reconcile_pointer_yaml_safety.sh       4,37 s
+    test_gate_coverage_ci_mutation.py           (falsador del gate)
+    ------------------------------------------------------------------
+    total                                      23,78 s
+
+Los cinco de la Mitad B aparecen en el bucle **gateado con `[ -x ]`**, que es
+exactamente donde la Regla 3 los habria saltado en silencio si les faltara el
+bit de ejecucion. `shell contract tests green`, y el 2b con una unica cabecera
+`## [2.11.2]`.
+
+### LO QUE NO SE ARREGLA, y se declara otra vez porque el arreglo lo hace visible
+
+La superficie de gates del 1b **sigue siendo una lista escrita a mano**. Este
+cambio convierte un olvido en un rojo de 23 s en vez de una release entera
+—`9abec31b` costo el quinto intento de la 2.11.1— pero no lo elimina, y
+enumerar por convencion sigue siendo la decision que falta. Ahora se sabe lo
+que cuesta el olvido, que es el dato que la decision necesita.
+
+Y la linea del `CHANGELOG.md` de la 2.11.1 que declara los cinco gates sin
+haberlos ejecutado **no se corrige**: esta publicada y pertenece a un tag. Se
+corrige el mecanismo que la produce, y el hecho queda escrito en INC-DEBT-076
+para que no se lea como una certificacion vigente.
+
+### UNA CORRECCION PROPIA
+
+Yo vinha afirmando que `rm` con una variable no borra nada en esta maquina.
+**Es falso**, y lo medi cuando el falsador del puntero limpio su `$TMPROOT`
+sin problema. La regla era correcta para el caso que la produjo —el shim
+recibe el argumento sin expandir— y la generalize de mas. Se deja escrito
+porque el patron es el mismo que ha gobernado todo este bloque: una conclusion
+heredada no es evidencia hasta que se mide.
