@@ -4891,11 +4891,93 @@ fn cli_release_plan_names_the_product_it_resolved() {
     }
 }
 
+/// Un target que declara no ser el publicador no puede publicar, y el
+/// rechazo dice cuál es su responsabilidad.
+///
+/// ## La ley, y por qué necesita tres filas
+///
+/// El flujo de release venía escrito como una sola forma —construir, etiquetar,
+/// publicar estable— y todo en el mismo actor. Eso no es una ley, es una
+/// costumbre, y es falsa para un reparto ordinario: un repositorio produce
+/// material candidato y otra cosa lo certifica y promueve. La capacidad de
+/// expresarlo es lo que mide este test.
+///
+/// Las tres filas, y la tercera es la que importa: un rol que **nunca** puede
+/// hacer nada no es un rol, es un adorno. Por eso la fila de `full_publisher`
+/// tiene que seguir pasando exactamente igual que antes del bloque.
+#[test]
+fn un_target_declara_lo_que_es_y_no_puede_hacer_mas() {
+    let fixture = CliFixture::new("release-plan-rol-declarado");
+    write(
+        fixture.root.join("package.json"),
+        r#"{"name":"runtime","version":"0.47.0"}"#,
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+
+    // 1. El de fabrica: publica, y el plan lo dice.
+    let publica = plan_for(&fixture, "v0.47.0", &[]);
+    assert!(
+        publica.status.success(),
+        "{}",
+        String::from_utf8_lossy(&publica.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&publica.stdout).unwrap();
+    assert_eq!(json["release_role"], "full_publisher", "{json}");
+
+    // 2. Un productor declara que su responsabilidad termina en `candidate`, y
+    //    publicar le queda fuera. El rechazo nombra el techo Y el rol, porque la
+    //    pregunta del operador es «entonces qué soy yo», no «qué ha fallado».
+    let productor = plan_for(&fixture, "v0.47.0", &["--role", "candidate_producer"]);
+    assert!(
+        !productor.status.success(),
+        "un target que declara producir candidatas no puede publicar una release \
+         estable: ese es el punto del bloque"
+    );
+    let err = String::from_utf8_lossy(&productor.stderr);
+    assert!(
+        err.contains("candidate_producer"),
+        "el rechazo nombra el rol: {err}"
+    );
+    assert!(
+        err.contains("Candidate"),
+        "y dice donde acaba su techo: {err}"
+    );
+
+    // 3. Y un certificador que SI puede llegar a `stable` tampoco publica, que
+    //    es la confused dos mitades: llegar no es publicar.
+    let certifica = plan_for(&fixture, "v0.47.0", &["--role", "certifier"]);
+    assert!(!certifica.status.success());
+    let err = String::from_utf8_lossy(&certifica.stderr);
+    assert!(
+        err.contains("certifier") && err.contains("publish"),
+        "un certificador se detiene en «no publica», que es un motivo distinto \
+         del techo: {err}"
+    );
+
+    // 4. Y un rol que no existe dice cuales hay, en vez de un error de sintaxis
+    //    de un enum que el operador no ha visto nunca.
+    let inexistente = plan_for(&fixture, "v0.47.0", &["--role", "mago"]);
+    assert!(!inexistente.status.success());
+    let err = String::from_utf8_lossy(&inexistente.stderr);
+    for rol in [
+        "candidate_producer",
+        "certifier",
+        "promoter",
+        "full_publisher",
+    ] {
+        assert!(err.contains(rol), "el rechazo lista «{rol}»: {err}");
+    }
+}
+
 /// Un prefijo declarado es obligatorio, y quien no lo usa **tiene como decirlo**.
 ///
 /// Este es el otro lado del cambio de comportamiento: antes, un tag sin `v`
 /// pasaba porque el prefijo era opcional de facto, y hacerlo obligatorio sin
-/// dejar forma de declarar la convencia habria convertido cada proyecto que
+/// dejar forma de declarar la convencion habria convertido cada proyecto que
 /// etiqueta sin `v` en un release irrecuperable — un guard que prohibe sin
 /// dejar salida empuja a escribir una mentira, que es la leccion que
 /// ADR-0155 ya escribio para otro puerto.

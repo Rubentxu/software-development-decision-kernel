@@ -36,6 +36,7 @@ pub mod ports;
 pub mod projections;
 pub mod proposal;
 pub mod release_ref;
+pub mod release_role;
 pub mod replay;
 pub mod rules;
 pub mod schema;

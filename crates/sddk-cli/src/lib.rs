@@ -453,6 +453,9 @@ enum Command {
         /// `release --naming`.
         #[arg(long, default_value = "v_prefixed")]
         naming: String,
+        /// What this target is responsible for. See `release --role`.
+        #[arg(long, default_value = "full_publisher")]
+        role: String,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -1021,8 +1024,9 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             tag,
             cycle,
             naming,
+            role,
             format,
-        } => ship::run_ship(tag, cycle, naming, format, environment),
+        } => ship::run_ship(tag, cycle, naming, role, format, environment),
         Command::Recover {
             cycle,
             dry_run,

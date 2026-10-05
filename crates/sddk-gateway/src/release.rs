@@ -101,6 +101,14 @@ pub struct ReleaseOutcome {
     /// A value, not a narrative and not a re-derivation: the same
     /// `VersionNaming::style()` the plan printed and the check used.
     pub release_naming: String,
+    /// What this target declared itself responsible for.
+    ///
+    /// The target says *what* was published, the naming says *under which rule*
+    /// the tag was accepted, and this says *who took responsibility for the
+    /// decision*. Those are three different facts and a record with two of them
+    /// cannot answer "who published this", which is the question a release
+    /// record exists to answer.
+    pub release_role: String,
 }
 
 /// Receipt of one executed release step.
@@ -443,6 +451,7 @@ pub fn apply_release(
     version_authority: VersionAuthority,
     release_target: String,
     release_naming: String,
+    release_role: String,
 ) -> Result<ReleaseOutcome, ReleaseError> {
     let mut applied = Vec::new();
     let mut skipped = Vec::new();
@@ -546,6 +555,7 @@ pub fn apply_release(
         version_authority,
         release_target,
         release_naming,
+        release_role,
     })
 }
 

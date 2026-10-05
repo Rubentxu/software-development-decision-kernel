@@ -130,6 +130,7 @@ fn full_release_creates_pr_merges_and_publishes() {
         resolved_version(),
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 3);
@@ -258,6 +259,7 @@ fn interrupted_release_converges_without_duplicating_effects() {
         resolved_version(),
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 1);
@@ -272,6 +274,7 @@ fn interrupted_release_converges_without_duplicating_effects() {
         resolved_version(),
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert!(second.applied.is_empty());
@@ -304,6 +307,7 @@ fn release_without_open_pr_creates_and_merges() {
         resolved_version(),
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 2);
@@ -444,6 +448,7 @@ fn release_outcome_records_where_the_version_came_from() {
         },
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert!(
@@ -472,6 +477,7 @@ fn release_outcome_records_where_the_version_came_from() {
         },
         target_id(),
         naming(),
+        role(),
     )
     .unwrap();
     assert_eq!(
@@ -528,6 +534,14 @@ fn naming() -> String {
         .to_owned()
 }
 
+/// El rol que declara el llamador, que es donde vive desde que el rol stepped
+/// fuera del dominio como un valor por defecto.
+fn role() -> String {
+    sddk_domain::release_role::ReleaseRole::FullPublisher
+        .name()
+        .to_owned()
+}
+
 fn target_id() -> String {
     "runtime".to_owned()
 }
@@ -551,6 +565,7 @@ fn the_outcome_has_no_boolean_named_after_the_lockstep() {
         version_authority: resolved_version(),
         release_target: "runtime".into(),
         release_naming: naming(),
+        release_role: role(),
     })
     .unwrap();
     assert!(

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
 use sddk_domain::release_ref::VersionNaming;
+use sddk_domain::release_role::ReleaseRole;
 use sddk_domain::version_authority::{ReleaseTarget, VersionAuthority};
 use sddk_engine::version::{
     VersionLockstepError, ensure_version_lockstep, ensure_version_lockstep_detailed,
@@ -146,6 +147,18 @@ pub(crate) struct ReleaseArgs {
     /// release records the convention it was authorised under.
     #[arg(long, default_value = "v_prefixed")]
     pub(crate) naming: String,
+    /// What this target is responsible for in the release.
+    ///
+    /// `full_publisher` (the default) publishes. `candidate_producer` stops at
+    /// candidate material, `certifier` says whether a release may be promoted
+    /// and never does it, and `promoter` moves a release along the channels
+    /// without publishing it. Declaring the role is how a repository says
+    /// *I am not the one that publishes*, and the release holds it to that.
+    ///
+    /// Like `--naming`, this is a declaration **per release** and not a setting
+    /// stored in the repository, which is a cost and is declared as one.
+    #[arg(long, default_value = "full_publisher")]
+    pub(crate) role: String,
     /// Release cycle providing local verification and UAT evidence.
     #[arg(long)]
     pub(crate) cycle: Option<String>,
@@ -685,6 +698,8 @@ struct ReleasePlanOutput {
     release_target: ResolvedTarget,
     /// The declared convention the tag was checked under.
     release_naming: String,
+    /// What this target declared itself responsible for.
+    release_role: String,
 }
 
 /// Which product a plan is about, and the evidence for the choice.
@@ -721,6 +736,12 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         let git = sddk_gateway::GitExecutor::new(context.root.clone());
         let naming = resolve_naming(&args.naming)?;
+        let role = resolve_role(&args.role)?;
+        // La MISMA pregunta que hace el apply, y se hace tambien aqui porque el
+        // plan es el ensayo de esa decision. La regla vive en el dominio y se
+        // pregunta una vez; que la pregunten los dos puntos de entrada no es
+        // duplicar la regla, es no dejar un camino por el que no se pregunte.
+        role_allows_publishing(role)?;
 
         // REQ-RDI-001: MANIFEST exact-set preflight (before any push/tag).
         // Production release route always verifies; no escape hatch.
@@ -820,6 +841,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
             tag: args.tag.clone(),
             release_target: selected.report.clone(),
             release_naming: naming.style().to_owned(),
+            release_role: role.name().to_owned(),
             head,
             steps: match route {
                 ReleaseRoute::Local => vec![
@@ -967,6 +989,12 @@ fn apply_release_forge(
     actor: &str,
 ) -> anyhow::Result<sddk_gateway::ReleaseOutcome> {
     let naming = resolve_naming(&args.naming)?;
+    let role = resolve_role(&args.role)?;
+    // La puerta del rol, ANTES que la del lockstep y antes que cualquier efecto:
+    // un target que declara no ser el publicador no tiene nada que autorizar
+    // sobre un tag, y decirlo primero evita que el operador lea un desajuste de
+    // version en un release que no iba a existir.
+    role_allows_publishing(role)?;
     // L1 lockstep: el tag tiene que coincidir con la versión
     // declarada. Se pregunta por la variante que devuelve de
     // dónde salió, y no por un literal: escribir `true` a mano
@@ -1021,6 +1049,7 @@ fn apply_release_forge(
                 version_authority,
                 release_target_id.clone(),
                 naming.style().to_owned(),
+                role.name().to_owned(),
             )?)
         },
     )
@@ -1089,6 +1118,41 @@ fn version_authority_or_fail(
     let selected = resolve_release_target(root, None)?;
     ensure_version_lockstep_detailed(&version_registry(), &selected.target, tag, naming)
         .map_err(|error| lockstep_rejection(&error, naming))
+}
+
+/// El rol que este target declara.
+///
+/// Falla cerrado con la lista, por el mismo motivo que [`resolve_naming`]: quien
+/// escribe `--role` mal tiene que ver **qué** se puede escribir, y un error de
+/// sintaxis de un enum que no ha visto nunca no le dice nada.
+fn resolve_role(name: &str) -> anyhow::Result<ReleaseRole> {
+    ReleaseRole::parse(name).map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+/// La puerta del rol, para un release que va a **publicar**.
+///
+/// ## Por qué aqui y no en el dominio
+///
+/// El dominio responde «puede este rol publicar?» con la razon, y el dominio no
+/// sabe que `release apply` es un paso de lattices o que las puertas ya han
+/// pasado. Esta capa sabe las dos cosas, asi que la composicion —`from`,
+/// `to` y `gates_ok`— es suya, y la **pregunta** es del dominio.
+///
+/// ## Lo que se le pregunta, y lo que sale de verdad
+///
+/// Un `release apply` publica, y publicar es entrar en `stable`: de ahi que
+/// `from` sea `candidate` y `to` sea `stable`. Las puertas se dan por abiertas
+/// porque el lockstep ya paso —si no, el release no llega aqui— y se dan por
+/// **supuestas**, no por saltadas: si la suposicion fuera falsa, el rechazo lo
+/// diria, porque `may_publish` vuelve a preguntar el reticulo entero.
+fn role_allows_publishing(role: ReleaseRole) -> anyhow::Result<()> {
+    sddk_domain::release_role::may_publish(
+        role,
+        sddk_domain::ReleaseChannel::Candidate,
+        sddk_domain::ReleaseChannel::Stable,
+        true,
+    )
+    .map_err(|error| anyhow::anyhow!("{error}"))
 }
 
 /// La convencion con la que este release se autoriza.
@@ -1453,6 +1517,10 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
     // `v0.47.0` y un `0.47.0` son el mismo numero en un plan que no dice cual
     // de los dos es el nombre.
     text.push_str(&format!("release_naming: {}\n", output.release_naming));
+    // Y el rol, pegado a la convencion porque los dos son «como se autorizo
+    // esto»: uno dice con que regla se leyo el nombre, el otro dice quien se
+    // responsabiliza de la decision.
+    text.push_str(&format!("release_role: {}\n", output.release_role));
     // La autoridad se imprime antes de los pasos: es la línea que decide si lo
     // que viene después fue comprobado o no tenía nada que comprobarlo.
     text.push_str(&version_authority_text(&output.version_authority));
@@ -1600,6 +1668,7 @@ fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
     // versión se comprobó contra algo o si no había nada que comprobar.
     text.push_str(&format!("release_target: {}\n", output.release_target));
     text.push_str(&format!("release_naming: {}\n", output.release_naming));
+    text.push_str(&format!("release_role: {}\n", output.release_role));
     text.push_str(&version_authority_text(&output.version_authority));
     for step in &output.applied {
         text.push_str(&format!("- {} {}\n", step.step, step.receipt_id));
@@ -2282,6 +2351,7 @@ mod tests {
         release_target_text,
     };
     use sddk_domain::release_ref::VersionNaming;
+    use sddk_domain::release_role::ReleaseRole;
     use sddk_domain::version_authority::{
         ProductVersion, VersionEvidence, VersionObservation, VersionProbe,
     };
@@ -2394,6 +2464,7 @@ mod tests {
             version_authority: authority,
             release_target: single_target(),
             release_naming: VersionNaming::v_prefixed().style().to_owned(),
+            release_role: ReleaseRole::FullPublisher.name().to_owned(),
         }
     }
 
@@ -2731,6 +2802,7 @@ mod tests {
             version_authority: release_ref_only(),
             release_target: "packages/runtime".into(),
             release_naming: VersionNaming::v_prefixed().style().to_owned(),
+            release_role: ReleaseRole::FullPublisher.name().to_owned(),
         });
         assert!(
             tag_only.contains("version_authority: release_ref_is_authority"),
@@ -2745,6 +2817,7 @@ mod tests {
             version_authority: cross_validated(),
             release_target: "packages/runtime".into(),
             release_naming: VersionNaming::v_prefixed().style().to_owned(),
+            release_role: ReleaseRole::FullPublisher.name().to_owned(),
         });
         assert!(
             checked.contains("version_authority: cross_validated"),
@@ -2996,6 +3069,7 @@ mod tests {
             tag: "v1.0.0".into(),
             target: None,
             naming: "v_prefixed".into(),
+            role: "full_publisher".into(),
             notes: String::new(),
             approve: true,
             cycle: None,

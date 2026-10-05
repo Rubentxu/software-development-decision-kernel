@@ -230,11 +230,43 @@ comparan el **tipo de retorno** y los dos tienen el caso **negativo** en su
 control, porque un guard que solo tiene el caso positivo no demuestra que sepa
 cuándo **no** disparar.
 
-**Continuación declarada, no empezada: VA6–VA7.** En orden y con su alcance:
-roles productor/certificador/promotor para que un repo que solo produce
-candidatas no intente publicar, y `sddk release version inspect` con salida
-humana y `--json` para que un agente vea providers, observaciones, evidencia y
-conflictos sin inspeccionar internals.
+**Cerrado también VA6 (ADR-0160).** Un release puede tener varios responsables,
+y un rol es una **declaración de hasta dónde llega cada uno**. `ReleaseRole` son
+cuatro —`candidate_producer`, `certifier`, `promoter`, `full_publisher`— y su
+techo se expresa en el retículo de canales que **ya existía**, porque crear un
+segundo retículo al lado de `can_promote` es la clase de defecto que este
+repositorio ha encontrado siete veces.
+
+**Y el falsador encontró un defecto real que la lectura no:** el techo estaba
+escrito como `channel <= ceiling`, y el `Ord` derivado de `ReleaseChannel` va
+**al revés** que la promoción —el enum se declara `Stable, Candidate, Edge,
+Dev`, que es el orden en que se *lee* la cadena, luego `Stable <= Candidate` es
+cierto— y un `CandidateProducer` pasaba a poder llegar a `Stable`, que es
+literalmente lo que el módulo existe para impedir. La comparación correcta camina
+`promotion_distance`, que usa el `promotion_target` que ya estaba, y el techo se
+lee **al revés** que una promoción porque es un techo y no un destino.
+
+También quedó escrito, con el motivo, lo que **no** es autoridad nueva:
+`DeliveryKind` clasifica el **ciclo** —qué efectos están prohibidos, inmutable
+desde specify— y un rol clasifica el **target** —quién responde de qué paso, con
+un ciclo de vida mucho más largo—, y se decide mecánicamente, así que no es el
+STOP de las dos autoridades competidoras. MEDIDO además que
+`EvaluationPolicy::evaluate` **no tiene consumidor de producción**, y por eso
+este bloque no se apoya en la lista de efectos prohibidos: apoyarse en algo que
+nadie lee es cambiar de dependencia a otra que tampoco se lee.
+
+`--role` da la superficie, con su puerta preguntada en plan **y** en apply, y el
+rechazo nombra el rol **y** su techo porque la pregunta del operador es «¿entonces
+qué soy yo?». `CandidateHandoff` existe con su sobre opaco a propósito —lleva
+hechos, no veredictos, y el tipo de handoff externo va en las palabras del
+productor— pero **la emisión del sobre no está en este bloque** y queda
+declarada como lo que falta, en vez de dejar un sobre que nada construye.
+
+**Continuación declarada, no empezada: VA7.** `sddk release version inspect` con
+salida humana y `--json` para que un agente vea target, capabilities pedidas,
+providers considerados, observaciones, evidencia, conflictos, autoridad final y
+los `NOT_CHECKED`, sin inspeccionar internals; y la conformance suite que exige
+que ningún provider declare `PASS` sin evidencia.
 
 **Fuera de alcance y declarado:** `crates/sddk-engine/src/rules/baseline.rs`
 sigue leyendo el manifiesto del workspace y sus `members` para la línea base de

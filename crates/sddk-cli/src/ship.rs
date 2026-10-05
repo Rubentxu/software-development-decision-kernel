@@ -15,6 +15,7 @@ pub(crate) fn run_ship(
     tag: String,
     cycle: Option<String>,
     naming: String,
+    role: String,
     format: OutputFormat,
     environment: &CliEnvironment,
 ) -> CommandOutput {
@@ -32,6 +33,7 @@ pub(crate) fn run_ship(
         base: "main".into(),
         target: None,
         naming,
+        role,
         title: "SDDK release".into(),
         tag,
         cycle,
