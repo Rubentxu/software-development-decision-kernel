@@ -14988,3 +14988,124 @@ que no compila no es un commit, es la mitad de uno.
   ninguna referencia en el vault). **NO se establecio si algo ACTUA sobre ese
   id**, que es lo que lo haria defecto. Sin esa medicion no es deuda: es una
   pregunta, y se queda escrita como pregunta.
+
+---
+
+## session-82 (cierre) — REL-2.11.0 publicada e instalada, verificada contra API y CDN, e INC-DEBT-075 abierta
+
+**Que se cerro**: INC-DEBT-074, el merge del changelog sin dedup cuyo unico
+guard copiaba el bloque que deberia vigilar. Y de paso: la 2.11.0 quedo
+publicada.
+
+### Las cuatro muertes de la 2.11.0, y solo DOS eran del producto
+
+| intento | cuando | paso | causa | de quien |
+|---|---|---|---|---|
+| 1 | antes del bloque | 1/15 | `release-bump.sh` sourceaba una libreria que el sandbox del test no copiaba | **mia** (`4b839836` lo arreglo) |
+| 2 | 09:12 | 1/15 | `cargo fmt` — cambie `cli.rs` y no medi el gate que lo vigila | **mia** (`a05f690f` lo arreglo) |
+| 3 | 09:16 | 1/15 | **reinicio del host**: apagado limpio a las 09:16:28, arranque 09:17:32 | del entorno |
+| 4 | 09:31 | 1b/15 | `test_release_diagnostics.sh` C9, 4 aserciones | **del entorno** (concurrencia) |
+
+Las dos primeras las arregle; las otras dos no eran mias y estan descritas mas
+abajo. **Las dos que eran mias tienen la MISMA forma**: cambiar un fichero y no
+medir el gate que lo vigila — `set -e` en un `source`, luego `cargo fmt`. Y
+`cargo fmt` estaba **DISPONIBLE todo el tiempo**: no lo detecta ningun test
+porque formatear no es comportamiento. La unica forma de que se entere es
+correr el gate.
+
+### Lo que el gate 2b dijo dos veces, antes de publicar
+
+`test_changelog_coverage.sh` senalo por su nombre que faltaban entradas en la
+seccion `## [2.11.0]`: primero `4b839836`, luego `a05f690f`. Las dos se
+resolvieron ANTES de relanzar, porque descubrirlo en el paso 2b significa que
+el artefacto ya esta construido y el hueco cuesta borrar una release.
+
+La segunda vez demostro algo que merece quedar escrito. No dijo «falta una
+entrada», sino
+
+    declared type 'fix(release)' present but not this commit
+
+O sea, **distinguio «hay un fix(release) en la seccion» de «esta ESTE
+commit»**. Sin esa segunda comprobacion el changelog habria pasado con la
+entrada del fix anterior, y habria publicado un artefacto que se describe mal
+a si mismo: el arreglo del `source` sin el del `cargo fmt`, que es justo el
+que mato el segundo intento.
+
+### MEDIDO, no hipotetico: dos releases del mismo tag
+
+Convivieron dos ejecuciones del release sobre el mismo checkout, el mismo HEAD
+y la misma version:
+
+    pid 38340  esta sesion   PPID 26812                   release-2110-try4.log
+    pid 99022  otra sesion   PPID 3001 (systemd --user)   /tmp/rel-2.11.0.log
+
+El `cargo test --workspace --offline` de la otra (pid 100388, `PPID 99022`)
+retuvo el `CARGO_TARGET_DIR` compartido mientras corria el 1b, y C9 cayo con
+`el target dir compartido esta retenido: pid 100388, lleva 98s esperando`.
+**El diagnostico dijo la verdad**: habia retencion real. El supuesto del test
+—«sin retencion no inventa ninguna»— era el que mentia, porque nadie
+comprueba que el target dir este libre antes de afirmarlo. Registrado como
+**INC-DEBT-075** (high/P1) con sus tres salidas y su falsador M1/M2/M3.
+
+**NO se ha medido que dos releases lleguen ambos al paso 9.** La ventana
+existe; el incidente no. Por eso la 2.11.0 se verifico igual, y con mas
+cautela por haber estado vivo bajo concurrencia.
+
+### La 2.11.0, verificada contra API y CDN (no contra el log)
+
+    tag anclado por git ls-    v2.11.0 -> 61a182f4
+    remote (no origin/main)
+    isDraft                        false
+    isPrerelease                   false
+    assets                         9
+    CDN                            9/9 HTTP 200, tamano IDENTICO a la API
+    sha256 del bundle              declarado == real
+    manifest del bundle instalado  manifest OK (rc=0)
+    instalado                      sddk 2.11.0, current -> 2.11.0
+
+Las 20 ausencias de `dev doctor` **NO son una regresion de esta release**:
+son violaciones de presupuesto de lineas en `assets/` y `prompts/sddk/`
+(`orchestrator.md` 346, `mcw.md` 395, `HTML-REPORT.md` 1328), comprobadas
+**identicas en `v2.11.0` y en `HEAD`**. Preexistentes, y quedan como
+constancia, no como deuda de este bloque.
+
+El juez de frescura da `behind` con motivo correcto: el checkout ya va por
+delante del binario publicado.
+
+### Lo que este cierre NO declara
+
+`cli_dev_install_default_layout_is_executable_and_verify_passes` **sigue sin
+declararse resuelto**. Pasa aislado; lo unico que puede declararlo es el run
+completo del workspace. Un test que pasa solo y falla en la condicion real
+esta MEDIDO UNA VEZ, y la disciplina del bloque es no reescribir el codigo de
+un test hasta reproducirlo.
+
+### CORRECCION de session-82 (anade la direccion, que estaba al reves)
+
+`CURRENT.md` (session-83) atribuye el proceso competidor a session-82:
+*«Session-82 dejo un release.sh corriendo en background ... que sobrevivio al
+cierre y seguia vivo 16 minutos despues»*. **MEDIDO, y es al reves:**
+
+| hecho | medicion |
+|---|---|
+| El C9 que cayo fue el **mio** | `100388` aparece **5 veces** en `release-2110-try4.log` y **0** en `/tmp/rel-2.11.0.log` |
+| El `cargo` retenedor era **de la otra sesion** | `PPID 100388 = 99022 = bash scripts/release.sh` (PPID 3001 = `systemd --user`) |
+| Mi release **no sobrevivio** | pid 38340 no existe; mi log cierra con `RELEASE_RC=1` a las 09:31:22 |
+| El C9 de la otra sesion **pasa** | `autofalsacion del diagnostico de release: PASS=20 FAIL=0 SKIP=0` |
+
+O sea: **las dos sesiones LANZARON un release por su cuenta** — la mia a las
+09:24 y la suya a las 09:29:30 — y la contencion la produjo la de la otra, que
+fue la que llego despues. No es un proceso huerfano de una sesion anterior:
+son dos ejecuciones **simultaneas e independientes del mismo tag**.
+
+**Por que la distincion no es cosmetica**, y es lo que sostiene INC-DEBT-075:
+la lectura «un agente dejo un proceso en background» se arregla con higiene
+del agente. La lectura medida —«nadie impidio que dos sesiones publicaran la
+misma version a la vez»— se arregla con **exclusion mutua en el release**, y
+el arreglo sobrevive a que el operador cambie de sesion. Con la lectura
+equivocada, el mismo incidente vuelve la proxima vez que dos agentes trabajen
+a la vez, que es el estado normal de este equipo.
+
+Lo que si coincide, y conviene no pisar: la conclusion de session-83 de que
+**el guard no mintio** es correcta y esta medida aqui tambien. La
+contencion era real. Lo que no es correcto es de donde venia.
