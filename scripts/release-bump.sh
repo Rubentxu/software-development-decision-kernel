@@ -304,6 +304,79 @@ if [ -f BUNDLE.toml ]; then
         || { echo "BUNDLE.toml: el rango [$B_MIN, $B_MAX] no quedo en $NEXT" >&2; exit 1; }
 fi
 
+# --- STATE.yaml, el puntero de estado ---
+#
+# POR QUE ESTE PASO EXISTE, y por que no es cosmetico.
+#
+# `current_sha` es un campo AUTOREFERENTE: no puede senalar al commit que lo
+# contiene, luego SIEMPRE queda al menos un commit por detras. Y una release
+# anade, como minimo, el commit del bump DESPUES de cualquier
+# reconciliacion. Luego reconciliar y LUEGO bumpear deja el puntero
+# exactamente en el borde de la tolerancia, y basta un commit mas para pasarse.
+#
+# MEDIDO, y no fue una sola vez:
+#   - session-18, -22, -23: lo que motivo que este reconciliador existiera.
+#   - session-83 publicando 2.11.1: reconcilie con `behind`=3, que esta DENTRO
+#     de la tolerancia, luego el reconciliador dijo "se conserva" y no movio el
+#     puntero. El commit del bump lo llevo a 4 y el 1b mato la release a los
+#     cuatro minutos, con un fallo que no hablaba del codigo que se iba a
+#     publicar. La regla "bump primero, puntero despues" estaba ESCRITA en
+#     CURRENT.md y yo la hice al reves.
+#
+# Un orden que hay que RECORDAR es un orden que se va a romper. La regla
+# correcta es que el orden correcto exista por construccion: el bump se
+# reconcilia a si mismo, y despues de este paso el puntero queda a 1 commit
+# (este), que es el minimo fisico posible.
+#
+# Se llama al MISMO reconciliador que se usa a mano, no a una segunda
+# implementacion del mismo campo: dos sitios que editan la misma verdad son
+# dos respuestas a la misma pregunta, que es la clase que este repo ya pago
+# con la postura de firma.
+#
+# Y se comprueba que EXISTE antes de usarlo, muriendo con causa, ruta y
+# motivo. Sin esta comprobacion, un `source` o un `bash` sobre un fichero
+# ausente bajo `set -e` muere diciendo "linea N", que no es un diagnostico:
+# es exactamente el fallo que mato la 2.11.0 en su primer intento, cuando el
+# sandbox de un test(sourceo la libreria del changelog que su copia no traia.
+if [ -f "$ROOT/docs/roadmap/STATE.yaml" ]; then
+    POINTER_FIXER="$ROOT/scripts/reconcile_state_pointer.sh"
+    if [ ! -f "$POINTER_FIXER" ]; then
+        echo "release-bump: falta el reconciliador del puntero de estado." >&2
+        echo "  ruta      : $POINTER_FIXER" >&2
+        echo "  se busca  : RELATIVO a este script" >&2
+        echo "  por que   : cualquier sitio donde se copie release-bump.sh sin" >&2
+        echo "              scripts/ tiene que llevar el reconciliador tambien." >&2
+        echo "  que pasa  : sin el, el bump deja STATE.yaml en la tolerancia y la" >&2
+        echo "              release muere en el 1b sin decir por que." >&2
+        exit 1
+    fi
+    if ! bash "$POINTER_FIXER"; then
+        echo "release-bump: el puntero de estado NO se pudo reconciliar (arriba el motivo)." >&2
+        echo "  Sin el, la release muere en el 1b con un fallo que no habla del" >&2
+        echo "  codigo que se va a publicar. Se detiene aqui, que es donde dice." >&2
+        exit 1
+    fi
+    # Y NO se fia del codigo de salida del reconciliador para afirmar que el
+    # puntero se movio: lo COMPRUEBA. MEDIDO (session-83): el reconciliador
+    # salia con 0 sin haber movido nada, y un exit 0 es una promesa de otro
+    # proceso, no una medida. Un subordinado que dice "hecho" y un
+    # subordinado que ha hecho no son lo mismo, y aqui la diferencia cuesta
+    # una release.
+    POINTER_AFTER="$(sed -n 's/^  current_sha: *"\([^"]*\)".*/\1/p' \
+        "$ROOT/docs/roadmap/STATE.yaml" | head -1)"
+    POINTER_TAIL="$(git rev-list --count "${POINTER_AFTER:-HEAD}..HEAD" 2>/dev/null || echo 999)"
+    if [ -z "$POINTER_AFTER" ] || [ "$POINTER_TAIL" -gt 3 ]; then
+        echo "release-bump: el puntero de estado sigue sin estar puntual." >&2
+        echo "  current_sha : ${POINTER_AFTER:-<ilegible>}" >&2
+        echo "  retraso     : $POINTER_TAIL commit(s) (tolerancia 3)" >&2
+        echo "  por que     : el reconciliador salio 0 pero el puntero no quedo" >&2
+        echo "                puntual. Se detiene aqui porque el 1b lo mataria" >&2
+        echo "                mas tarde con un fallo que no diria que es esto." >&2
+        exit 1
+    fi
+    echo "  puntero de estado: reconciliado por el propio bump (queda a $POINTER_TAIL commit(s))"
+fi
+
 # Regenerate Cargo.lock from the bumped manifests.
 cargo check --workspace --quiet 2>/dev/null || cargo check --workspace
 

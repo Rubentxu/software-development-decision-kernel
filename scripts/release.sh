@@ -363,6 +363,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_final_state_figures.sh \
             tests/test_release_final_state_figures_mutation.sh \
             tests/test_lint_gate_scope_severity_mutation.sh \
+            tests/test_release_bump_pointer_sync.sh \
+            tests/test_reconcile_pointer_yaml_safety.sh \
             tests/test_release_admission.sh \
             tests/test_push_prevention_hook.sh \
             tests/test_release_receipt_authority.sh \
