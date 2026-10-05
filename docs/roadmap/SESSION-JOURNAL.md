@@ -15469,3 +15469,113 @@ sin problema. La regla era correcta para el caso que la produjo —el shim
 recibe el argumento sin expandir— y la generalize de mas. Se deja escrito
 porque el patron es el mismo que ha gobernado todo este bloque: una conclusion
 heredada no es evidencia hasta que se mide.
+
+## session-84 (bis) — el censo de guards no dependia del nombre del fichero, y seis integraciones que NADIE ejecutaba eran invisibles
+
+### POR QUE SE ABRE, Y QUE ES DISTINTO DE LO ANTERIOR
+
+INC-DEBT-076 cerro que la cobertura se media por **MENcion**: el gate buscaba
+el nombre de un test en el texto de `release.sh` y contaba eso como ejecucion.
+Ese arreglo cambio el COMO se mide. Este bloque encuentra que **el conjunto que
+se mide tambien era incorrecto**, y por un motivo mas basico: el censo entrance
+por el glifo `test_` del nombre del fichero.
+
+`test_gate_coverage.py` —el guard que existe para que ningun test quede sin
+runner— censaba `tests/test_*.sh` y `tests/test_*.py`. En `tests/` hay diez
+ejecutables que no casan, y **seis son guards de verdad**: los `uat_ctx_001` a
+`uat_ctx_007`. MEDIDO: los seis son tan hermeticos como cualquier otro (0 red,
+0 contenedores) y **no estan rotos** —aceptan `--bin <ruta>` y con un binario
+presente ejercitan de verdad—, lo que no habia era quien los ejecutara.
+
+Un censo por prefijo de nombre es un censo que hay que actualizar cuando alguien
+nombra un guard `uat_*` en vez de `test_*`. Y ese recordatorio es exactamente lo
+que falla.
+
+### EL MOTIVO ES DE ORDEN, Y NO EL COMODO
+
+Lo natural es exceptarlos diciendo «son integracion, no hermeticos». **Eso
+seria falso por la razon que importa.** Son tan hermeticos como cualquier otro.
+
+La razon real es que exigen el **binario release**, y el release lo construye en
+el paso **3**, con el 1b corriendo en el **1b**: en ese punto todavia no
+existe. Es la misma condicion que ya arrastra `test_h05_isolation.sh`, cuya
+excepcion dice «requiere `cargo build --release` antes». Se exceptan con ese
+motivo, que esta medido, y no con uno comodo.
+
+Consecuencia que se declara: el sitio natural de los seis es un paso posterior
+al 3. **Cablearlos ahi es la decision pendiente, no un detalle de este commit**,
+porque exigiria tocar el orden del release con el bloque ya publicado.
+
+### EL QUE SE HABRIA COLADO
+
+`uat_ctx_004_cycle_inference.sh` lo ejecuta `ci.yml`. Es decir, el gate lo
+contenia como cubierto y el otro gate lo senalaba como «su unico runner es
+`.github/workflows/`». **Los dos gates tenian razon y se contradecian**,
+porque uno mira mencion y el otro ejecucion. Es el patron que INC-DEBT-076
+cerro, agregado por un camino que el propio commit abria.
+
+### LA DISTINCION QUE EVITA DOS ERRORES OPUESTOS
+
+De los diez fuera del censo, cuatro no son guards, y llamarlos guard seria el
+error al reves:
+
+- `lib_public_release_gate.sh` es una **LIBRERIA**: define
+  `run_public_release_gate` y la sourcean dos ficheros, y no tiene `main`.
+- `ext_provider_gate.sh` es un **LAUNCHER** de frontera MCP_EXTERNAL: con un
+  provider ausente sale 2 `blocked_external_dependency`, que por contrato
+  **nunca** es pass. MEDIDO ejecutandolo. Cablearlo al 1b mataria toda release
+  en una maquina sin `chronos-mcp`.
+- `falsify-ci-anchor-real.sh` requiere tag publicado y red.
+- `clean_machine_uat.sh` monta contenedores (39 llamadas a docker/podman) y lo
+  ejecuta su propio workflow por tag. Segun AGENTS.md 2.5 es evidencia asincrona
+  **por diseno**, no un hueco.
+
+### TRES INSTRUMENTOS QUE SE ROMPIERON A SI MISMOS, Y UNO ENCONTRADO FALLANDO
+
+1. **La v1 del cambio filtro el censo por `os.X_OK`.** Con eso,
+   `test_release_routes_parity.sh` y `test_release_bundle_parity.sh` —que
+   existen, estan en EXCEPTIONS y van en 644— desaparecian, y la Regla 1 los
+   acuso de «el fichero no existe». **El mensaje era falso.** Existir y tener
+   bit son DOS preguntas; la que de verdad importa, enumerado sin bit se salta
+   en silencio, es la Regla 3, que ya existe y ya mide eso. Un filtro que
+   responde dos preguntas produce un rojo que parece de la propiedad y es del
+   instrumento. M9 lo falsea.
+2. **La v1 de M10 sustituyo la linea de la regla por `pass`**, y las tres
+   mutaciones dieron `NameError` o `IndentationError`: el gate caia por un error
+   de SINTAXIS y la asercion lo contaba como prueba de que la regla hacia
+   falta. Un rojo de la herramienta no es un rojo de la propiedad, y asi se
+   cuela una mutacion que mide lo que no dice. La v2 cambia la CONDICION y
+   anade una asercion que exige que el gate siga siendo python valido.
+3. **La v1 de M10a era peor**: reasignar `NOT_GUARDS` dentro de `main()` la
+   convierte en variable local y rompe el fichero entero con
+   `UnboundLocalError`. Se reapunta a la regla de obsolescencia.
+
+Y **un hallazgo del falsador que va en contra de lo que el commit queria**:
+
+**M10a/M10b/M10c dicen que las tres reglas de `NOT_GUARDS` NO HACEN FALTA.**
+Desactivarlas deja el gate en verde, y la asercion lo exige a proposito, al
+contrario del resto del fichero. Se conservan y se declara que hoy no vigilan,
+porque una lista de «esto no es un guard» sin reglas que la examine es un cajon
+de sastre con mejor vocabulario, y el falsador es el sitio donde eso se
+demuestra en vez de profetizarse. **Declarar que una guarda no guarda es mas
+honesto que dejar que parezca que guarda.**
+
+### GATES
+
+    test_gate_coverage.py                    PASS  (91 tests, 0 solo-CI, 0 sin runner)
+    test_gate_coverage_ci_mutation.py        PASS=33 FAIL=0 SKIP=0
+    test_debt_index_coherence.sh             PASS=12 FAIL=0
+    test_changelog_coverage.sh               PASS=5  FAIL=0
+    reconcile_state_pointer.sh --check       PASS
+    shellcheck SIN filtro                    0 avisos
+
+El censo pasa de **83 a 91** tests, con **0 sin runner y sin motivo**, frente a
+los 6 que el gate anterior no podia ni ver.
+
+### LO QUE SE DECLARA SIN CERRAR
+
+- **El paso que ejecutaria los seis `uat_ctx_*` no existe**, y decidirlo exige
+  saber donde quepa un binario release sin que el release pague dos builds.
+- **`NOT_GUARDS` no esta vigilada de hecho**, medido y escrito.
+- **La superficie de gates del 1b sigue siendo una lista escrita a mano.** Este
+  commit garantiza que se ve lo que hay en `tests/`; no cambia quien lo ejecuta.
