@@ -45,7 +45,27 @@ FAIL=0
 SKIP=0
 OUT="$(mktemp)"
 BACKUP="$(mktemp)"
-trap 'rm -f "$OUT" "$BACKUP"' EXIT
+# La trampa RESTAURA, y no solo limpia. MEDIDO (session-83): 9 de las 20
+# mutaciones de este fichero apuntan a $LIB, que es el fichero REAL del repo,
+# y la trampa anterior se limitaba a borrar el backup. Cualquier salida
+# anormal entre `mutar` y su restauracion —un `exit`, una senal, un gate que
+# mata el proceso— dejaba el repo mutado Y habia borrado el unico testigo, con
+# lo que no habia ni forma de recuperar el contenido original.
+#
+# MEDIDO el efecto: una release posterior murio en el paso 3 con "el arbol
+# tiene cambios RASTREADOS sin commitear", que habla de un arbol sucio y no
+# de que un test dejara el repo a medias. El mensaje era cierto y la causa no
+# estaba en el.
+MUTANDO_AHORA=""
+restaurar_si_queda() {
+    if [ -n "$MUTANDO_AHORA" ] && [ -f "$BACKUP" ]; then
+        cp "$BACKUP" "$MUTANDO_AHORA" 2>/dev/null || true
+    fi
+    rm -f "$OUT" "$BACKUP" 2>/dev/null || true
+}
+trap restaurar_si_queda EXIT
+trap 'restaurar_si_queda; exit 130' INT
+trap 'restaurar_si_queda; exit 143' TERM
 
 banner() { printf '\n== %s\n' "$*"; }
 
@@ -79,11 +99,13 @@ mutar() {
 
     sha_antes="$(sha256sum "$fichero" | cut -d' ' -f1)"
     cp "$fichero" "$BACKUP"
+    MUTANDO_AHORA="$fichero"
 
     if ! MUT_FILE="$fichero" python3 -c "$pycode" 2>/dev/null; then
         printf '  [SKIP] %s — el parche lanzo error\n' "$etiqueta"
         SKIP=$((SKIP + 1))
         cp "$BACKUP" "$fichero"
+        MUTANDO_AHORA=""
         return
     fi
     sha_mut="$(sha256sum "$fichero" | cut -d' ' -f1)"
@@ -91,6 +113,7 @@ mutar() {
         printf '  [SKIP] %s — el parche NO cambio el fichero: no esta midiendo nada\n' "$etiqueta"
         SKIP=$((SKIP + 1))
         cp "$BACKUP" "$fichero"
+        MUTANDO_AHORA=""
         return
     fi
 
@@ -106,6 +129,7 @@ mutar() {
             "$etiqueta"
         SKIP=$((SKIP + 1))
         cp "$BACKUP" "$fichero"
+        MUTANDO_AHORA=""
         return
     fi
 
@@ -116,6 +140,7 @@ mutar() {
     # restaurar ANTES de juzgar el resultado, para que un fallo del falsador no
     # deje el arbol mutado.
     cp "$BACKUP" "$fichero"
+    MUTANDO_AHORA=""
     sha_restore="$(sha256sum "$fichero" | cut -d' ' -f1)"
     if [ "$sha_restore" != "$sha_antes" ]; then
         printf '  [FATAL] %s — la restauracion no fue byte-identica\n' "$etiqueta"
