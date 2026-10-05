@@ -453,3 +453,135 @@ pub fn reduce(observations: Vec<VersionObservation>) -> VersionAuthority {
         },
     }
 }
+
+// ---------------------------------------------------------------------------
+// The port: how a provider is asked, and how one is found
+// ---------------------------------------------------------------------------
+
+/// The capability a provider speaks to answer "what version does this target
+/// declare?".
+///
+/// Versioned in the string on purpose. A provider that does not answer this
+/// exact version is not asked at all, and the answer to "what happens when a
+/// provider is old" is decided by negotiation rather than by a runtime check
+/// that guesses.
+pub const PRODUCT_VERSION_OBSERVATION: &str = "product-version.observation/v1";
+
+/// A provider that could not produce an answer for a reason that is its own
+/// fault rather than the target's.
+///
+/// This is **not** a source that failed to parse. Those are
+/// [`VersionProbe::Invalid`] — the target had something to say and it could
+/// not be read. This is the provider failing before it got that far, and it
+/// fails closed for the same reason: a provider that did not answer is not
+/// evidence that there is no answer.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProviderError {
+    /// The provider could not run.
+    #[error("el provider {provider_id} no se pudo ejecutar: {reason}")]
+    Unavailable {
+        /// Which provider.
+        provider_id: String,
+        /// Why.
+        reason: String,
+    },
+    /// The provider ran and does not speak the capability that was asked.
+    #[error("el provider {provider_id} habla {speaks:?} y se le pidio {asked}")]
+    CapabilityMismatch {
+        /// Which provider.
+        provider_id: String,
+        /// What the provider declared.
+        speaks: Vec<String>,
+        /// What was asked.
+        asked: String,
+    },
+}
+
+/// The port SDDK asks for a product version.
+///
+/// Implementations live outside the kernel: they are the ones allowed to know
+/// that a version can be read from a file, from a build tool's own model, or
+/// from somewhere nobody has thought of yet. Adding a new way to learn a
+/// version means implementing this trait and registering it — not editing the
+/// engine, and not adding a name to anything in here.
+pub trait VersionResolverPort {
+    /// Stable identity. **Provenance, never a decision input**: the reducer
+    /// does not read it, and a provider cannot buy authority with a name.
+    fn provider_id(&self) -> &str;
+
+    /// The provider's own version, for provenance in diagnostics.
+    fn provider_version(&self) -> &str;
+
+    /// Capability strings this provider answers to, e.g.
+    /// [`PRODUCT_VERSION_OBSERVATION`].
+    fn capabilities(&self) -> &[String];
+
+    /// Observes one target. Returning `Err` is the provider failing; returning
+    /// `Ok(NotApplicable)` is the provider saying the target is not its
+    /// subject. Those are different and the trait keeps them apart.
+    fn observe(&self, target: &ReleaseTarget) -> Result<VersionProbe, ProviderError>;
+}
+
+/// A set of providers, and the only thing that decides what they are asked.
+///
+/// The registry is deliberately dumb. It filters by capability, collects, and
+/// hands the list to [`reduce`]. It has no ordering, no preference and no
+/// knowledge of what any provider is — which is what makes a new provider
+/// genuinely additive instead of a new branch in an existing decision.
+#[derive(Default)]
+pub struct VersionResolverRegistry {
+    providers: Vec<Box<dyn VersionResolverPort>>,
+}
+
+impl VersionResolverRegistry {
+    /// An empty registry. With no providers, every target is unresolved —
+    /// which is the honest answer for a machine that knows nothing.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers a provider. Registering is composition, not policy: the
+    /// registry does not ask whether the provider is a good one.
+    pub fn register(&mut self, provider: Box<dyn VersionResolverPort>) {
+        self.providers.push(provider);
+    }
+
+    /// How many providers are registered. Diagnostics only.
+    pub fn len(&self) -> usize {
+        self.providers.len()
+    }
+
+    /// Whether no provider is registered.
+    pub fn is_empty(&self) -> bool {
+        self.providers.is_empty()
+    }
+
+    /// Asks every provider that speaks `capability` about `target`, and
+    /// reduces what they say.
+    ///
+    /// A provider that returns `Err` becomes a `VersionProbe::Invalid`
+    /// observation carrying the provider's own reason. That mapping is a
+    /// decision, and it is the conservative one: a provider that did not
+    /// answer has not established that the target declares nothing.
+    pub fn resolve(&self, capability: &str, target: &ReleaseTarget) -> VersionAuthority {
+        let mut observations: Vec<VersionObservation> = Vec::new();
+        for provider in &self.providers {
+            if !provider.capabilities().iter().any(|c| c == capability) {
+                continue;
+            }
+            let probe = match provider.observe(target) {
+                Ok(probe) => probe,
+                Err(_) => VersionProbe::Invalid {
+                    reason: "el provider no pudo responder".to_owned(),
+                },
+            };
+            observations.push(VersionObservation {
+                provider_id: provider.provider_id().to_owned(),
+                provider_version: provider.provider_version().to_owned(),
+                capability: capability.to_owned(),
+                probe,
+            });
+        }
+        reduce(observations)
+    }
+}
