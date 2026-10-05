@@ -48,7 +48,7 @@ use sddk_domain::version_authority::{
     PRODUCT_VERSION_OBSERVATION, ProductVersion, ProviderError, ReleaseTarget, VersionEvidence,
     VersionProbe, VersionResolverPort,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// How a file is parsed. Formats, not ecosystems: this says what the bytes
 /// are, never which tool wrote them.
@@ -588,4 +588,258 @@ pub fn default_version_registry() -> sddk_domain::version_authority::VersionReso
         registry.register(Box::new(SingleDeclarationProvider::for_spec(spec)));
     }
     registry
+}
+
+// ---------------------------------------------------------------------------
+// Which targets exist, in a repository that may hold several
+// ---------------------------------------------------------------------------
+
+/// Directories that are never products, because they hold build output or
+/// vendored copies rather than source.
+///
+/// A list, in the adapter, about the filesystem's shape — which is exactly the
+/// kind of knowledge that does not belong in the kernel and is not a
+/// technology preference either. It is here for one reason: without it, a
+/// vendored dependency or a build directory is discovered as a target and turns
+/// every monorepo into `AmbiguousTarget`.
+///
+/// The failure direction matters and is the safe one. A name on this list that
+/// is actually a product makes that product **invisible**, and an invisible
+/// product shows up as «no version declared» — a refusal that tells the
+/// operator to look — never as a wrong answer.
+pub const NON_PRODUCT_DIRECTORIES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "vendor",
+    "dist",
+    "build",
+    ".venv",
+    "__pycache__",
+];
+
+/// How deep below the repository root a target is looked for.
+///
+/// **Two**, and the number is the shape of a monorepo rather than a taste:
+/// `packages/alpha` and `crates/alpha` are both *two* levels below the root,
+/// because `packages` is a grouping directory and not a product. Counting only
+/// the grouping directory as one level finds `packages` —which is not a
+/// product— and reports a monorepo with four products as having none. That was
+/// MEDIDO, no supuesto: la primera versión de este escaneo usaba `1` y
+/// devolvía cero targets para un árbol con un producto dentro de `packages/`.
+///
+/// The bound is a **parameter** rather than a hard-coded depth so that a caller
+/// who needs more can ask for more, and the answer always says how far it
+/// looked. An unbounded walk of an unknown tree is the kind of thing that is
+/// fine in a fixture and fatal in a monorepo with a `node_modules` of three
+/// gigabytes.
+pub const DEFAULT_TARGET_DEPTH: usize = 2;
+
+/// What a scan found, and how it looked.
+///
+/// The `depth` travels with the answer because a set of targets with no
+/// statement of what was searched is indistinguishable from a set of all the
+/// targets that exist, and those two claims are very different.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetScan {
+    /// The roots that hold at least one declaration, sorted so the answer does
+    /// not depend on the order the filesystem handed them over.
+    pub roots: Vec<String>,
+    /// How many levels below the repository root were visited.
+    pub depth: usize,
+    /// Directory names that were skipped, and why they might matter.
+    pub skipped: Vec<String>,
+}
+
+impl TargetScan {
+    /// The scan as a set of [`ReleaseTarget`]s, identified by their path.
+    ///
+    /// The identity is the path **relative to the repository root**, not the
+    /// directory name: two products called `index` in different folders are two
+    /// products, and a name that collides is a different problem from a product
+    /// that is in two places.
+    pub fn targets(&self, repository_root: &Path) -> Vec<ReleaseTarget> {
+        self.roots
+            .iter()
+            .map(|relative| {
+                ReleaseTarget::at(
+                    relative,
+                    Path::new(repository_root)
+                        .join(relative)
+                        .display()
+                        .to_string(),
+                )
+            })
+            .collect()
+    }
+}
+
+/// Finds the roots that hold a declaration, down to `depth` levels.
+///
+/// Read-only, and it says so: this only reads directory entries and asks each
+/// [`DeclarationSpec`] whether its file is there. It never parses a file,
+/// because finding a *candidate* and knowing what it declares are two
+/// questions, and mixing them would mean this function could report a product
+/// whose declaration turns out to be unreadable — which is the reducer's
+/// decision to make, with the evidence in hand.
+pub fn scan_release_targets(repository_root: &Path, depth: usize) -> TargetScan {
+    let mut roots: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    if declaration_present(repository_root) {
+        roots.push(".".to_owned());
+    }
+
+    let mut frontier = vec![PathBuf::from(repository_root)];
+    for _ in 0..depth {
+        let mut next = Vec::new();
+        for directory in &frontier {
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if NON_PRODUCT_DIRECTORIES.contains(&name.as_str()) || name.starts_with('.') {
+                    skipped.push(name);
+                    continue;
+                }
+                if declaration_present(&path) {
+                    let relative = path
+                        .strip_prefix(repository_root)
+                        .unwrap_or(&path)
+                        .display()
+                        .to_string();
+                    roots.push(relative);
+                }
+                next.push(path);
+            }
+        }
+        frontier = next;
+    }
+
+    // Orden canónico por la misma razón que en el dominio: una lista de
+    // candidatos que cambia al reordenar el disco es una lista que no se puede
+    // comparar con nada, y `AmbiguousTarget` es un error que se compara.
+    roots.sort();
+    roots.dedup();
+    skipped.sort();
+    skipped.dedup();
+    TargetScan {
+        roots,
+        depth,
+        skipped,
+    }
+}
+
+/// Whether any known declaration lives directly in `directory`.
+///
+/// The question is «is there something here that might declare a version»,
+/// which is weaker than «does this declare a version» and is asked on purpose:
+/// this function must not decide, and a directory holding an unreadable
+/// declaration is still a target whose unreadability the reducer reports.
+fn declaration_present(directory: &Path) -> bool {
+    DEFAULT_DECLARATIONS
+        .iter()
+        .any(|spec| directory.join(spec.path).exists())
+}
+
+/// The targets a release may resolve against, and how the choice was made.
+///
+/// ## The law, and why it is a law about *location* and not about priority
+///
+/// **A repository root that resolves is the target.** If the root declares a
+/// product version, the repository is about itself, and looking further down
+/// for other products would mean answering a question nobody asked.
+///
+/// This is worth defending against the obvious objection, which is that it is
+/// a preference between candidates — the thing the reducer is forbidden from
+/// doing. It is not, and the difference is the whole point:
+///
+/// - the reducer's forbidden preference is between **answers**: given two
+///   declarations that disagree, no technology outranks another;
+/// - this is between **entities**: asked about a repository and the two
+///   products inside it, those are different questions, and the default for
+///   «which of these did you mean» when the answer is available at the top is
+///   «the one at the top».
+///
+/// Making it structural rather than a fallback also removes a failure mode:
+/// with a fallback, a repository that declares a version at the root and has a
+/// product below it would resolve the root and never mention the other, which
+/// looks identical to a repository with one product. The scan's result travels
+/// with the decision so a caller can always say what else was there.
+///
+/// ## What happens when the root does not resolve
+///
+/// Then the products are the ones the scan found, and more than one is
+/// `AmbiguousTarget` — closed, with the paths listed. Not a preference between
+/// them: they are equally supported and choosing would be inventing an answer.
+pub fn release_targets(
+    repository_root: &Path,
+    registry: &sddk_domain::version_authority::VersionResolverRegistry,
+) -> TargetSet {
+    let capability = PRODUCT_VERSION_OBSERVATION;
+    let root_target = ReleaseTarget::at(".", repository_root.display().to_string());
+
+    // Una sola resolución de la raiz, y dos respuestas distintas de ella. Un
+    // target de la raiz esta resuelto si declara una version de producto **o**
+    // si declara que su version la lleva la release ref: en el segundo caso
+    // tambien ha dicho que es un producto, y buscar mas abajo volveria a
+    // preguntar lo que ya contesto.
+    let root_authority = registry.resolve(capability, &root_target);
+    let root_declares_version = root_authority.version().is_some();
+    let root_declares_release_ref = !root_authority.release_ref_declarations().is_empty();
+
+    if root_declares_version || root_declares_release_ref {
+        return TargetSet {
+            targets: vec![root_target],
+            scan: None,
+            root_resolved: true,
+        };
+    }
+
+    let scan = scan_release_targets(repository_root, DEFAULT_TARGET_DEPTH);
+    let targets = scan.targets(repository_root);
+    TargetSet {
+        targets,
+        scan: Some(scan),
+        root_resolved: false,
+    }
+}
+
+/// The candidates a release may choose among, and the evidence for how they
+/// were gathered.
+#[derive(Debug, Clone)]
+pub struct TargetSet {
+    /// The candidates, in canonical order.
+    pub targets: Vec<ReleaseTarget>,
+    /// What the scan found, when it ran. `None` means the root answered and
+    /// nothing was looked for.
+    pub scan: Option<TargetScan>,
+    /// Whether the repository root declared a product version.
+    pub root_resolved: bool,
+}
+
+impl TargetSet {
+    /// One-line description of how the candidates were gathered, for a plan
+    /// that has to be readable by someone who did not run the scan.
+    pub fn provenance(&self) -> String {
+        match &self.scan {
+            None => "la raiz del repositorio declara su propia version".to_owned(),
+            Some(scan) => format!(
+                "la raiz no declara version; se buscaron {} raiz/raices hasta {} nivel(es), \
+                 omitiendo {}",
+                scan.roots.len(),
+                scan.depth,
+                if scan.skipped.is_empty() {
+                    "nada".to_owned()
+                } else {
+                    scan.skipped.join(", ")
+                }
+            ),
+        }
+    }
 }
