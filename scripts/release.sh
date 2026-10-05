@@ -454,7 +454,8 @@ if [ "$SKIP_TESTS" = "0" ]; then
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
-    for t in tests/test_push_prevention_hook.sh \
+    for t in tests/test_guard_exit_code_fidelity_mutation.sh \
+             tests/test_push_prevention_hook.sh \
              tests/test_release_admission.sh \
              tests/test_cargo_target_attribution.sh \
              tests/test_release_receipt_authority.sh \
@@ -499,7 +500,6 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_release_build_identity.sh \
              tests/test_binary_freshness_checker.sh \
              tests/test_release_state_pointer_mutation.sh \
-             tests/test_guard_exit_code_fidelity_mutation.sh \
              tests/test_release_final_state_figures.sh \
              tests/test_release_final_state_figures_mutation.sh \
              tests/test_lint_gate_scope_severity_mutation.sh \
