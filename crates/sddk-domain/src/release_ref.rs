@@ -200,6 +200,36 @@ impl VersionNaming {
         }
     }
 
+    /// A naming that declares a candidate's sequence as part of the name.
+    ///
+    /// ## Por qué este constructor existe ahora y no en ADR-0159
+    ///
+    /// Porque `PrefixedCandidate` se podía **usar** —`name_for` y `binds` lo
+    /// conocían— pero no **construir**: el único `parse` acepta dos estilos y
+    /// ninguno es éste. MEDIDO en `sddk release handoff`: un handoff de candidato
+    /// es imposible, porque `--sequence` sólo puede producir un
+    /// `NamingHasNoRoomForCandidates`.
+    ///
+    /// O sea: la convención estaba declarada, documentada y falsificada, y era
+    /// inalcanzable desde fuera del crate. Es la clase de hueco que un tipo
+    /// exercising y su falsador no detectan, porque los dos viven **dentro** del
+    /// módulo que lo declara.
+    ///
+    /// Y se construye con sus tres partes explícitas, sin un atajo: `rc` es una
+    /// convención, no una ley, y un atajo sería un default invisible en el
+    /// crate que sostiene los demás defaults.
+    pub fn prefixed_candidate(
+        prefix: impl Into<String>,
+        separator: impl Into<String>,
+        marker: impl Into<String>,
+    ) -> Self {
+        Self::PrefixedCandidate {
+            prefix: prefix.into(),
+            separator: separator.into(),
+            marker: marker.into(),
+        }
+    }
+
     /// The name this naming gives to `version`, or to a candidate of it.
     ///
     /// `None` when the naming **cannot express** the reference asked for — a

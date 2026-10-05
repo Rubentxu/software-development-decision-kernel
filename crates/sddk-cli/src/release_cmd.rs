@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
-use sddk_domain::release_ref::{ReleaseRef, VersionNaming, binds};
-use sddk_domain::release_role::ReleaseRole;
+use sddk_domain::release_ref::{ReleaseRef, SourceRevision, VersionNaming, binds};
+use sddk_domain::release_role::{CandidateHandoff, HandoffArtifact, ReleaseRole};
 use sddk_domain::version_authority::{ReleaseTarget, VersionAuthority};
 use sddk_domain::version_inspection::{AssuranceLevel, VersionInspection};
 use sddk_engine::version::{
@@ -20,6 +20,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::architecture_cmd::error_output;
 use crate::dev::github_releases_ticket::{GithubReleasesTicketError, with_github_releases_ticket};
 use crate::{
     CliEnvironment, CommandOutput, OutputFormat, RuntimeArgs, RuntimeContext, render_result,
@@ -50,8 +51,93 @@ pub(crate) enum ReleaseCommand {
     },
     /// Revalidate release candidate after a correction commit (scoped recovery).
     Revalidate(RevalidateArgs),
+    /// Build the envelope a producer hands to whoever certifies and promotes it.
+    Handoff(HandoffArgs),
     /// Emit vault-receipt.json for a managed-closure cycle (ADR-0075).
     Vault(VaultArgs),
+}
+
+/// Los argumentos de `release handoff`.
+///
+/// ## Por qué están en tres grupos y no en trece banderas sueltas
+///
+/// El sobre tiene tres dobladores, y cada uno viene de un sitio distinto:
+///
+/// - **la referencia** (`--tag`, `--naming`, `--sequence`, `--channel`) la
+///   entiende SDDK, porque es el mismo `ReleaseRef` que usan `plan` y `apply`;
+/// - **el material** (`--artifact`) lo trae el productor, y SDDK solo le calcula
+///   el digest porque content-addressable es un hecho, no una opinión;
+/// - **la identidad del productor** (`--external-type`, `--external-digest`) no la
+///   sabe SDDK, y por eso son **obligatorias**: un sobre que se pudiera rellenar
+///   entero sin hablar con nadie diría cosas que nadie dijo.
+///
+/// Un grupo por doblador, porque un argument parser que mezcla las tres cosas
+/// es un argument parser cuyo error no dice qué de las tres falta.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct HandoffArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Which release target, by its path relative to the repository root.
+    #[arg(long)]
+    pub(crate) target: Option<String>,
+    /// The role this target declares. It bounds which channels it may hand off.
+    #[arg(long, default_value = "candidate_producer")]
+    pub(crate) role: String,
+    #[command(flatten)]
+    pub(crate) reference: HandoffReferenceArgs,
+    #[command(flatten)]
+    pub(crate) material: HandoffMaterialArgs,
+    /// Where to write the envelope. Without it the envelope goes to stdout.
+    #[arg(long)]
+    pub(crate) out: Option<PathBuf>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// La referencia que el sobre lleva.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct HandoffReferenceArgs {
+    /// The release reference, written exactly as it will be published.
+    #[arg(long)]
+    pub(crate) tag: String,
+    /// How a release reference names a product version. See `release --naming`.
+    /// Ignored when `--sequence` is given: a candidate naming is declared by its
+    /// three parts, not chosen from this list.
+    #[arg(long, default_value = "v_prefixed")]
+    pub(crate) naming: String,
+    /// Which candidate of the version this is, when the naming declares one.
+    #[arg(long)]
+    pub(crate) sequence: Option<u32>,
+    /// The channel this material is handed off on.
+    #[arg(long, default_value = "candidate")]
+    pub(crate) channel: String,
+    /// The prefix before the version in a candidate name. Only with `--sequence`.
+    #[arg(long, default_value = "v")]
+    pub(crate) candidate_prefix: String,
+    /// The separator between version and marker. Only with `--sequence`.
+    #[arg(long, default_value = "-")]
+    pub(crate) candidate_separator: String,
+    /// The marker before the candidate number. Only with `--sequence`.
+    #[arg(long, default_value = "rc")]
+    pub(crate) candidate_marker: String,
+}
+
+/// El material y la identidad de quien lo produjo.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct HandoffMaterialArgs {
+    /// One artifact, as `kind=path`, repeatable. The digest is computed.
+    #[arg(long = "artifact", value_name = "KIND=PATH")]
+    pub(crate) artifacts: Vec<String>,
+    /// A reference backing the producer's own gates, repeatable.
+    #[arg(long = "evidence", value_name = "REF")]
+    pub(crate) evidence_refs: Vec<String>,
+    /// What kind of handoff this is, in the producer's own words.
+    #[arg(long)]
+    pub(crate) external_type: String,
+    /// The producer's own digest over its serialisation. Not SDDK's.
+    #[arg(long)]
+    pub(crate) external_digest: String,
 }
 
 /// Qué se puede preguntar sobre la versión de un target.
@@ -316,6 +402,7 @@ pub(crate) fn run_release(command: ReleaseCommand, environment: &CliEnvironment)
         ReleaseCommand::Channel(args) => run_release_channel(args),
         ReleaseCommand::Version { action } => run_release_version(action),
         ReleaseCommand::Revalidate(args) => run_release_revalidate(args, environment),
+        ReleaseCommand::Handoff(args) => run_release_handoff(args),
         ReleaseCommand::Vault(args) => run_release_vault(args, environment),
     }
 }
@@ -603,6 +690,303 @@ fn version_match_text(output: &VersionMatchOutput) -> String {
     }
     text.push_str(&format!("matches: {}\n", output.matches));
     text.push_str(&format!("detail: {}\n", output.detail));
+    text
+}
+
+/// `sddk release handoff` — construir y entregar el sobre.
+///
+/// ## Qué es y qué no es
+///
+/// Un sobre **opaco**: SDDK lo transporta y no lo interpreta. Lo que significa
+/// un candidato en el sistema que lo produjo —qué es un `external_handoff_type`,
+/// quién tiene derecho a consumirlo— se queda con el productor, y esto es
+/// exactamente el alcance de lo que SDDK afirma entender.
+///
+/// ## Por qué `--external-type` y `--external-digest` son obligatorios
+///
+/// Porque son hechos del **productor**, y SDDK no los tiene. Si tuvieran valor
+/// por defecto, el sobre se podría rellenar entero sin hablar con nadie, y un
+/// sobre que dice cosas que nadie dijo es peor que no tener sobre: el
+/// certificador lee la firma del productor y no hay productor detrás.
+///
+/// La asimetría es el diseño completo: esto **calcula** el digest de cada
+/// artefacto (content-addressable es un hecho: son los bytes) y **exige** el
+/// digest del propio sobre (es la firma de otro sistema, no la suya).
+///
+/// ## Por qué la puerta es `may_reach` y no una nueva
+///
+/// Producir material hasta un canal es exactamente lo que dice el techo del
+/// rol: un `CandidateProducer` termina en `Candidate`. Una función nueva de
+/// «¿puede producir?» sería una segunda respuesta a una pregunta que el techo ya
+/// contesta, y las dos divergirían.
+///
+/// ## Entregar no es publicar
+///
+/// El sobre dice «aquí está mi material». Que ese material se publique es la
+/// puerta de `may_publish`, que este comando **no** llama: un productor que
+/// publica lo suyo no está delegando nada.
+fn run_release_handoff(args: HandoffArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<CommandOutput2> {
+        let root = resolve_inspection_root(&args.runtime)?;
+        let role = resolve_role(&args.role)?;
+        let naming = resolve_handoff_naming(&args.reference)?;
+        let channel = sddk_domain::ReleaseChannel::parse(&args.reference.channel)
+            .ok_or_else(|| anyhow::anyhow!("unknown channel '{}'", args.reference.channel))?;
+
+        // LA PUERTA, y es la de VA6: el techo del rol, sin inventar otra.
+        if !role.may_reach(channel) {
+            return Err(anyhow::anyhow!(
+                "{}",
+                sddk_domain::release_role::RoleRefusal::BeyondCeiling {
+                    role,
+                    ceiling: role.ceiling(),
+                    requested: channel,
+                }
+            ));
+        }
+
+        let selected = resolve_release_target(&root, args.target.as_deref())?;
+
+        // La MISMA resolución que usa `release plan`. Una segunda llamada al
+        // registry sería una segunda autoridad, y la que acaba dentro del sobre
+        // es la que el certificador leería como si la hubiera emitido SDDK.
+        let authority = version_registry().resolve(
+            sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
+            &selected.target,
+        );
+        let product_version = authority.version().cloned().ok_or_else(|| {
+            anyhow::anyhow!(
+                "this target declares no product version, so there is nothing to hand \
+                 off. Run `sddk release version inspect` to see what was and was not \
+                 looked at: {}",
+                match &authority {
+                    sddk_domain::version_authority::VersionAuthority::ReleaseRefIsAuthority { .. } =>
+                        "this target declares that the release reference carries the version, which is a \
+                         different answer and not one a producer can fill in for SDDK.",
+                    _ => "no provider produced a version.",
+                }
+            )
+        })?;
+
+        let artifacts = args
+            .material
+            .artifacts
+            .iter()
+            .map(|entry| handoff_artifact(&root, entry))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        // La revisión es un hecho del árbol, no una afirmación sobre el release.
+        let git = GitExecutor::new(root.clone());
+        let source_revision = SourceRevision::new(
+            git.head_sha()
+                .map_err(|error| anyhow::anyhow!("cannot read the current revision: {error}"))?,
+        )
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "the current revision is empty, so there is nothing to attribute this \
+                 material to. A handoff with no source is a handoff about nothing."
+            )
+        })?;
+
+        let sequence = match args.reference.sequence {
+            Some(0) => {
+                return Err(anyhow::anyhow!(
+                    "`--sequence 0` claims to be a candidate with no predecessor. The \
+                     first candidate is 1; a 0 is not a candidate that nobody asked \
+                     for."
+                ));
+            }
+            Some(raw) => Some(
+                sddk_domain::release_ref::CandidateSequence::nth(raw)
+                    .expect("el 0 ya se ha rechazado"),
+            ),
+            None => None,
+        };
+        let reference = match sequence {
+            Some(seq) => ReleaseRef::candidate(args.reference.tag.clone(), channel, seq),
+            None => ReleaseRef::new(args.reference.tag.clone(), channel),
+        };
+
+        // LA SEGUNDA PUERTA, y es la de ADR-0159: la referencia del sobre tiene
+        // que nombrar a la versión del sobre, bajo la convención declarada.
+        //
+        // Sin esto, un sobre puede llevar `--tag v9.9.9 --sequence 1` junto a una
+        // `productVersion` de `1.4.0` y llamarse coherente. El certificador
+        // recibe un sobre que se contradice a sí mismo, y el que lo construyó fue
+        // SDDK: eso es una autoridad usando un dato que nadie le dio.
+        //
+        // Se usa `binds`, no una comprobación nueva: la pregunta «¿nombra esta
+        // referencia a esta versión?» ya tiene una respuesta, y una segunda sería
+        // una que puede divergir.
+        let binding = binds(&reference, &product_version, &naming);
+        if !binding.is_bound() {
+            return Err(anyhow::anyhow!(
+                "{}",
+                naming_rejection(&binding.message(&product_version), &naming)
+            ));
+        }
+
+        let envelope = CandidateHandoff {
+            target: selected.target.clone(),
+            product_version,
+            reference,
+            sequence,
+            source_revision,
+            artifacts,
+            evidence_refs: args.material.evidence_refs.clone(),
+            external_handoff_type: args.material.external_type.clone(),
+            external_handoff_digest: args.material.external_digest.clone(),
+        };
+
+        let body = serde_json::to_string_pretty(&envelope)
+            .map_err(|error| anyhow::anyhow!("cannot serialise the envelope: {error}"))?;
+        let written = match &args.out {
+            Some(path) => {
+                std::fs::write(path, format!("{body}\n")).map_err(|error| {
+                    anyhow::anyhow!("cannot write the envelope to {}: {error}", path.display())
+                })?;
+                Some(path.display().to_string())
+            }
+            None => None,
+        };
+        let digest = format!("sha256:{:x}", Sha256::digest(body.as_bytes()));
+        Ok(CommandOutput2 {
+            envelope,
+            written,
+            digest,
+            role: role.name().to_owned(),
+            channel: format!("{channel:?}"),
+        })
+    })();
+
+    match result {
+        Ok(outcome) => match format {
+            OutputFormat::Json => {
+                let body = serde_json::to_string_pretty(&outcome.envelope).unwrap_or_default();
+                CommandOutput {
+                    status: 0,
+                    stdout: format!("{body}\n"),
+                    stderr: String::new(),
+                }
+            }
+            OutputFormat::Text => CommandOutput {
+                status: 0,
+                stdout: handoff_text(&outcome),
+                stderr: String::new(),
+            },
+        },
+        Err(error) => error_output(format!("{error}")),
+    }
+}
+
+/// La convención con la que se compara la referencia del sobre.
+///
+/// ## Por qué `--sequence` cambia la convención en vez de ser un dato suelto
+///
+/// `PrefixedCandidate` tiene tres partes —prefijo, separador, marcador— y
+/// ninguna es un default razonable del núcleo: `rc` es una
+/// convención, no una ley. Así que cuando hay secuencia se declaran las tres, y
+/// `--naming` deja de aplicar.
+///
+/// La alternativa —una convención de candidato fija dentro del crate— daría un
+/// nombre sin que nadie lo declarara, que es exactamente el defecto que
+/// `VersionNaming::NAMED` excluye de `PrefixedCandidate` a propósito. Un default
+/// invisible en el crate que sostiene los demás defaults no es un default, es
+/// una segunda convención sin dueño.
+fn resolve_handoff_naming(args: &HandoffReferenceArgs) -> anyhow::Result<VersionNaming> {
+    if args.sequence.is_some() {
+        return Ok(VersionNaming::prefixed_candidate(
+            args.candidate_prefix.clone(),
+            args.candidate_separator.clone(),
+            args.candidate_marker.clone(),
+        ));
+    }
+    resolve_naming(&args.naming)
+}
+
+/// Un artefacto del sobre: `kind=path`, con el digest de los bytes.
+///
+/// El digest se calcula aquí porque content-addressable es un **hecho**: son
+/// estos bytes y su sha256. Lo que no se calcula es si el artefacto es el
+/// correcto, si está completo, o si el material sirve para publicar — nada de
+/// eso lo sabe SDDK, y opinar sería reescribir las reglas del productor.
+fn handoff_artifact(root: &std::path::Path, entry: &str) -> anyhow::Result<HandoffArtifact> {
+    let (kind, path) = entry
+        .split_once('=')
+        .ok_or_else(|| anyhow::anyhow!("`{entry}` is not an artifact: expected `kind=path`"))?;
+    if kind.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "`{entry}` has no kind: an artifact without a kind is a file the \
+             consumer cannot interpret"
+        ));
+    }
+    let absolute = root.join(path);
+    let bytes = std::fs::read(&absolute)
+        .map_err(|error| anyhow::anyhow!("cannot read artifact {}: {error}", absolute.display()))?;
+    Ok(HandoffArtifact {
+        kind: kind.to_owned(),
+        digest: format!("sha256:{:x}", Sha256::digest(&bytes)),
+        path: Some(path.to_owned()),
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+struct CommandOutput2 {
+    #[serde(flatten)]
+    envelope: CandidateHandoff,
+    written: Option<String>,
+    digest: String,
+    role: String,
+    channel: String,
+}
+
+fn handoff_text(outcome: &CommandOutput2) -> String {
+    let envelope = &outcome.envelope;
+    let mut text = String::new();
+    text.push_str(&format!("release_target: {}\n", envelope.target.id()));
+    text.push_str(&format!("productVersion: {}\n", envelope.product_version));
+    text.push_str(&format!(
+        "release_reference: {}\nchannel: {}\n",
+        envelope.reference.name(),
+        outcome.channel
+    ));
+    match envelope.sequence {
+        Some(sequence) => text.push_str(&format!("sequence: {}\n", sequence.get())),
+        None => text.push_str("sequence: none\n"),
+    }
+    text.push_str(&format!(
+        "source_revision: {}\nrole: {}\n",
+        envelope.source_revision.as_str(),
+        outcome.role
+    ));
+    text.push_str(&format!("artifacts: {}\n", envelope.artifacts.len()));
+    for artifact in &envelope.artifacts {
+        text.push_str(&format!("  - {} {}\n", artifact.kind, artifact.digest));
+    }
+    text.push_str(&format!(
+        "evidence_refs: {}\n",
+        join_or_none(&envelope.evidence_refs)
+    ));
+    text.push_str(&format!(
+        "external_handoff_type: {}\nexternal_handoff_digest: {}\n",
+        envelope.external_handoff_type, envelope.external_handoff_digest
+    ));
+    match &outcome.written {
+        Some(path) => text.push_str(&format!("written: {path}\n")),
+        None => text.push_str("written: none — the envelope is on stdout\n"),
+    }
+    text.push_str(&format!("envelope_sha256: {}\n", outcome.digest));
+    // Lo que este sobre NO dice, porque no lo comprobó.
+    text.push_str(
+        "\nNOT_CHECKED:\n  \
+         - the artifacts were hashed, not judged: whether this material is what a \
+         certifier needs is the certifier's question\n  \
+         - the external digest was supplied, not recomputed: SDDK does not have the \
+         producer's serialisation, so it cannot check it\n  \
+         - nothing was published, and nothing was certified\n",
+    );
     text
 }
 
@@ -1547,11 +1931,39 @@ fn resolve_naming(style: &str) -> anyhow::Result<VersionNaming> {
 /// decidirle al proyecto su modelo, y la convención la declara quien la
 /// publica.
 fn lockstep_rejection(error: &VersionLockstepError, naming: &VersionNaming) -> anyhow::Error {
-    anyhow::anyhow!(
-        "{error}\ndeclared naming: {} — change it with `--naming <{}>`",
-        naming.style(),
-        VersionNaming::NAMED.join("|")
-    )
+    naming_rejection(&error.to_string(), naming)
+}
+
+/// El mismo rechazo, desde cualquiera de las dos preguntas que lo producen.
+///
+/// ## Por qué una función y no dos
+///
+/// El motor (puerta de lockstep) y `binds` (sobre) responden a **la misma
+/// pregunta** por dos caminos distintos: uno llega por el error tipado de
+/// `ensure_version_lockstep`, el otro por el `BindOutcome`. El sufijo —la
+/// convención aplicada y cómo cambiarla— es un hecho, y un hecho escrito en dos
+/// sitios es un hecho que se desactualiza en uno de ellos sin que nada avise.
+fn naming_rejection(message: &str, naming: &VersionNaming) -> anyhow::Error {
+    // El consejo tiene que ser un consejo que se pueda seguir. MEDIDO: con una
+    // convención de candidato, el texto proponía `--naming <v_prefixed|exact>`,
+    // y ninguna de las dos es applicable —`PrefixedCandidate` no se selecciona
+    // por `--naming`, se construye con sus tres partes—. Un rechazo que sugiere
+    // una salida imposible es peor que un rechazo sin consejo, porque gasta la
+    // confianza del lector en un camino que no lleva a ninguna parte.
+    let hint = if naming.style() == VersionNaming::NEEDS_PARAMETERS {
+        format!(
+            "declared naming: {} — it comes from `--sequence`; change it with \
+             `--candidate-prefix`/`--candidate-separator`/`--candidate-marker`",
+            naming.style()
+        )
+    } else {
+        format!(
+            "declared naming: {} — change it with `--naming <{}>`",
+            naming.style(),
+            VersionNaming::NAMED.join("|")
+        )
+    };
+    anyhow::anyhow!("{message}\n{hint}")
 }
 
 /// Los providers que el release usa para preguntar.
