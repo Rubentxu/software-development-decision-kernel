@@ -1,12 +1,34 @@
-//! Falsador de la resolución de versión (INC-DEBT-078, y la migración de VA3).
+//! Falsador de la resolución de versión.
 //!
-//! Corre contra el camino REAL de producción —
+//! # Una nota sobre una cita que se quitó
+//!
+//! Este fichero citaba `INC-DEBT-078` en su primera versión. No existe tal
+//! fichero, y no existe porque **no hay esa deuda**: el defecto que ese
+//! conjunto de casos mide —que un candidato presente sin declarar detenga la
+//! resolución y se pierda lo que otro ya había declarado— se corrigió en el
+//! mismo bloque que escribió este fichero, y por eso lo que toca es un
+//! falsador, no un pendiente.
+//!
+//! Una cita a una deuda que no existe es una autoridad fantasma: un agente
+//! que la encuentre irá a buscarla, no la encontrará, y tendrá que decidir por
+//! su cuenta si existe. El coste de quitar la frase es cero y el de dejarla no.
+//!
+//! # QUÉ PREGUNTA, y por qué son seis casos y no uno
+//!
+//! # Corre contra el camino REAL de producción
+//!
 //! `default_version_registry()` reducido por el kernel y pasado por
 //! `ensure_version_lockstep_detailed`, que es lo que llama `release plan`— y
 //! no contra una copia ni contra un doble. Un falsador que ejercita otra cosa
 //! que la que se publica mide la otra cosa.
 //!
 //! # Por qué vive aquí y no en el motor
+//!
+//! Este fichero mutaba el módulo que decidía. Ese módulo ya no existe: el
+//! registro de nombres de fichero se fue al adapter y la decisión, al modelo
+//! puro. Un falsador que se queda en el sitio viejo mientras el sujeto se
+//! mudaría sería un fichero que sigue verde sin mirar nada, que es la forma
+//! más común de que un control se convierta en decorado.
 //!
 //! Este fichero mutaba `sddk_engine::version_source`, el módulo que decidía. Ese
 //! módulo ya no existe: el registro de nombres de fichero se fue al adapter y
