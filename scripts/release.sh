@@ -310,6 +310,18 @@ fi
 # shellcheck disable=SC1091
 . "$ROOT/scripts/lib/release_admission.sh"
 
+# The final-state figures (INC-DEBT-072) and the lint gate (INC-DEBT-073)
+# live in libraries for the same reason the admission invariant above does:
+# the guard has to CALL the code it watches. A copy pasted into a test does
+# not watch the code — INC-DEBT-074 is that defect, paid for in this repo
+# one release before these two, and it is not paid twice.
+# shellcheck source=lib/final_state.sh
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/final_state.sh"
+# shellcheck source=lib/lint_gate.sh
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/lint_gate.sh"
+
 LAST_SUBJECT="$(git log -1 --format=%s)"
 ADMISSION="$(release_admission_check_v2 HEAD)" \
     || die "release admission refused: $ADMISSION — release requires a real, monotonic [workspace.package] version bump above the last published release"
@@ -345,7 +357,12 @@ if [ "$SKIP_TESTS" = "0" ]; then
         # their own dynamic tests, not by shellcheck).
         shellcheck --severity=warning scripts/release-receipt.sh \
             scripts/lib/release_admission.sh \
+            scripts/lib/final_state.sh \
+            scripts/lib/lint_gate.sh \
             githooks/pre-push \
+            tests/test_release_final_state_figures.sh \
+            tests/test_release_final_state_figures_mutation.sh \
+            tests/test_lint_gate_scope_severity_mutation.sh \
             tests/test_release_admission.sh \
             tests/test_push_prevention_hook.sh \
             tests/test_release_receipt_authority.sh \
@@ -2170,19 +2187,24 @@ ok "distrib round-trip OK (binary + bundle coherent after prune)"
 
 step "15/15 — final state"
 echo
-BIN_VER="$("$SDDK_PREFIX/sddk" --version 2>&1 | head -1)"
-BUNDLE_VER="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format json 2>/dev/null \
-    | python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-# binary.bundle_coherence lives under checks[]; the bundle version itself
-# comes from the receipt (sddk-install.json).
-print(json.loads(open("'"$SDDK_PREFIX"'/sddk-install.json").read()).get("bundle_version", "?"))
-' 2>/dev/null || echo "?")"
-CURRENT_VER="$(basename "$(readlink "$SDDK_FRAMEWORK_DIR/current" 2>/dev/null || echo "?")")"
-echo "  binary:        $BIN_VER"
-echo "  bundle:        $BUNDLE_VER"
-echo "  current:       $CURRENT_VER"
+# Las tres cifras salen de scripts/lib/final_state.sh, y no de un python
+# pegado aqui. MEDIDO en la release 2.11.0, que reimprimio el defecto en
+# vivo: este bloque leia la clave `bundle_version` del recibo con un
+# `dict.get(clave, "?")` como respaldo, y en layout `flat` la clave EXISTE
+# con valor null — un `default` solo dispara cuando la clave falta, luego no
+# disparaba nunca y salia `None` impreso con formato de dato, en una release
+# que acababa de pasar los quince gates. El guard esta en
+# tests/test_release_final_state_figures.sh y llama a la libreria.
+#
+# El patron viejo NO se reproduce aqui literalmente, y es a proposito: C10c
+# de ese guard lo busca en release.sh, asi que citarlo en un comentario lo
+# haria fallar a si mismo. La misma clase que un SC1073 — un comentario que
+# el linter o un grep leen como codigo. Y el mismo error se cometio TRES
+# veces en este cambio, cada vez en un fichero distinto: en lint_gate.sh
+# (`# shellcheck $SH`), aqui, y en el comentario de C10c. Una clase que se
+# repite tres veces no es un descuido: es una regla, y la regla es que un
+# comentario no puede empezar por el nombre de una herramienta.
+final_state_figures "$SDDK_PREFIX" "$SDDK_FRAMEWORK_DIR"
 echo "  framework/:"
 find "$SDDK_FRAMEWORK_DIR" -mindepth 1 -maxdepth 1 -printf '    %f\n' | sort
 echo

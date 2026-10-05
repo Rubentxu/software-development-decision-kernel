@@ -18,6 +18,13 @@ PASS=0
 FAIL=0
 NOT_MEASURED=0
 
+# El gate de lint vive en una libreria y se LLAMA, no se copia. Es la misma
+# regla que aplico INC-DEBT-074 al merge del changelog, y la reason por la
+# que un guard pegado aqui daria verde contra el codigo viejo.
+# shellcheck source=../scripts/lib/lint_gate.sh
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/lint_gate.sh"
+
 TMP="$(mktemp -d)"
 dispose() {
     if command -v mavis-trash >/dev/null 2>&1; then
@@ -144,22 +151,34 @@ else
 fi
 
 echo
-echo "== shellcheck en el shell tocado =="
-SH="$(git diff --name-only "$BASE"..HEAD | grep -E '\.sh$' | tr '\n' ' ')"
-if [ -n "$SH" ]; then
-    # shellcheck disable=SC2086
-    if shellcheck $SH >/dev/null 2>&1; then
-        echo "  [ok]   shellcheck sin avisos"
-        PASS=$((PASS + 1))
-    else
-        echo "  [FAIL] shellcheck reporta avisos:"
-        # shellcheck disable=SC2086
-        shellcheck $SH 2>&1 | grep -E '^In |SC[0-9]' | head -5
-        FAIL=$((FAIL + 1))
-    fi
+echo "== shellcheck: el arbol entero, a la severidad declarada =="
+# INC-DEBT-073, cerrado aqui. MEDIDO ANTES de tocar nada, sobre este repo:
+#
+#   - El alcance era el RANGO, y `BASE` vale dc69e6f2 por defecto — un commit
+#     historico, no "el cambio". Con ese base el gate vigilaba 51 de los 100
+#     .sh, y los 49 restantes NO LOS VE NUNCA. El unico aviso de warning del
+#     repo (SC2034 en tests/lib_public_release_gate.sh) estaba en uno de
+#     esos 49: el gate estaba VERDE con deuda real dentro, y no por un
+#     descuido, por su alcance.
+#   - No habia filtro de severidad, luego un `info` contaba igual que un
+#     `error`: 12 findings de info cobrados como fallo de release.
+#
+# LAS DOS COSAS SE ARREGLAN DECLARANDOLAS, no derivandolas. La severidad y
+# el alcance viven en scripts/lib/lint_gate.sh y se leen de ahi. Los doce
+# findings de info NO se arreglan aqui: bajarlos de severidad es una
+# DECISION que se escribe, no un efecto colateral de este cambio.
+LINT_FINDINGS="$(lint_gate_findings)"
+LINT_N=0
+if [ -n "$LINT_FINDINGS" ]; then
+    LINT_N="$(printf '%s\n' "$LINT_FINDINGS" | grep -cE '^In .* line [0-9]+')"
+fi
+if [ "$LINT_N" -eq 0 ]; then
+    echo "  [ok]   shellcheck --severity=$LINT_GATE_SEVERITY sin avisos en $(lint_gate_files | wc -l) .sh (alcance: $LINT_GATE_SCOPE)"
+    PASS=$((PASS + 1))
 else
-    echo "  [no medido] el rango no toca shell"
-    NOT_MEASURED=$((NOT_MEASURED + 1))
+    echo "  [FAIL] shellcheck --severity=$LINT_GATE_SEVERITY reporta $LINT_N aviso(s) en el arbol entero:"
+    printf '%s\n' "$LINT_FINDINGS" | grep -E '^In |SC[0-9]' | head -5
+    FAIL=$((FAIL + 1))
 fi
 
 echo

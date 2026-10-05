@@ -81,7 +81,12 @@ run_public_release_gate() {
         local URL="https://github.com/$REPO/releases/download/$TAG/$asset"
         local ok_remote=0
         local last_rc="000"
-        for i in $(seq 1 "$CURL_MAX_ATTEMPTS"); do
+        # `_` y no `i`: el contador no se lee en el cuerpo, solo se cuenta
+        # el numero de intentos. MEDIDO: esta linea era el UNICO aviso de
+        # severidad warning de los 100 .sh del repo, y estaba en un fichero
+        # que el gate de lint no vigilaba (INC-DEBT-073) — o sea que el gate
+        # estaba verde con esta deuda dentro.
+        for _ in $(seq 1 "$CURL_MAX_ATTEMPTS"); do
             last_rc="$(curl -fsSL -o /dev/null -w '%{http_code}' "$URL" 2>/dev/null || echo "000")"
             if [ "$last_rc" = "200" ]; then
                 ok_remote=1

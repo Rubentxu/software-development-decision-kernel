@@ -14817,3 +14817,174 @@ constar. Y por que no se toca: la regla de este bloque es que un test que
 cae en la condicion completa y no se reproduce **no esta arreglado, esta
 medido una vez**, y la tentacion de tocarlo es exactamente la que produce
 un test que ya no mide lo que decia.
+
+## session-83 — 2026-10-05T10:20Z — REL-2.11.0 PUBLICADA E INSTALADA, e INC-DEBT-072 y -073 resueltas
+
+Actor: miniMax Code (mvs_209ab67f202a4a7aa8101165329eed99)
+Rango: `a0a59dd2..61a182f4` (puntero reconciliado) + el trabajo de este bloque
+Base: `cfcbac61` al empezar, sobre el cierre de session-82
+
+### La 2.11.0 salio. Los quince pasos, completos.
+
+`v2.11.0` publicada `2026-10-05T08:01:33Z`, `draft=false`,
+`prerelease=false`, 9 assets, verificada contra la API y el CDN. Local:
+`sddk 2.11.0`, `framework/current -> 2.11.0` tras el prune, `dev doctor`
+`all_present: true`.
+
+**Y el binario instalado da `matches` contra este HEAD.** Es la primera vez
+que el residuo de INC-DEBT-064 queda cerrado en la practica: la deuda estaba
+resuelta desde session-81b, pero el binario del PATH seguia atrasado. Ahora
+`check_binary_freshness.sh` dice que el binario ES el checkout.
+
+### LO QUE session-82 registro como "fallo no reproducido" NO era eso
+
+Session-82 cerro con un test que fallaba **1 de 7** veces, sin causa
+establecida, y lo dejo escrito como fallback no reproducible. **La causa si se
+podia establecer, y no era el test.**
+
+**Habia un `release.sh` de session-82 corriendo todavia.** Log
+`/var/home/rubentxu/cargo-targets/release-2110-try4.log`, lanzado ~09:12 y
+**vivo a las 09:28**, cuando esta sesion lanzo la suya. Los dos releases
+compartian `CARGO_TARGET_DIR`, y el caso C9 de
+`tests/test_release_diagnostics.sh` — que detecta "el target dir compartido
+esta retenido" — encontro un `cargo test --workspace --offline` **real**
+esperando el lock durante 101 s. Su aserto, "un proceso que NO se llama cargo
+no es retencion", cayo porque lo que habia era justo un cargo.
+
+MEDIDO, no supuesto: **en la 2.11.0 ese mismo test PASA.** Con lo que la
+alternativa "el guard esta roto" queda falsada, y la contencion entre dos
+procesos queda como la causa.
+
+**La regla, que es generalizable y no es sobre tests**: *un proceso en
+background de una sesion anterior sigue siendo un proceso que compite por el
+lock.* Una sesion que lanza un pipeline y se cierra sin esperarlo deja un
+proceso vivo, y ese proceso no sabe que la sesion se termino. El sintoma
+aparece en la sesion SIGUIENTE, en un fichero que nadie toco, y no se parece
+a lo que es.
+
+### INC-DEBT-072: `None` con formato de dato, REPRODUCIDO en la 2.11.0
+
+El paso 15 de la release que acababa de salir imprimio:
+
+```
+  binary:        sddk 2.11.0
+  bundle:        None
+  current:       2.11.0
+```
+
+Con los quince gates en verde. Eso convierte una observacion de pantalla en
+un hecho de release, y ancla la evidencia a un tag.
+
+El recibo real lo confirma y **no cambia el diagnostico**:
+`layout='flat'`, `bundle=True`, `bundle_version=None`, `version='2.11.0'`. El
+`null` es la declaracion correcta —en flat no hay bundle con version propia—
+y lo que estaba mal seguia siendo el **fallback**: `dict.get(clave, "?")` solo
+dispara cuando la clave FALTA, y `null` existe como clave.
+
+Arreglo en `scripts/lib/final_state.sh`, y **MEDIDO sobre el mismo recibo**:
+`None` -> `2.11.0`. En flat la version del bundle *es* la del binario.
+
+Guard `test_release_final_state_figures.sh` `PASS=12 FAIL=0` (siete formas de
+recibo, un invariante, un control que exige ACCEPTAR el caso bueno, y tres
+aserciones de cableado). Autofalsador `PASS=11 FAIL=0 SKIP=0`.
+
+### INC-DEBT-073: el gate estaba VERDE con deuda real DENTRO
+
+**El censo que la deuda pedia como exit 2, corrido una vez sobre los 100
+`.sh`:** 0 errores, 1 warning, 12 info, 0 style-only. El unico warning era
+SC2034 en `tests/lib_public_release_gate.sh:84` — un `for i` cuyo contador no
+se leia.
+
+**Y la segunda mitad del defecto era PEOR de lo que la deuda suponia.** Con
+el `BASE` que el gate usaba (`dc69e6f2` — un commit historico, no "el
+cambio"):
+
+```
+.sh vigilados        :  51 de 100
+.sh NO vigilados     :  49  (nunca, por construccion)
+warning en los 49   :   1  <- el unico del repo
+warning en los 51   :   0
+```
+
+O sea que **el gate llevaba tiempo verde con la unica deuda de warning del
+repositorio dentro**, en uno de los 49 ficheros que su alcance no puede ver.
+La frase de la deuda —"el conjunto que vigila depende de que trabajo haya
+hecho la gente"— era correcta y todavia Conservative.
+
+Ademas los **dos gates del pipeline no coincidían**: el 1b de `release.sh`
+cobraba `--severity=warning` y este cobraba tambien `info` y `style`. Dos
+respuestas distintas a la misma pregunta sobre los mismos ficheros.
+
+Arreglo: severidad y alcance **se declaran** en `scripts/lib/lint_gate.sh`
+(`warning`, `whole-tree` con `git ls-files`), la lista pasa como array, y sin
+ficheros no se invoca el linter (sin argumentos lee stdin y se cuelga).
+Coste del bucle O(repo) **medido**: 16–22 s para 100 ficheros contra 0,08 s de
+uno solo, asumible en un 1b que ya corre ~100 tests. Con el SC2034 corregido,
+**el arbol entero da 0 avisos** a la severidad declarada: la precondicion que
+hacia posible ensanchar el alcance sin que el gatefallenase de inmediato.
+
+Autofalsador `test_lint_gate_scope_severity_mutation.sh` `PASS=7 FAIL=0`, con
+tres controles que no son decorativos: **M3** anti-falso-verde (M2 prueba que
+un `info` no se cobra; sin M3, un linter inerte pasaria M2 igual), **M4** de
+cuelgue, y **M5** que falsifica la DEUDA y no el guard.
+
+### UNA CLASE, CUATRO VECES, y tres de ellas en el trabajo de este bloque
+
+**Un comentario que empieza por el nombre de una herramienta lo lee la
+herramienta como codigo.** Tres en este cambio, cada una en un fichero
+distinto:
+
+1. `# shellcheck $SH` citado dentro de `lint_gate.sh` — el fichero que
+   arregla el gate de lint **no pasaba el gate** (SC1073/SC1072).
+2. `# shellcheck o un grep leen como codigo` en `release.sh`.
+3. El patron viejo citado literalmente en el comentario de C10c — que hacia
+   fallar el propio guard que lo documentaba.
+
+Y la cuarta, de otra forma: **M7 y M9 del autofalsador usaban
+`replace(<token>, ..., 1)`**, y en el `release.sh` real el token aparece
+PRIMERO dentro de un comentario y dentro del nombre de un test. Las dos
+mutaciones deformaban PROSA, dejaban el codigo intacto, y el guard daba
+verde: el falsador declaraba haber corrompido algo que no habia corrompido.
+Anclajes de mutacion = **la linea de codigo exacta**.
+
+Ademas, M8 era una **mutacion compuesta** — quitaba la llamada Y devovia el
+fallback — y caia `[C10b C10c]` sin poder atribuir la caida. Es la misma
+leccion que session-82 se aplico a si mismo: una mutacion compuesta no puede
+decir cual de las dos cascada. Hecha pura, cae `[C10c]`.
+
+### Un defecto del FALSADOR, y uno del FIXTURE
+
+El falsador de 073 rechazo una afirmacion mia: su fixture de `info` traia
+`name=world` sin usar, que genera SC2034 de severidad **warning**, no el
+SC2016 de **info** que el caso queria aislar. El caso no aislaba la variable
+que decia aislar — que es exactamente la forma de la que un falsador existe.
+Corregido y medido: el fixture correcto da 0 a `warning` y 1 a `info`.
+
+Y el guard de 072 se rompio contra mi propio comentario (punto 3 de arriba), lo
+que obligo a endurecer C10b y C10c: ambos buscaban su token en **todo** el
+fichero, y un check de cableado que probo la PROSA no prueba el cableado.
+
+### UN COMMIT, Y POR QUE NO SON DOS
+
+Las dos deudas son dos concernencias, y el primer impulso eran dos commits.
+**No son separables sin dejar un estado roto en medio**: el bloque de `source`
+de `release.sh` y las entradas de su lista del 1b incluyen los ficheros de las
+DOS librerias, luego un commit con 072 y sin 073 haria que el 1b pidiera a
+`shellcheck` un `scripts/lib/lint_gate.sh` que todavia no existe. Un commit
+que no compila no es un commit, es la mitad de uno.
+
+### Lo que este bloque NO cierra
+
+- **INC-DEBT-050 y INC-DEBT-061**: decision del operador. No se tocan.
+- **Los 12 avisos de `info`**: quedan como censo medido, no se corrigen.
+  Bajarlos de severidad es una decision que se escribe.
+- **El vault sigue con 189 errores** de `validate` (104 `VAULT002`, 91
+  `VAULT003`). No es codigo: es contenido de
+  `~/.sddk-knowledge/sddk-framework`, y no hay subcomando que lo repare.
+  Bloquea el `sddk-cycle-resume` al inicio de cada sesion.
+- **El `project_id` partido**: `knowledge status` y `adopt status` devuelven
+  dos distintos para el mismo root. MEDIDO y FALSADO (cambiar `--remote`
+  cambia el id, luego se deriva del remote; y `p-995939af668a53d8` no tiene
+  ninguna referencia en el vault). **NO se establecio si algo ACTUA sobre ese
+  id**, que es lo que lo haria defecto. Sin esa medicion no es deuda: es una
+  pregunta, y se queda escrita como pregunta.

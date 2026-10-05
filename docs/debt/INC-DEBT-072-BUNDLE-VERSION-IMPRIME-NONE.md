@@ -1,11 +1,14 @@
 ---
 id: INC-DEBT-072-BUNDLE-VERSION-IMPRIME-NONE
-status: open
+status: resolved
 severity: low
 priority: P3
 cluster_id: CL-VERIFY
 detected_at: 2026-10-04
 detected_by: release 2.9.0, al imprimir el estado final del paso 15
+resolved_at: 2026-10-05
+resolved_in_session: session-83
+resolved_by: miniMax Code (mvs_209ab67f202a4a7aa8101165329eed99)
 ---
 
 # INC-DEBT-072: el estado final del release imprime `bundle: None` en una release correcta
@@ -106,3 +109,108 @@ esa medicion manda. No se afirma que el gate 11 tenga un hueco: cubre lo
 que tiene que cubrir, y de hecho es el que evita que este `None` sea un
 problema real en vez de una linea mal escrita. No se reescribe una release
 publicada para arreglar la salida por pantalla de esa release.
+
+---
+
+## CIERRE — session-83, 2026-10-05
+
+### El defecto se reprodujo en vivo, en una release correcta
+
+La **release 2.11.0** reimprimio el fallo en su paso 15, con sus quince
+gates en verde:
+
+```
+  binary:        sddk 2.11.0
+  bundle:        None
+  current:       2.11.0
+```
+
+Eso convierte una observacion de pantalla en un hecho de release, y fija la
+evidencia en un tag concreto en vez de en una sesion.
+
+### MEDIDO sobre el recibo real, otra vez
+
+```
+layout          = 'flat'
+bundle          = True
+bundle_version  = None      <- la CLAVE existe
+version         = '2.11.0'
+```
+
+`null` sigue siendo la declaracion correcta: en layout flat no hay bundle con
+version propia. Lo que estaba mal seguia siendo **el fallback**.
+
+### Lo que se cambio
+
+La logica vive ahora en `scripts/lib/final_state.sh` y **la ejecuta el
+guard**, que es la regla que INC-DEBT-074 acababa de pagar en el merge del
+changelog: un guard pegado no vigila el codigo, una llamada si.
+
+- **AUSENTE y NULL** se tratan igual a proposito: los dos son "el recibo no
+  lo dice". El default del autor existia para el caso "no lo se" y no podia
+  dispararse, porque `null` existe como clave.
+- **En layout `flat` la version del bundle ES la del binario**, porque no hay
+  bundle separado que la tenga. Esa es la verdad que faltaba, y es la que el
+  operador necesita.
+- Cuando de verdad no se sabe, el texto es `no-declarado-en-el-recibo` — lo
+  que el autor quiso escribir con `"?"`.
+
+### MEDIDO, antes y despues, sobre el MISMO recibo
+
+| | `bundle:` |
+|---|---|
+| release 2.11.0 (literal) | `None` |
+| `final_state_figures` sobre ese mismo recibo | `2.11.0` |
+
+### Guard y autofalsacion
+
+- `tests/test_release_final_state_figures.sh` — `PASS=12 FAIL=0`. Siete
+  formas de recibo, un invariante sobre la serie entera, un **control** que
+  exige que el caso bueno se ACEPTE (un guard que rechazase todo pasaria su
+  propia falsacion sin vigilar nada) y tres aserciones de **cableado**.
+- `tests/test_release_final_state_figures_mutation.sh` — `PASS=11 FAIL=0
+  SKIP=0`, nueve corrupciones, cada una cayendo por su propia razon, mas un
+  caso que exige que una mutacion que NO muta se reporte `SKIP` y nunca
+  `PASS`.
+
+### Las tres aserciones de cableado, y por que son el guard de verdad
+
+Un guard que mide algo que ningun gate consulta no vigila: informa. C10a,
+C10b y C10c existen para que lo que este fichero mide sea literalmente lo que
+el operador ve, y las tres se endurecieron **MEDIANTE su propio falsador**:
+
+- C10a buscaba `lib/final_state.sh` a secas, y daba verde con una linea que
+  sourcea `lib/final_state.sh.disabled` — es decir, verde con la libreria
+  apagada. Ahora exige que la linea **termine** en el `.sh`.
+- C10b buscaba el token `final_state_figures` en cualquier parte del
+  fichero, y daba verde aunque la llamada no existiera, porque el nombre
+  aparece en un comentario y en el nombre de un test. Ahora exige una linea
+  de **codigo** que llame a la funcion.
+- C10c buscaba el fallback viejo en todo el fichero, y un comentario que lo
+  describiera lo hacia fallar a si mismo. Ahora exige que este en codigo.
+
+Las tres correcciones estan en el commit y en el falsador, que es donde se
+midieron.
+
+### Una clase que se repitio TRES veces
+
+Un comentario que empieza por el nombre de una herramienta lo lee la
+herramienta como codigo:
+
+1. `# shellcheck $SH` citado dentro de `lint_gate.sh` — el fichero que
+   arregla el gate de lint no pasaba el gate (SC1073/SC1072).
+2. `# shellcheck o un grep leen como codigo` en `release.sh` — el mismo
+   error, otra vez.
+3. el patron viejo citado literalmente en el comentario de C10c.
+
+Tres veces no es un descuido, es una regla: **un comentario no puede empezar
+por el nombre de una herramienta.** Queda escrita en los tres sitios donde
+se cumplio.
+
+### Lo que este cierre NO afirma
+
+No se reescribe la salida por pantalla de la 2.11.0, que ya esta publicada.
+No se afirma que el bundle de la 2.11.0 estuviera mal: el gate 11 lo
+contradice y esa medicion manda. No se toca la escritura del recibo —que
+sigue declarando `bundle_version: null` en layout flat, y es lo correcto—:
+lo que se arregla es la LINA QUE RESUME, que es lo que la deuda declaraba.

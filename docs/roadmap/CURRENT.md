@@ -9,75 +9,95 @@
 autoridad del estado operativo es SDDK (`sddk cycle`, ledger) mas el
 proceso; estos ficheros son el rastro, no la fuente.
 
-## Estado a 2026-10-05 (session-81b cerrada)
+## Estado a 2026-10-05 (session-83, tras publicar v2.11.0)
 
-- **Release vigente: `v2.10.0`**, publicada `2026-10-05T05:25:51Z`,
-  `draft=false`, `prerelease=false`, **9 assets**, verificada contra la
-  API y el CDN. Tag `v2.10.0` -> `4b9e191f` (= HEAD al publicar).
-- **Instalado en local**: `sddk 2.10.0`,
-  `~/.local/share/sddk/framework/current -> 2.10.0`, bundle en layout raiz
-  con `MANIFEST.sha256` a un nivel. `sddk dev doctor` da
-  `all_present: true`.
-- **Workspace `Cargo.toml` = 2.10.0**, alineado con el tag publicado.
+- **Release vigente: `v2.11.0`**, publicada `2026-10-05T08:01:33Z`,
+  `draft=false`, `prerelease=false`, **9 assets**, verificada contra la API
+  y el CDN. Los **15 pasos** del pipeline corrieron completos.
+- **Instalado en local**: `sddk 2.11.0`,
+  `~/.local/share/sddk/framework/current -> 2.11.0` (unica version tras el
+  prune). `sddk dev doctor` da `all_present: true`.
+- **Frescura del binario: `matches`.** `scripts/check_binary_freshness.sh`
+  dice que el binario es exactamente este HEAD. **Es la primera vez que el
+  residuo de INC-DEBT-064 queda cerrado en la practica**: no solo esta
+  resuelta la deuda, el binario instalado ES el checkout.
+- **Workspace `Cargo.toml` = 2.11.0**, alineado con el tag publicado.
 - **Firma: `UNSIGNED` declarado** (`SDDK_SKIP_SIGNING=1`). El ancla y
   `SDDK_RELEASE_VERIFY_KEY_BODY` en `scripts/install.sh:235` son
   placeholder. No fabricar clave ni ancla.
 - **Proyecto SDDK**: `p-63676b11dc0ef88f`, ledger real en
   `~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite`.
 
-## Que quedo cerrado en session-81b
+## Lo que CERRO session-83
 
-- **INC-DEBT-064** -> `resolved`. El juez de frescura del binario vive
-  en el checkout (`scripts/check_binary_freshness.sh`), no en el
-  artefacto: el binario aporta el HECHO de si mismo y el checkout calcula
-  el JUICIO, porque sin punto de referencia no hay juicio. Guard
-  hermetico con autofalsacion, cableado en el 1b, y la regla en AGENTS.md
-  2.3.1. La condicion de fondo («el binario del PATH va atrasado») NO se
-  elimina; se cierra el dano de medir sin saberlo.
-- **INC-DEBT-071** -> `resolved` en session-81a. 21 sitios de
-  `grep -q` con pipefail convertidos a `grep -c`, con guard y falsador.
-- **INC-DEBT-074** -> `resolved` en session-82. El merge del changelog
-  deduplica por huella `type(scope)` + 4 primeras palabras, las entradas
-  nuevas entran en el grupo que ya existe, y lo no clasificable se
-  conserva y se declara. El bloque vive en
-  `scripts/lib/changelog_merge.sh`, que **ejecutan** tanto
-  `release-bump.sh` como su test: el guard ya no copia el codigo que
-  vigila, lo llama. Guard `PASS=34 FAIL=0`, autofalsador
-  `PASS=9 FAIL=0 SKIP=0` con siete mutaciones.
+- **INC-DEBT-072** -> `resolved`. El paso 15 imprimia `bundle: None` porque
+  `dict.get("bundle_version", "?")` no puede dispararse: en layout `flat` la
+  clave **existe** con valor `null`. **Reproducido en vivo en la 2.11.0**,
+  que reimprimio el fallo con los quince gates en verde. La logica vive en
+  `scripts/lib/final_state.sh` y la **ejecuta** el guard
+  (`PASS=12 FAIL=0`; autofalsador `PASS=11 FAIL=0 SKIP=0`). En flat la
+  version del bundle **es** la del binario: medido `None` -> `2.11.0` sobre
+  el mismo recibo.
+- **INC-DEBT-073** -> `resolved`. El censo pedido salio **0 errores, 1
+  warning, 12 info, 0 style-only** sobre 100 `.sh`. Y la segunda mitad del
+  defecto era peor de lo que la deuda suponia: con `BASE=dc69e6f2` el gate
+  vigilaba **51 de 100** ficheros y los 49 restantes **no los ve nunca** —
+  y el unico warning del repo estaba en uno de esos 49, o sea que **el gate
+  estaba verde con deuda real dentro**. Ahora la severidad (`warning`) y el
+  alcance (`whole-tree`) se **declaran** en `scripts/lib/lint_gate.sh`; el
+  arbol entero da **0 avisos** a esa severidad. Autofalsador `PASS=7 FAIL=0`.
 
-## Que sigue abierto, y por whom
+## Hallazgo de session-83 que no es una deuda
+
+Session-82 dejo un `release.sh` **corriendo en background** (log
+`release-2110-try4.log`), que sobrevivio al cierre y seguia vivo 16 minutos
+despues. Dos releases concurrentes compartiendo `CARGO_TARGET_DIR` hicieron
+que su caso C9 de `test_release_diagnostics.sh` encontrara un `cargo test
+--workspace --offline` real reteniendo el lock 101 s. **En la 2.11.0 ese
+mismo test pasa**, luego el "fallo no reproducido" que session-82 registro
+como fallback no reproducible era contencion entre dos procesos, no un
+defecto del guard. *Un proceso en background de una sesion anterior es un
+proceso que compite por el mismo lock.*
+
+## Que sigue abierto
 
 | Deuda | Sev | Owner | Que falta |
 |---|---|---|---|
 | INC-DEBT-050 | critical/P1 | **operador** | alias que aparta 12 ciclos con historia partida |
 | INC-DEBT-061 | high/P1 | **operador** | 6/15 alias con historia partida; 53 ciclos apartados |
-| INC-DEBT-073 | medium/P2 | codigo | el gate de shellcheck sin filtro de severidad y que solo mira el rango |
-| INC-DEBT-072 | low/P3 | codigo | el paso 15 imprime `bundle: None` con el bundle instalado (confirmado en 2.10.0) |
 
 **No tocar 050 ni 061**: son decision del operador/producto.
 
 ## Siguiente bloque, por valor medido
 
-1. **INC-DEBT-073** — la unica deuda de codigo que queda con coste
-   medido en el camino de release. Dos salidas, en este orden: (1)
-   **declarar que severidad minima cobra el gate**, porque hoy un `info`
-   cuenta igual que un `error`; (2) correr **una vez** el censo de deuda
-   de lint del repo, para que "cero avisos" sea alcanzable y no una
-   sorpresa cada vez que alguien toca un fichero. MEDIDO en session-82:
-   el idiom `[ ... ] && ok || bad` en el guard nuevo habria muerto en el
-   1b con ~30 avisos SC2015, y lo que habria que arreglar es el codigo
-   nuevo, no el gate. **Esa es exactamente la clase que la deuda
-   describe**, y sigue sin tocarse el gate.
-2. **INC-DEBT-072** — el paso 15 imprime `bundle: None` con el bundle
-   instalado y verificado a mano. Cosmético, pero es la ultima linea de
-   la salida del release, que es la que se lee cuando algo va mal.
-3. **C5 del roadmap** — conformar el repo al gate de arquitectura
-   (eliminar ARCH003/ARCH008, implementar los 10 evaluadores), segun la
-   nota de C3l.7 en `ROADMAP.md`.
-4. **Residuo declarado de 064** — cablear el juez de frescura en el
-   camino que **certifica** una medicion (verify de ciclo o UAT),
-   **nunca en el 1b**: ahi el binario del PATH es viejo por construccion
-   durante un release y el gate seria rojo siempre sin medir nada.
+1. **C5 del roadmap** — conformar el repo al gate de arquitectura
+   (eliminar ARCH003/ARCH008, implementar los 10 evaluadores), segun la nota
+   de C3l.7 en `ROADMAP.md`. Es lo unico grande que queda.
+2. **Vault: 189 errores de `validate`** (104 `VAULT002` de id de nodo
+   repetido, 91 `VAULT003`). No es codigo: es contenido de
+   `~/.sddk-knowledge/sddk-framework`, y no hay subcomando que lo repare.
+   Bloquea el `sddk-cycle-resume` en cada sesion.
+3. **Residuo declarado de 064** — cablear el juez de frescura en el camino
+   que **certifica** una medicion (verify de ciclo o UAT), **nunca en el
+   1b**: ahi el binario del PATH es viejo por construccion durante un
+   release y el gate seria rojo siempre sin medir nada.
+4. **Hallazgo sin cerrar**: `knowledge status` y `adopt status` devuelven
+   **dos `project_id` distintos** para el mismo root (`p-995939af668a53d8`
+   frente a `p-63676b11dc0ef88f`). MEDIDO y FALSADO: `knowledge status`
+   deriva el id del remote de git (cambiando `--remote` cambia el id) y el
+   `p-995939af668a53d8` no tiene **ninguna** referencia en el vault. **Lo que
+   NO se establecio** es si algo ACTUA sobre ese id, que es lo que lo
+   haria defecto — y sin esa medicion no es deuda, es pregunta.
+
+
+---
+
+## Estado anterior (session-81b) — DEMOTADO, conservado por trazabilidad
+
+> Lo que sigue describia el estado ANTES de la 2.11.0. **No es estado
+> actual**: la seccion de arriba lo sustituye. Se conserva porque las
+> deudas que cierra (064, 071, 074) siguen cerradas y su razon importa.
+
 ## Dos reglas que este bloque cobro por el camino
 
 - **bump primero, puntero despues.** El 1b exige que
