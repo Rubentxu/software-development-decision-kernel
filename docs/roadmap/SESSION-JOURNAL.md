@@ -15890,3 +15890,113 @@ Pendiente, sin tocar: el **paso 3j** que cablearia los siete esta escrito y
 medido, y no se aplica hasta que 002, 003 y 006 dejen de estar en rojo o
 flakey. **Anadir un paso al camino de release porque «deberia funcionar» es la
 misma clase de error que este repo lleva tres commits cerrando.**
+
+---
+
+## session-84 (bis 6) — el orden correcto antes de una release: reconciliar, pushear, verificar
+
+> La 2.11.3 se ha parado **tres veces** hoy, y las tres por el mismo eje: el
+> estado declarado no coincidia con el estado real. Ninguna de las tres era un
+> defecto del release. Dos eran mias.
+
+### Los tres_paradas, en orden
+
+| intento | paso | causa | de quien |
+|---|---|---|---|
+| 1 | 1b | `test_cargo_target_attribution.sh`: E3, escenario no hermetico | **del guard** |
+| 2 | 3 | arbol con cambios sin commitear | **mia** |
+| 3 | 1b | `test_release_state_pointer.sh`: puntero 4 commits atras | **mia** |
+
+### El orden, medido
+
+La cuarta vez se paro todo antes de lanzar y se slew el orden a mano:
+
+```
+commits (fix, changelog, journal)
+  -> reconciliar el puntero          # apunta al ULTIMO commit de contenido
+  -> commitear el puntero            # el propio puntero va detras: tolerancia 3
+  -> PUSHEAR                          # <-- el paso que faltaba
+  -> VERIFICAR con el guard          # <-- el paso que faltaba
+  -> lanzar
+```
+
+**El paso que hacia falta es el push, y no lo deduje: lo dijo el guard.**
+`reconcile_state_pointer.sh --check` decia `PASS` con el puntero a 1 commit y
+tolerancia 3, y a la vez `test_release_state_pointer.sh` deia `FAIL`:
+
+```
+[ok]   el puntero es puntual: 1 commit(s) de retraso sobre main (tolerancia 3)
+[FAIL] current_sha=9b8a979f NO esta en origin/main: el puntero afirma algo
+       publicado que no lo esta
+```
+
+> **Dos instrumentos que miden el mismo objeto y se contradicen.** Uno mide
+> *puntualidad* — cuantas commits lleva de retraso — y el otro mide
+> *publicabilidad* — si lo que afirma esta en el remoto. Los dos verdes son
+> legitimos y juntos son un rojo. La leccion no es «el primero estaba mal»:
+> es que **`--check` no cubre lo que el gate cubre**, y un `--check` que pasa
+> no es un «todo bien».
+
+### La regla, escrita para que no se olvide
+
+**Reconciliar el puntero es lo ULTIMO, y nada se commitea ni se pushea despues
+de verificar.** Tres paradas por el mismo eje en un dia son la medida de que
+la regla estaba en la cabeza y no en el procedimiento.
+
+Lo que si funciono: correr **el guard que habia parado la release** antes de
+relanzar, no el script de reconciliacion. `bash tests/test_release_state_pointer.sh`
+-> `RESULT: PASS` en 9 checks, y ahi si se lanzo.
+
+### Estado
+
+`test_release_state_pointer` PASS (9 checks) · `test_cargo_target_attribution`
+PASS=5/FAIL=0 en las dos condiciones · `test_guard_exit_code_fidelity_mutation`
+PASS=9 · `test_release_state_pointer_mutation` PASS=6 · `test_gate_coverage`
+PASS (92 tests) · `test_gate_coverage_ci_mutation` PASS=33 SKIP=0 ·
+`test_changelog_coverage` PASS=10 · shellcheck rc=0 sin filtro en los nueve
+ficheros tocados · arbol limpio · `HEAD == origin/main == 1fa89696`.
+
+### Un quinto defecto, este en la LIBRERIA y encontrado por el 1b
+
+Con target dir propio (para no competir con el lock que retenia
+`agent-secretless`) el 1b llego mas lejos y paro en
+`test_cargo_target_attribution.sh`:
+
+    [FAIL] E2: un cargo que declara otro target no se reporta -- salida:
+    release_diagnostics.sh: linea 330: /proc/2358886/cmdline: No existe
+
+**El rojo no era el defecto que E2 mide.** Lo que se colaba era el error de
+shell de la propia libreria, por un `cargo` que murio entre que `ps` lo listo
+y que se leyera su `cmdline`.
+
+Y la causa no era la que se leia en el codigo: la linea era
+`tr ' ' ' ' < /proc/$pid/cmdline 2>/dev/null`, y **ese `2>/dev/null` no
+hacia nada**. MEDIDO con las tres formas, porque el patron de bash no es el que
+se supone:
+
+| forma | stderr |
+|---|---|
+| `tr ... < $f 2>/dev/null` | **escapa** |
+| `tr ... 2>/dev/null < $f` | suprimido |
+| `tr ... < $f 2>&1` | **escapa** |
+
+Bash aplica las redirecciones en el orden escrito, luego la de entrada que falla
+emite su error cuando la de error todavia no existe. **Un `2>/dev/null` que no
+suprime nada es peor que no tenerlo**: aparenta que el ruido esta controlado y lo
+deja pasar igual. Commit `7658995c`. Verificado con 12 ejecuciones del guard
+bajo carga y 60 procesos muriendo a la vez: `PASS=5 FAIL=0`.
+
+### Y una decision que no es mia: el target dir
+
+El 4º intento se paso 9 minutos bloqueado esperando el lock que retenia
+`agent-secretless` (4 rustc al 100%, 21 min). El propio preflight lo habia
+dicho y con la frase correcta: **«Se decide antes de empezar, no 12 minutos
+despues»**. Parado el release con SIGTERM (para que su trap limpiara) y
+relanzado con `CARGO_TARGET_DIR` propio: sin retencion, a cambio de recompilar
+el workspace en frio. El preflight del intento siguiente ya no avisa de lock.
+
+MEDIDO de paso: **525 directorios `/tmp/sddk-excl.*` huerfanos, ninguno vivo**
+(`find -mmin -10` = 0). El mecanismo de exclusion mutua quecerro INC-DEBT-075
+deja el candado en disco al salir. No bloquea —la exclusion se toma bien— pero
+es un leak, y 525 directorios en `/tmp` es la clase de cosa que hace que un
+diagnostico de retencion deje de ser legible.
