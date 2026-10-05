@@ -15109,3 +15109,146 @@ a la vez, que es el estado normal de este equipo.
 Lo que si coincide, y conviene no pisar: la conclusion de session-83 de que
 **el guard no mintio** es correcta y esta medida aqui tambien. La
 contencion era real. Lo que no es correcto es de donde venia.
+
+---
+
+## session-83 — INC-DEBT-075 resuelta: dos releases del mismo tag ya no pueden convivir, y el aviso de retencion senalaba el directorio equivocado
+
+Continua de session-82, que abrio INC-DEBT-075 con un encuadre **parcialmente
+falso**. Este bloque lo corrige, y la correccion es lo primero que hay que
+dejar escrito porque lo escrito antes hacia algo que este bloque recibio como
+certain.
+
+### LO QUE LAS DOS SESIONES CONCLUYERON, Y POR QUE NO ALCANZABA
+
+session-82 concluyo: «el diagnostico no mintio, la contencion era real, el
+supuesto del test era el que mentia». session-83 concluyo lo mismo, por su
+cuenta, y lo declaro **hallazgo que no es deuda**.
+
+Las dos.conCLUSIONES SON CORRECTAS. Lo que ninguna de las dos midio es **sobre
+que target** decia la contencion, y ahi estaba el defecto.
+
+### EL DEFECTO REAL, y estaba escrito en prosa
+
+`_cargo_uses_target` tenia tres criterios. El tercero decia, textual:
+
+    El directorio de trabajo del proceso es el repo. El mas aproximado: un
+    cargo lanzado aqui sin declarar target compila donde le digan, QUE SUEDE
+    SER ESTE.
+
+Ese «suele» es una suposicion, y se MIDIO que es falsa:
+
+    ~/.cargo/config.toml -> [build] target-dir = "/var/home/rubentxu/cargo-targets"
+
+**Todo** proyecto Rust del host compila en un unico target compartido. Un
+`cargo` con nuestro mismo cwd y sin `CARGO_TARGET_DIR` puede estar compilando
+AHI, que no es el target que se le preguntaba. Y el aviso decia «el target dir
+compartido esta retenido: pid N» sobre un pid que no esperaba ese target.
+
+Un aviso que senala otro directorio es **peor que no avisar**, porque se lee
+como un dato sobre el release en curso.
+
+### LA DIRECCION, que dos sesiones pusieron al reves
+
+    el C9 que cayo fue el de session-82   (pid 100388: 5 veces en su log, 0 en el otro)
+    el cargo retenedor era de la OTRA     (PPID 100388 = 99022 = su release.sh)
+    mi release NO sobrevivio              (pid 38340 no existe; RELEASE_RC=1 a las 09:31:22)
+    el C9 de la otra sesion PASA          (PASS=20 FAIL=0)
+
+No era un huerfano de una sesion anterior. Eran dos ejecuciones simultaneas e
+independientes del mismo tag, y **nadie lo impidio**.
+
+### LAS TRES SALIDAS
+
+1. El aviso se refiere al target que el cargo **USA**: se le pregunta a
+   `cargo metadata`, no se supone. No se reimplementa la resolucion de cargo
+   porque `build.target-dir` puede cambiar y una copia se quedaria vieja sin
+   que nadie lo note. **La severidad no cambia**: dos proyectos distintos
+   compartiendo target dir es legitimo y se sigue avisando.
+2. **Exclusion mutua** por repo y version. Se separa lo que estaba confuso:
+   dos proyectos distintos AVISAN; dos releases del mismo tag ABORTAN. Sin
+   directorio de candados ABORTA, que es distinto de avisar. El dry-run no
+   toma candado porque no publica.
+3. Candado huerfano se **recupera y se declara**, en vez de bloquear para
+   siempre.
+
+### LO QUE LA MEDICION CAMBIO DEL DISENO, y no fue un detalle
+
+La exclusion se escribio primero con `mkdir` como primitivo atomico y `rm -rf`
+para soltar. **MEDIDO: `rm -rf "$var"` no borra nada en esta maquina** —el
+shim recibe el argumento sin expandir y responde
+`'/var/.../$lockdir': No such file or directory`— y el fallo fue INTERMITENTE en
+las dos direcciones: al no borrar, un candado libre parecia ocupado (falso
+rojo), y al releer un pid que el borrado aun no habia retirado, un candado
+recien soltado parecia tomado (**falso VERDE**, que es peor).
+
+Reintentar no lo arregla: no se puede depender de un primitivo que no borra.
+Se reescribio sobre las tres que MEDIDAMENTE funcionan: `( set -C; printf ... >
+fichero )` para crear en exclusiva, `unlink` para soltar, y sobrescribir para
+recuperar un huerfano — que ya no necesita borrar nada. Resultado: **8 de 8
+corridas estables**, frente a intermitencias con el diseño de directorio.
+
+### TRES INSTRUMENTOS QUE SE ENCONTRARON A SI MISMOS FALLANDO
+
+1. El autofalsador mutaba la libreria **IN PLACE** con un aplicador propio, y
+   en una corrida el guard cayo por todo en vez de por su comprobacion, y el
+   falsador emitio errores de bash mientras corria. Ahora usa un `mutate` que
+   exige que el texto viejo case **exactamente una vez** y que el reemplazo no
+   este vacio.
+2. **El guard de atribucion tenia sus comprobaciones dentro de `( ... )`**, y un
+   subshell pierde los incrementos de contador. MEDIDO: `PASS=1 FAIL=0` con un
+   `[FAIL]` impreso delante — **un guard VERDE con un caso caido**. Es la misma
+   forma del «fallo que revienta la comprobacion» que este bloque lleva tres
+   sesiones persiguiendo, y esta vez dentro del propio instrumento nuevo.
+3. X8 contaba **SUBCADENAS** del nombre de la funcion, que dan 2 tanto si se
+   llama como si solo se define con otro nombre, porque el nombre viejo es
+   subcadena del nuevo. Una mutacion de cableado no lo puede vencer. Ahora
+   compara el nombre **definido** con el **invocado**.
+
+Ademas, M4 estaba escrita al reves: cambiar `!=` por `!=` con otro valor deja
+la condicion siempre verdadera, y el release se negaba a soltar **siempre**. Media
+mutacion, y el guard pasaba por el motivo equivocado.
+
+### GATES
+
+    test_cargo_target_attribution.sh     PASS=5  FAIL=0
+    test_release_exclusion.sh            PASS=17 FAIL=0
+    test_release_exclusion_mutation.sh   PASS=10 FAIL=0 SKIP=0
+    test_release_diagnostics.sh          PASS=43 FAIL=0
+    test_release_diagnostics_mutation.sh PASS=20 FAIL=0 SKIP=0
+    test_changelog_coverage.sh           PASS=9  FAIL=0
+    test_debt_index_coherence.sh         PASS=12 FAIL=0
+    shellcheck SIN filtro, 5 ficheros    0 avisos
+
+Dientes verificados por medicion y no por argumento: contra la rama 3 sin el
+arreglo, el guard de atribucion da `PASS=4 FAIL=1` con su control de deteccion
+real (E3) en verde — o sea cae por SU comprobacion y no porque este roto.
+
+### LO QUE NO SE CIERRA, y se declara
+
+- **No se ha medido que dos releases lleguen ambos al paso 9.** La ventana
+  existia; el incidente no. La 2.11.0 se publico bajo concurrencia y se
+  verifico igual contra API y CDN.
+- **Flake preexistente de C9**: MEDIDO con dos campanas paralelas de 20
+  corridas, con el arreglo **1/20** y con la libreria intacta **2/20**. O sea
+  que es preexistente y el cambio no lo empeora, pero su causa **NO esta
+  establecida**. `obtenido` es una ruta del propio root del test, lo que
+  apunta a una salida que se filtra dentro del `$( )` del caso. No se toca su
+  codigo sin reproducirlo.
+- **La exclusion tiene una ventana declarada**: dos lectores simultaneos de un
+  mismo candado huerfano. Exige que el dueno previo muera en ese instante, y
+  dos releases VIVOS no la comparten.
+
+### LA QUE MAS CUESTA, y es de las tres que ya han pasado
+
+**La exclusion se entrego en un checkout COMPARTIDO con otra sesion, y esa
+sesion revirtio `scripts/lib/release_diagnostics.sh` mientras yo lo escribia.**
+MEDIDO: el arreglo se perdio una vez, el guard de atribucion dio `orden no
+encontrada` para una funcion que yo acababa de anadir, y hubo que reaplicarlo.
+
+Es la **tercera vez** que la misma clase aparece en este bloque —el guard que
+copiaba el codigo, el test que copiaba el script, y ahora el arbol que se
+comparte— y las tres veces la leccion es la misma: **lo que no esta commiteado
+no existe**, ni durante veinte minutos. La respuesta no es «trabajar mas
+rápido»: es commitear cada unidad verificada antes de seguir, y cuando el
+entorno es compartido, antes de que la otra sesion pueda tocar nada.
