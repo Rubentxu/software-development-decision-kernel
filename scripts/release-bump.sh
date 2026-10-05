@@ -354,37 +354,55 @@ trap 'rm -f "$ENTRY_FILE"' EXIT
 # publicarse), y al no comprobar si la seccion existia ya, un re-bump dejaba
 # dos cabeceras `## [2.2.0]` identicas (observado: separadas por 53 lineas).
 # Una cabecera duplicada hace ambiguo cual entrada manda.
-if [ -n "$(grep -nE "^## \[$NEXT\]" CHANGELOG.md 2>/dev/null | head -1)" ]; then
-    # La seccion de $NEXT ya existe: se AÑADEN sus items al final de la
-    # seccion existente, sin crear una segunda cabecera. El bloque va desde su
-    # cabecera hasta justo antes de la siguiente cabecera `## [` (o EOF).
-    EXIST_LINE="$(grep -nE "^## \[$NEXT\]" CHANGELOG.md | head -1 | cut -d: -f1)"
-    AFTER_LINE="$(grep -nE '^## \[' CHANGELOG.md | awk -F: -v s="$EXIST_LINE" '$1 > s {print $1; exit}')"
-    TOTAL="$(wc -l < CHANGELOG.md)"
-    [ -z "$AFTER_LINE" ] && AFTER_LINE="$((TOTAL + 1))"
-    TMP_MERGE="$(mktemp)"
-    {
-        # Todo hasta el final de la seccion existente, con las lineas en blanco
-        # finales recortadas para poder anadir sin acumular huecos.
-        head -n "$((AFTER_LINE - 1))" CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
-        # Los items nuevos, ya tal cual los genera $ENTRY_FILE (con su
-        # indentacion), pero sin repetir la cabecera `## [$NEXT]`.
-        echo
-        tail -n +2 "$ENTRY_FILE"
-        echo
-        [ "$AFTER_LINE" -le "$TOTAL" ] && tail -n "+$AFTER_LINE" CHANGELOG.md
-    } > "$TMP_MERGE" && mv "$TMP_MERGE" CHANGELOG.md
-    echo "  CHANGELOG.md: merged into the existing '## [$NEXT]' section (line $EXIST_LINE)"
-elif grep -qE '^## \[' CHANGELOG.md; then
-    FIRST="$(grep -n -m1 '^## \[' CHANGELOG.md | cut -d: -f1)"
-    {
-        head -n "$((FIRST - 1))" CHANGELOG.md
-        cat "$ENTRY_FILE"
-        tail -n "+$FIRST" CHANGELOG.md
-    } > CHANGELOG.md.new && mv CHANGELOG.md.new CHANGELOG.md
-else
-    cat "$ENTRY_FILE" >> CHANGELOG.md
-fi
+#
+# INC-DEBT-074: el merge vivia aqui dentro y hacia `tail -n +2
+# "$ENTRY_FILE"` sin COMPARAR con lo que la seccion ya declaraba, luego
+# duplicaba cada entrada. MEDIDO en 2.10.0: las 6 entradas de la seccion
+# quedaron escritas dos veces y hubo que recortarlas a mano.
+#
+# Y el test que vigilaba este bloque lo PEGABA literalmente en vez de
+# ejecutarlo, luego un arreglo aqui no lo habria movido. El bloque entero
+# vive ahora en `scripts/lib/changelog_merge.sh`, que ejecutan ESTE script
+# y el test: una sola implementacion, y la regla de "¿es el mismo commit?"
+# es la misma que usa el gate 2b.
+# shellcheck source=lib/changelog_merge.sh
+# SC1091: la ruta del source es una variable ($ROOT) y el analisis estatico
+# no puede seguirla. La existencia del fichero se comprueba en el `case` de
+# abajo: si la libreria no estuviera, el source aborta con set -e.
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/changelog_merge.sh"
+
+CHANGELOG_DISPOSITION="$(changelog_merge CHANGELOG.md "$NEXT" "$ENTRY_FILE")"
+
+# Comparacion EXACTA, deliberadamente sin comodines. La primera version
+# uso `"*disposition: merged"*`, que tambien casa con `merged_nothing`: el
+# linter lo dijo (SC2221) y la rama `merged_nothing` era CODIGO MUERTO — un
+# caso cuyo nombre no distingue lo que su patron alcanza, que es la misma
+# clase que el resto de este arreglo. Y el fallo va en la direccion buena:
+# si algo escribiera en stdout, el case cae en el error en vez de tomar la
+# rama equivocada.
+case "$CHANGELOG_DISPOSITION" in
+    "disposition: merged")
+        echo "  CHANGELOG.md: items nuevos anadidos a la seccion '## [$NEXT]' existente" ;;
+    "disposition: merged_nothing")
+        echo "  CHANGELOG.md: la seccion '## [$NEXT]' ya declaraba TODOS los items;"
+        echo "                no se anade ninguno (sin duplicar lo ya escrito)" ;;
+    "disposition: inserted")
+        echo "  CHANGELOG.md: seccion '## [$NEXT]' creada e insertada" ;;
+    "disposition: appended")
+        echo "  CHANGELOG.md: '## [$NEXT]' anexada (el changelog no tenia secciones)" ;;
+    *)
+        echo "error: el merge del changelog no declaro una disposicion conocida:" >&2
+        echo "       salida recibida: '$CHANGELOG_DISPOSITION'" >&2
+        echo "       Sin disposicion no se sabe si se toco el fichero, y un merge" >&2
+        echo "       que no dice que hizo es un merge del que no se puede" >&2
+        echo "       responder. No se publica nada con el changelog en ese estado." >&2
+        exit 1 ;;
+esac
+
+# El detalle de lo omitido y de lo no clasificable sale por stderr desde la
+# libreria. Se deja pasar tal cual: un descarte silencioso en un artefacto
+# publicado es indistinguible de que no hubiera pasado nada.
 
 echo "applied: $CURRENT -> $NEXT"
 echo "changed files:"
