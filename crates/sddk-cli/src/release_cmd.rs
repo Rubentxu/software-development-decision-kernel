@@ -4,9 +4,10 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
-use sddk_domain::release_ref::VersionNaming;
+use sddk_domain::release_ref::{ReleaseRef, VersionNaming, binds};
 use sddk_domain::release_role::ReleaseRole;
 use sddk_domain::version_authority::{ReleaseTarget, VersionAuthority};
+use sddk_domain::version_inspection::{AssuranceLevel, VersionInspection};
 use sddk_engine::version::{
     VersionLockstepError, ensure_version_lockstep, ensure_version_lockstep_detailed,
 };
@@ -42,10 +43,75 @@ pub(crate) enum ReleaseCommand {
     Verify(DistArgs),
     /// Manage release channels and promotion.
     Channel(ChannelArgs),
+    /// Explain how a target's version was resolved, or why it was not.
+    Version {
+        #[command(subcommand)]
+        action: VersionAction,
+    },
     /// Revalidate release candidate after a correction commit (scoped recovery).
     Revalidate(RevalidateArgs),
     /// Emit vault-receipt.json for a managed-closure cycle (ADR-0075).
     Vault(VaultArgs),
+}
+
+/// Qué se puede preguntar sobre la versión de un target.
+///
+/// Un enum y no una bandera porque **preguntar cómo se resolvió** y **preguntar
+/// si la referencia nombra la versión** son dos preguntas con dos consumidores
+/// distintos: la segunda es la regla del lockstep y tiene su propia puerta, con
+/// su naming declarado y su mensaje de los dos lados.
+#[derive(Debug, Clone, Subcommand)]
+pub(crate) enum VersionAction {
+    /// Why the version resolved, or why it did not — and what was not checked.
+    Inspect(VersionInspectArgs),
+    /// Whether the declared release reference names the product's version.
+    Matches(VersionMatchesArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub(crate) struct VersionMatchesArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// The release reference to check, written exactly as it will be published.
+    #[arg(long)]
+    pub(crate) tag: String,
+    /// Which release target, by its path relative to the repository root.
+    #[arg(long)]
+    pub(crate) target: Option<String>,
+    /// How a release reference names a product version. See `release --naming`.
+    #[arg(long, default_value = "v_prefixed")]
+    pub(crate) naming: String,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
+}
+
+/// El despachador de `release version`.
+fn run_release_version(action: VersionAction) -> CommandOutput {
+    match action {
+        VersionAction::Inspect(args) => run_release_version_inspect(args),
+        VersionAction::Matches(args) => run_release_version_matches(args),
+    }
+}
+
+/// Los argumentos de `release version inspect`.
+///
+/// Un subcomando y no una bandera: la pregunta que responde («por qué se
+/// resolvió esto») no es una variación de `release plan`, es una pregunta
+/// distinta, y por eso tiene su propia forma y su propio código de salida.
+#[derive(Debug, Clone, Args)]
+pub(crate) struct VersionInspectArgs {
+    #[command(flatten)]
+    pub(crate) runtime: RuntimeArgs,
+    /// Which release target, by its path relative to the repository root.
+    ///
+    /// Required as soon as the repository holds more than one, exactly as in
+    /// `release plan`: dos productos y nada que diga cuál es un rechazo.
+    #[arg(long)]
+    pub(crate) target: Option<String>,
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -248,9 +314,296 @@ pub(crate) fn run_release(command: ReleaseCommand, environment: &CliEnvironment)
         ReleaseCommand::Dist(args) => run_release_dist(args, environment),
         ReleaseCommand::Verify(args) => run_release_dist_verify(args, environment),
         ReleaseCommand::Channel(args) => run_release_channel(args),
+        ReleaseCommand::Version { action } => run_release_version(action),
         ReleaseCommand::Revalidate(args) => run_release_revalidate(args, environment),
         ReleaseCommand::Vault(args) => run_release_vault(args, environment),
     }
+}
+
+/// La raíz de la inspección, sin abrir un contexto de proyecto.
+///
+/// `--root` gana; si no, el directorio de trabajo. A propósito **no** infiere
+/// hacia arriba buscando un marcador de proyecto: una inspección que camina
+/// hacia arriba puede terminar describiendo el repositorio equivocado, y un
+/// diagnóstico que describe el repositorio equivocado es peor que uno que no
+/// arranca.
+fn resolve_inspection_root(runtime: &RuntimeArgs) -> anyhow::Result<std::path::PathBuf> {
+    match &runtime.root {
+        Some(root) => Ok(root.clone()),
+        None => std::env::current_dir()
+            .map_err(|error| anyhow::anyhow!("cannot determine the current directory: {error}")),
+    }
+}
+
+/// `release version inspect` — por qué se resolvió esto, y qué no se miró.
+///
+/// ## Por qué un comando y no una bandera de `release plan`
+///
+/// Porque no es una variación de la pregunta del plan. El plan pregunta «¿puedo
+/// publicar esto?» y esta pregunta «¿por qué se resolvió lo que se resolvió?»,
+/// y la segunda se hace **precisamente cuando la primera falla** —es el
+/// diagnóstico del rechazo—, que es un momento en que un dry-run con sus
+/// prerrequisitos de preflight no ayuda.
+///
+/// ## Qué NO hace, y está escrito porque es lo que se le pide a un diagnóstico
+///
+/// No recomienda. No dice «añade `version=` a X», no dice «renombra tu
+/// fichero», no dice «tu manifiesto debería ser…». Describe lo que se observó
+/// y lo que no, y decide el operador. Un diagnóstico que decide el modelo del
+/// proyecto es un diagnóstico que ha adoptado la forma de un repo como si fuera
+/// la forma de todos, que es exactamente lo que este bloque lleva siete bloques
+/// desarmando.
+///
+/// ## El código de salida
+///
+/// Sale con **0 siempre que la inspección se hizo**, incluso cuando el veredicto
+/// es `CONFLICT` o `INVALID`. Salir distinto sería decir «la inspección falló»,
+/// que es un hecho distinto del que hay:: una inspección que dice
+/// «hay dos declaraciones que discrepan» es una inspección que **funcionó**.
+fn run_release_version_inspect(args: VersionInspectArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<VersionInspection> {
+        // Solo la raiz. MEDIDO: la primera version abria `RuntimeContext`, y eso
+        // exige una identidad de proyecto valida — luego el comando **fallaba**
+        // en un repositorio sin adoptar, que es exactamente el repositorio
+        // cuyo release no resuelve. Un diagnostico que no puede diagnosticar el
+        // caso que lo motivo es peor que no tenerlo, y el arreglo es no pedir lo
+        // que no hace falta: la inspeccion es de sistema de ficheros.
+        let root = resolve_inspection_root(&args.runtime)?;
+        // La MISMA seleccion que usa `release plan`, porque un diagnostico que
+        // mira un target distinto del que se publico no explica el rechazo que
+        // se quiere explicar.
+        let selected = resolve_release_target(&root, args.target.as_deref())?;
+        Ok(version_registry().resolve_inspecting(
+            sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
+            &selected.target,
+        ))
+    })();
+    render_result(result, format, version_inspection_text)
+}
+
+/// El informe, en texto.
+///
+/// El orden importa y no es estetico: **target, capability, providers, hallazgos,
+/// veredicto, y lo que no se comprobó al final**. Lo no comprobado va el ultimo a
+/// proposito —es lo que se lee despues de la respuesta, no antes— y lleva su
+/// propia linea de separacion para que nadie pueda confundirlo con la
+/// conclusion.
+fn version_inspection_text(inspection: &VersionInspection) -> String {
+    let mut text = String::new();
+    text.push_str(&format!("release_target: {}\n", inspection.target.id()));
+    text.push_str(&format!(
+        "release_target_root: {}\n",
+        inspection.target.root()
+    ));
+    text.push_str(&format!(
+        "capability_requested: {}\n",
+        inspection.capability
+    ));
+    text.push_str(&format!(
+        "providers_considered: {}\n",
+        join_or_none(&inspection.providers_considered)
+    ));
+    text.push_str(&format!(
+        "providers_answering: {}\n",
+        join_or_none(&inspection.providers_answering)
+    ));
+    // Tres secciones y no una, y no es estetica. MEDIDO en `va7-conflict-1`:
+    // un repositorio con dos declaraciones y doce ficheros ausentes salia con
+    // catorce entradas en una sola lista, y el conflicto —las dos unicas lineas
+    // que contestan— quedaba debajo de doce «CMakeLists.txt no esta en este
+    // target». El informe es correcto y el que lo lee no llega a la respuesta.
+    //
+    // El corte es por `level` y no por «trae version», porque `Invalid` no trae
+    // version y se queda arriba: fallo cerrado es una **respuesta**, no una
+    // ausencia, y esconderlo bajo las ausencias seria esconder el unico motivo
+    // por el que a este comando le interessaria un codigo de salida distinto.
+    let anyone_answered = inspection
+        .findings
+        .iter()
+        .any(|finding| finding.level != AssuranceLevel::NotApplicable);
+    text.push_str("observations:\n");
+    if !anyone_answered {
+        text.push_str("  none\n");
+    }
+    for finding in &inspection.findings {
+        if finding.level == AssuranceLevel::NotApplicable {
+            continue;
+        }
+        text.push_str(&format!(
+            "  - {} [{:?}] {}\n",
+            finding.provider_id, finding.level, finding.detail
+        ));
+        if let Some(version) = &finding.product_version {
+            text.push_str(&format!("      productVersion: {version}\n"));
+        }
+        if let Some(location) = &finding.location {
+            text.push_str(&format!("      location: {location}\n"));
+        }
+        if let Some(digest) = &finding.digest {
+            text.push_str(&format!("      digest: {digest}\n"));
+        }
+        if !finding.recheckable {
+            text.push_str("      recheckable: no — nothing to point at\n");
+        }
+    }
+
+    // Consultados y sin nada que decir. Su propia seccion porque sin ella «nadie
+    // declaro nada» y «nadie que pudiera declarar fue preguntado» se leen igual.
+    let absences: Vec<_> = inspection
+        .findings
+        .iter()
+        .filter(|finding| finding.level == AssuranceLevel::NotApplicable)
+        .collect();
+    if !absences.is_empty() {
+        text.push_str(&format!(
+            "\nconsulted_and_found_nothing: {}\n",
+            absences.len()
+        ));
+        for finding in absences {
+            text.push_str(&format!("  - {} {}\n", finding.provider_id, finding.detail));
+        }
+    }
+
+    // Los que se filtraron, y por que. Distinto de la seccion anterior porque es
+    // otra pregunta: estos no hablan la capacidad, luego nadie llego a
+    // preguntarles — mientras que los de arriba se preguntaron y contestaron
+    // que aqui no habia nada.
+    if !inspection.skipped.is_empty() {
+        text.push_str(&format!("\nnever_asked: {}\n", inspection.skipped.len()));
+        for skipped in &inspection.skipped {
+            text.push_str(&format!(
+                "  - {} speaks {}, not {}\n",
+                skipped.provider_id,
+                join_or_none(&skipped.capabilities),
+                inspection.capability
+            ));
+        }
+    }
+
+    text.push_str(&format!("\nauthority: {:?}\n", inspection.authority));
+    match &inspection.version {
+        Some(version) => text.push_str(&format!("productVersion: {version}\n")),
+        None => text.push_str("productVersion: none\n"),
+    }
+    // La linea que separa «esto es lo que hay» de «esto es lo que no». Que un
+    // rechazo de verdad no lo confunda con el resultado es medio del trabajo.
+    //
+    // Y nada mas despues. La primera version de este informe cerraba con un
+    // `note:` escrito a mano que decia «finding a product version is not
+    // certifying a release» — que es, palabra por palabra, el segundo punto de
+    // `NOT_CHECKED`. Es decir: una frase sobre lo que no se comprobo, escrita a
+    // mano al lado de la lista de lo que no se comprobo que se deriva. Dos
+    // sitios, una sola afirmacion, y el dia que el reducer cambie uno se
+    // desactualiza sin que nada lo note. Se va.
+    text.push_str("\nNOT_CHECKED:\n");
+    for item in &inspection.not_checked {
+        text.push_str(&format!("  - {}\n", item.statement));
+    }
+    text
+}
+
+/// Una lista de nombres, o una palabra que diga que está vacía.
+///
+/// «providers_considered: » con la lista vacía es indistinguible de un informe
+/// que se olvidó de la línea, y esa es la clase de hueco que este bloque
+/// persigue.
+fn join_or_none(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".to_owned()
+    } else {
+        items.join(", ")
+    }
+}
+
+/// `release version matches` — ¿la referencia declarada nombra a la versión?
+///
+/// ## Por qué este segundo subcomando y no otro sitio
+///
+/// La regla del lockstep ya tiene su puerta en `release plan` y `release apply`,
+/// y esas puertas necesitan un preflight, un tag y un contexto. El caso donde
+/// hace falta **preguntar** es el previo: «¿nombra `v1.4.0` a `1.4.0` con lo que
+/// este proyecto ha declarado, antes de que nada más falle?». Eso es una
+/// pregunta de una línea que no debería arrastrar un dry-run entero.
+///
+/// ## Lo que declara, y es lo mismo que declara `release`
+///
+/// La naming y el target se resuelven con las **mismas** funciones del mismo
+/// sitio. Un segundo camino que separe el nombre, el target o la convención
+/// sería un segundo lugar donde equivocarse, y este bloque lleva siete
+/// haciéndolo peor cada vez que aparece uno.
+fn run_release_version_matches(args: VersionMatchesArgs) -> CommandOutput {
+    let format = args.format;
+    let result = (|| -> anyhow::Result<VersionMatchOutput> {
+        let root = resolve_inspection_root(&args.runtime)?;
+        let naming = resolve_naming(&args.naming)?;
+        let selected = resolve_release_target(&root, args.target.as_deref())?;
+        let version = version_registry().resolve(
+            sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
+            &selected.target,
+        );
+        // Un proyecto sin version declarada no tiene nada contra lo que
+        // comparar, y eso NO es un fallo de la regla: es la respuesta
+        // `release_ref_is_authority`, que ADR-0157 introdujo precisamente para
+        // que estos proyectos no se parecieran a los que se olvidaron.
+        let Some(declarada) = version.version() else {
+            let es_referencia = matches!(version, VersionAuthority::ReleaseRefIsAuthority { .. });
+            return Ok(VersionMatchOutput {
+                release_target: selected.report.id.clone(),
+                release_reference: args.tag.clone(),
+                naming: naming.style().to_owned(),
+                product_version: None,
+                matches: es_referencia,
+                detail: if es_referencia {
+                    "this target declares no product version; the release reference carries it"
+                        .to_owned()
+                } else {
+                    "this target declares no product version, so there is nothing to compare against"
+                        .to_owned()
+                },
+            });
+        };
+        let outcome = binds(
+            &ReleaseRef::new(args.tag.clone(), sddk_domain::ReleaseChannel::Stable),
+            declarada,
+            &naming,
+        );
+        Ok(VersionMatchOutput {
+            release_target: selected.report.id.clone(),
+            release_reference: args.tag.clone(),
+            naming: naming.style().to_owned(),
+            product_version: Some(declarada.to_string()),
+            matches: outcome.is_bound(),
+            detail: outcome.message(declarada),
+        })
+    })();
+    render_result(result, format, version_match_text)
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct VersionMatchOutput {
+    release_target: String,
+    release_reference: String,
+    naming: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product_version: Option<String>,
+    matches: bool,
+    detail: String,
+}
+
+fn version_match_text(output: &VersionMatchOutput) -> String {
+    let mut text = format!(
+        "release_target: {}\nrelease_reference: {}\nnaming: {}\n",
+        output.release_target, output.release_reference, output.naming
+    );
+    match &output.product_version {
+        Some(version) => text.push_str(&format!("productVersion: {version}\n")),
+        None => text.push_str("productVersion: none\n"),
+    }
+    text.push_str(&format!("matches: {}\n", output.matches));
+    text.push_str(&format!("detail: {}\n", output.detail));
+    text
 }
 
 #[derive(serde::Serialize, Clone)]

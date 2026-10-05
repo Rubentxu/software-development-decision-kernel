@@ -276,6 +276,28 @@ pub struct VersionEvidence {
     pub location: Option<String>,
 }
 
+impl VersionEvidence {
+    /// Whether this evidence lets anyone **re-check** the value it claims.
+    ///
+    /// `source_kind` is the provider's own description of where it looked, and
+    /// it is always present — but a provider saying "a declaration in some
+    /// file" is an assertion, not a handle. What makes a claim re-checkable is
+    /// something that can be pointed at: a digest or a location.
+    ///
+    /// ## Why this is a question and not a rejection
+    ///
+    /// Because the kernel is not entitled to call a provider dishonest. A
+    /// provider that declares a version with nothing re-checkable may be
+    /// perfectly honest and simply terse, and inventing a fail-closed rule for
+    /// that would reject a legitimate provider on a guess. What the kernel
+    /// **can** say — and does, in the report — is that the value cannot be
+    /// re-checked from what it was told. That is a fact, and a fact belongs in
+    /// `NOT_CHECKED`.
+    pub fn is_recheckable(&self) -> bool {
+        self.digest.is_some() || self.location.is_some()
+    }
+}
+
 /// One provider's answer about one target, with the identity that produced
 /// it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -654,6 +676,32 @@ impl VersionResolverRegistry {
     /// holding it is left with no way to act — which is the state this whole
     /// design exists to avoid.
     pub fn resolve(&self, capability: &str, target: &ReleaseTarget) -> VersionAuthority {
+        reduce(self.observe_all(capability, target))
+    }
+
+    /// Asks every provider that speaks `capability`, and returns **everything
+    /// they said**, un-reduced.
+    ///
+    /// ## Why this is separated from `reduce`
+    ///
+    /// Because `reduce` **prunes**, and a caller that wants to describe the
+    /// consultation cannot get the consultation back out of the verdict.
+    ///
+    /// MEDIDO: `CrossValidated` keeps only the observations that declared the
+    /// agreed value (`version_authority.rs`, the `agreeing` filter). That is the
+    /// right contract *for the verdict* — its observations answer «who agreed on
+    /// this version» — but it means the twelve providers that said «this file is
+    /// not in this target» are simply **gone** from the verdict. So the report
+    /// built from the verdict was **more complete the worse the outcome was**:
+    /// a conflict kept all fourteen findings, an agreement kept two and said
+    /// nothing about the other twelve. An explanation whose detail depends on
+    /// whether the answer was good is an explanation you cannot rely on exactly
+    /// when it reads as unnecessary.
+    ///
+    /// So the record is kept here, and [`Self::resolve_inspecting`] reduces
+    /// **this** set — the same set, once, so the decision is unchanged and there
+    /// is still exactly one reducer.
+    fn observe_all(&self, capability: &str, target: &ReleaseTarget) -> Vec<VersionObservation> {
         let mut observations: Vec<VersionObservation> = Vec::new();
         for provider in &self.providers {
             if !provider.capabilities().iter().any(|c| c == capability) {
@@ -672,7 +720,57 @@ impl VersionResolverRegistry {
                 probe,
             });
         }
-        reduce(observations)
+        observations
+    }
+
+    /// Asks the providers and reports **how**, not only what.
+    ///
+    /// [`Self::resolve`] throws away two facts that a refusal needs: which
+    /// registered providers were **not** asked, and why. Both are the difference
+    /// between "nobody said anything" and "nobody who could have said anything
+    /// was asked" — which are different problems with different repairs, and a
+    /// report that merges them sends the operator to look in the wrong place.
+    ///
+    /// ## Why `resolve` still exists and is untouched
+    ///
+    /// Because this is an **additional** entry point, not a replacement. Every
+    /// existing caller keeps the decision it had. A method that "improves" the
+    /// only one there is would change what every caller means, and that is a
+    /// different change than the one this block is about.
+    ///
+    /// ## Why the reduction still happens here, once
+    ///
+    /// The report is built **from** the verdict, never beside it. Two reductions
+    /// would be two authorities, and the one that happens to be printed would
+    /// be the one that counts.
+    pub fn resolve_inspecting(
+        &self,
+        capability: &str,
+        target: &ReleaseTarget,
+    ) -> crate::version_inspection::VersionInspection {
+        let considered: Vec<String> = self
+            .providers
+            .iter()
+            .map(|p| p.provider_id().to_owned())
+            .collect();
+        let mut skipped = Vec::new();
+        for provider in &self.providers {
+            if !provider.capabilities().iter().any(|c| c == capability) {
+                skipped.push(crate::version_inspection::SkippedProvider {
+                    provider_id: provider.provider_id().to_owned(),
+                    capabilities: provider.capabilities().to_vec(),
+                });
+            }
+        }
+        let consulted = self.observe_all(capability, target);
+        // The SAME set the verdict is reduced from — see `observe_all`. The
+        // report keeps the whole consultation; the verdict keeps whatever
+        // `reduce` decided its observations mean. One reduction, one authority,
+        // and the report cannot claim a consultation that did not happen.
+        let verdict = reduce(consulted.clone());
+        crate::version_inspection::VersionInspection::build(
+            target, capability, considered, skipped, verdict, &consulted,
+        )
     }
 }
 
