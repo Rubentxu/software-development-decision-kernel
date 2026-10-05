@@ -1,16 +1,42 @@
 //! Version module — exposes the crate version as a stable compile-time constant
 //! and the workspace-vs-tag lockstep rule used by the release pipeline.
 //!
-//! The version is read from `env!("CARGO_PKG_VERSION")` which is set at compile
-//! time from the `version` field in `Cargo.toml`. For the workspace version
-//! (`version.workspace = true`), this resolves to the workspace-level version.
+//! The crate's own version is a compile-time constant —see [`version`]— and it
+//! is not what the lockstep rule is about. That rule asks a different question:
+//! what version does the **product being released** declare, and does the
+//! release reference name it?
 //!
 //! The lockstep rule (`ensure_version_lockstep`) was extracted from
 //! `sddk-cli::release_cmd` per INC-024 (god-class smell at 906 LOC; now ~1820).
 //! Keeping the lockstep check in the engine substrate makes it reusable from
 //! any caller (CLI today; future daemon / CI gate tomorrow).
+//!
+//! # What this module knows, and what it stopped knowing
+//!
+//! It knows one thing about the shape of a release reference: it may carry a
+//! leading `v`. It does not know where the product's version comes from, which
+//! manifests exist, or what any of them are called. Those questions are asked
+//! of a [`VersionResolverRegistry`] the caller supplies, and the answers are
+//! reduced by the kernel's pure model
+//! ([`sddk_domain::version_authority::reduce`]) before this module ever sees
+//! them.
+//!
+//! That split is why the rules below can be tested with three lines of setup
+//! instead of a temporary directory: a lockstep question has no business
+//! needing a filesystem.
+
+use sddk_domain::version_authority::{
+    PRODUCT_VERSION_OBSERVATION, ReleaseTarget, VersionAuthority, VersionObservation,
+    VersionResolverRegistry,
+};
 
 /// Returns the SDDK engine version string (e.g. `"1.42.5"`).
+///
+/// Read at compile time from this crate's own declared version, which for a
+/// workspace member resolves to the workspace's. That is the version of **the
+/// tool**, not of the product a release publishes, and nothing in this module
+/// compares the two: doing so is the defect this module's rule exists to
+/// prevent.
 ///
 /// This function is useful for runtime version reporting where a `&'static str`
 /// is needed rather than the const value.
@@ -36,63 +62,80 @@ impl std::fmt::Display for VersionLockstepError {
 
 impl std::error::Error for VersionLockstepError {}
 
-/// Ensure the release tag matches the project version (lockstep rule).
+/// The one release-reference shape convention this module has.
 ///
-/// The lockstep rule: `version tag == project version`. Tags use the "v"
-/// prefix (e.g. "v1.42.5") while the manifest uses plain "1.42.5".
+/// A leading `v` is stripped, and **nothing else is**. That is the whole
+/// function on purpose: it is a declared convention rather than a coercion,
+/// and a coercion is the thing that lets two different values be made to look
+/// like one. No suffix is trimmed, no pattern is matched, and a value that
+/// differs by anything other than this prefix fails and says so.
 ///
-/// Returns `Ok(())` if the tag matches. Returns `Err(VersionLockstepError)` naming
-/// BOTH the project and tag versions on mismatch.
+/// ## Why it is written down rather than done properly yet
 ///
-/// ## Where the version comes from
+/// Stating a relation between a product version and a release reference is
+/// real work — a `ReleaseRef` that can be `v1.2.3-rc2` on a channel, with the
+/// relation between it and the product version declared rather than guessed.
+/// Until that exists, the honest thing is one narrow, visible convention with
+/// a comment saying where it came from, so that nobody adds a second one next
+/// to it later.
+pub fn product_version_of_release_ref(release_ref: &str) -> &str {
+    release_ref.strip_prefix('v').unwrap_or(release_ref)
+}
+
+/// Ensures the release tag matches the product's declared version.
 ///
-/// [`crate::version_source::resolve_project_version`], a declarative registry
-/// (ADR-0153). This function used to open `Cargo.toml` directly, so any
-/// non-Rust project aborted — INC-DEBT-051, against AGENTS.md §2.3. It no
-/// longer names a manifest file at all; adding an ecosystem is a row in that
-/// registry, not a branch here.
+/// The lockstep rule: the product's version and the release reference name the
+/// same thing.
 ///
-/// A project that declares **no** version anywhere (Go and Bazel do not) yields
-/// [`VersionAuthority::TagIsTheOnlyAuthority`]: the tag is the declaration, and
-/// there was no cross-check. That is *not* a silently passing release, so
-/// [`ensure_version_lockstep_detailed`] reports which of the two happened.
+/// A project that declares **no** product version, and says so —because its
+/// ecosystem keeps the version on the release reference, or because the
+/// project wrote that down— yields
+/// [`VersionAuthority::ReleaseRefIsAuthority`]: there was nothing to compare,
+/// and the verdict says so instead of reporting a check that never happened.
+/// A target where nobody declared anything fails closed, because silence is
+/// not a declaration.
 pub fn ensure_version_lockstep(
-    root: &std::path::Path,
-    tag: &str,
+    registry: &VersionResolverRegistry,
+    target: &ReleaseTarget,
+    release_ref: &str,
 ) -> Result<(), VersionLockstepError> {
-    ensure_version_lockstep_detailed(root, tag).map(|_| ())
+    ensure_version_lockstep_detailed(registry, target, release_ref).map(|_| ())
 }
 
 /// Same rule, but reports **where the version came from**.
 ///
-/// The difference matters: `Ok(())` from a cross-checked version and `Ok(())`
-/// from a project that declares nothing are different facts, and a caller that
-/// cannot tell them apart will read the second as the first.
+/// The difference matters: an authority that was cross-validated by two
+/// independent sources, one that resolved from a single declaration, and one
+/// that holds no product version at all are three different facts, and a
+/// caller that cannot tell them apart will read the last as the first.
 pub fn ensure_version_lockstep_detailed(
-    root: &std::path::Path,
-    tag: &str,
-) -> Result<crate::version_source::VersionAuthority, VersionLockstepError> {
-    use crate::version_source::resolve_project_version;
+    registry: &VersionResolverRegistry,
+    target: &ReleaseTarget,
+    release_ref: &str,
+) -> Result<VersionAuthority, VersionLockstepError> {
+    let tag_version = product_version_of_release_ref(release_ref).to_string();
+    let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, target);
 
-    let tag_version = tag.strip_prefix('v').unwrap_or(tag).to_string();
-    let authority = resolve_project_version(root).map_err(|e| VersionLockstepError {
-        workspace_version: String::new(),
-        tag_version: tag_version.clone(),
-        message: e.to_string(),
-    })?;
+    if let Some(message) = refusal(&authority, target) {
+        return Err(VersionLockstepError {
+            workspace_version: String::new(),
+            tag_version,
+            message,
+        });
+    }
 
-    let Some(workspace_version) = authority.version() else {
+    let Some(product_version) = authority.version() else {
         return Ok(authority);
     };
 
-    if workspace_version != tag_version {
+    if product_version.as_str() != tag_version {
         let msg = format!(
             "VERSION LOCKSTEP FAILED: project={} vs tag={}. \
              Release planning refused until the lockstep rule is satisfied.",
-            workspace_version, tag_version
+            product_version, tag_version
         );
         return Err(VersionLockstepError {
-            workspace_version: workspace_version.to_string(),
+            workspace_version: product_version.to_string(),
             tag_version,
             message: msg,
         });
@@ -103,17 +146,181 @@ pub fn ensure_version_lockstep_detailed(
     Ok(authority)
 }
 
+/// The refusal message for an authority that cannot authorise a release, or
+/// `None` when it can.
+///
+/// ## Where the message comes from, and why
+///
+/// This used to be a `match` over the engine's own error enum, with the list
+/// of files it had searched written into the message. That list was a list of
+/// **file names**, so it could only be produced by a crate that knew them.
+/// Now the list comes from the observations: every provider that said "not my
+/// subject" said so in its own words, naming what it looked for. The operator
+/// still gets the same information, and this crate still cannot name a single
+/// technology.
+///
+/// Two failure shapes are deliberately different messages, and that difference
+/// is the point: a target where nothing was found and a target where something
+/// was found and could not be read are two problems with opposite fixes, and
+/// the version that collapsed them is the substitution a prior falsifier
+/// exploited on this exact code path.
+fn refusal(authority: &VersionAuthority, target: &ReleaseTarget) -> Option<String> {
+    let observations = observations_of(authority);
+    match authority {
+        VersionAuthority::Resolved { .. } | VersionAuthority::CrossValidated { .. } => None,
+        // No hay version que comparar, pero el target se ha resuelto y ha
+        // declarado por que. El mensaje lo compone quien llama, que es quien
+        // sabe anadir la ayuda sin que este crate nombre un fichero.
+        VersionAuthority::ReleaseRefIsAuthority { .. } => None,
+        VersionAuthority::Ambiguous { candidates, .. } => {
+            let detail = candidates
+                .iter()
+                .map(|(who, version)| format!("{who}={version}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            Some(format!(
+                "VERSION LOCKSTEP ERROR: {} declarations disagree about the version: {detail}. \
+                 Which one is authoritative is a human decision, and sddk will not pick one \
+                 (observations: {}).",
+                candidates.len(),
+                summarise(observations)
+            ))
+        }
+        VersionAuthority::Invalid { failures, .. } => Some(format!(
+            "VERSION LOCKSTEP ERROR: {} source(s) could not be read, so the version cannot be \
+             trusted: {}. Failing closed: a source that exists and cannot be understood is not \
+             the same as a source that is absent.",
+            failures.len(),
+            failures
+                .iter()
+                .map(|(who, why)| format!("{who}: {why}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )),
+        VersionAuthority::Unresolved { .. } => {
+            let silent: Vec<String> = observations
+                .iter()
+                .filter(|o| {
+                    matches!(
+                        o.probe,
+                        sddk_domain::version_authority::VersionProbe::Undeclared { .. }
+                    )
+                })
+                .map(describe)
+                .collect();
+            let searched: Vec<String> = observations
+                .iter()
+                .filter(|o| {
+                    matches!(
+                        o.probe,
+                        sddk_domain::version_authority::VersionProbe::NotApplicable { .. }
+                    )
+                })
+                .map(describe)
+                .collect();
+            let present_but_undeclared = if silent.is_empty() {
+                String::new()
+            } else {
+                format!(" (presentes-pero-sin-declarar: {})", silent.join(", "))
+            };
+            Some(format!(
+                "VERSION LOCKSTEP ERROR: no version declared for target `{}` under {}. \
+                 {} provider(s) were asked{present_but_undeclared}; searched: {}.",
+                target.id(),
+                target.root(),
+                observations.len(),
+                searched.join(", ")
+            ))
+        }
+    }
+}
+
+fn observations_of(authority: &VersionAuthority) -> &[VersionObservation] {
+    match authority {
+        VersionAuthority::Resolved { observations, .. }
+        | VersionAuthority::CrossValidated { observations, .. }
+        | VersionAuthority::Ambiguous { observations, .. }
+        | VersionAuthority::Invalid { observations, .. }
+        | VersionAuthority::Unresolved { observations }
+        | VersionAuthority::ReleaseRefIsAuthority { observations, .. } => observations,
+    }
+}
+
+fn describe(observation: &VersionObservation) -> String {
+    match &observation.probe {
+        sddk_domain::version_authority::VersionProbe::NotApplicable { reason }
+        | sddk_domain::version_authority::VersionProbe::Undeclared { reason } => reason.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn summarise(observations: &[VersionObservation]) -> String {
+    observations
+        .iter()
+        .map(|o| format!("{}={}", o.provider_id, o.summary()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use sddk_domain::version_authority::{
+        ProductVersion, ProviderError, VersionEvidence, VersionProbe, VersionResolverPort,
+    };
 
-    fn write_workspace(dir: &std::path::Path, version_line: &str) {
-        let mut f = std::fs::File::create(dir.join("Cargo.toml")).unwrap();
-        writeln!(f, "[workspace]").unwrap();
-        writeln!(f, "{version_line}").unwrap();
-        writeln!(f, "[workspace.package]").unwrap();
-        writeln!(f, "edition = \"2024\"").unwrap();
+    /// A provider that says whatever the test tells it to.
+    ///
+    /// It exists because the lockstep rule never needed a filesystem and was
+    /// only ever tested through one. A provider is three lines here and the
+    /// whole rule is testable without a temporary directory.
+    struct Fixed {
+        id: &'static str,
+        probe: VersionProbe,
+    }
+
+    impl Fixed {
+        fn declaring(id: &'static str, version: &str) -> Self {
+            Self {
+                id,
+                probe: VersionProbe::Declared {
+                    version: ProductVersion::new(version).expect("version valida"),
+                    evidence: VersionEvidence {
+                        source_kind: "test".to_owned(),
+                        digest: None,
+                        location: None,
+                    },
+                },
+            }
+        }
+    }
+
+    impl VersionResolverPort for Fixed {
+        fn provider_id(&self) -> &str {
+            self.id
+        }
+        fn provider_version(&self) -> &str {
+            "test"
+        }
+        fn capabilities(&self) -> &[String] {
+            // One allocation per call, on a test-only type.
+            Box::leak(vec![PRODUCT_VERSION_OBSERVATION.to_owned()].into_boxed_slice())
+        }
+        fn observe(&self, _target: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
+            Ok(self.probe.clone())
+        }
+    }
+
+    fn registry_of(providers: Vec<Fixed>) -> VersionResolverRegistry {
+        let mut registry = VersionResolverRegistry::new();
+        for p in providers {
+            registry.register(Box::new(p));
+        }
+        registry
+    }
+
+    fn target() -> ReleaseTarget {
+        ReleaseTarget::at("producto", "/tmp/un-repositorio")
     }
 
     #[test]
@@ -129,198 +336,172 @@ mod tests {
     }
 
     #[test]
-    fn lockstep_passes_when_tag_matches_workspace_version() {
-        let dir = tempfile::tempdir().unwrap();
-        write_workspace(dir.path(), "version = \"1.42.5\"");
-        ensure_version_lockstep(dir.path(), "v1.42.5").expect("tag matches workspace");
+    fn lockstep_passes_when_the_ref_matches() {
+        let registry = registry_of(vec![Fixed::declaring("p", "1.42.5")]);
+        ensure_version_lockstep(&registry, &target(), "v1.42.5").expect("coinciden");
     }
 
     #[test]
-    fn lockstep_passes_when_tag_has_no_v_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        write_workspace(dir.path(), "version = \"1.42.5\"");
-        ensure_version_lockstep(dir.path(), "1.42.5").expect("tag without v prefix matches");
+    fn lockstep_passes_when_the_ref_has_no_v_prefix() {
+        let registry = registry_of(vec![Fixed::declaring("p", "1.42.5")]);
+        ensure_version_lockstep(&registry, &target(), "1.42.5").expect("sin prefijo");
     }
 
     #[test]
-    fn lockstep_fails_when_tag_diverges_from_workspace() {
-        let dir = tempfile::tempdir().unwrap();
-        write_workspace(dir.path(), "version = \"1.42.5\"");
-        let err = ensure_version_lockstep(dir.path(), "v1.99.0").unwrap_err();
+    fn lockstep_fails_and_names_both_sides() {
+        let registry = registry_of(vec![Fixed::declaring("p", "1.42.5")]);
+        let err = ensure_version_lockstep(&registry, &target(), "v1.99.0").unwrap_err();
         assert_eq!(err.workspace_version, "1.42.5");
-        assert_eq!(err.tag_version, "1.99.0"); // 'v' prefix stripped
-        assert!(err.message.contains("LOCKSTEP FAILED"));
+        assert_eq!(err.tag_version, "1.99.0");
+        assert!(err.message.contains("LOCKSTEP FAILED"), "{}", err.message);
     }
 
-    #[test]
-    fn lockstep_errors_when_no_known_manifest_is_present() {
-        let dir = tempfile::tempdir().unwrap();
-        let err = ensure_version_lockstep(dir.path(), "v1.0.0").unwrap_err();
-        // **Este test cambiaba su aserción al pasar al contrato de ADR-0153**, y
-        // conviene que se vea por qué en vez de dejarlo como un ajuste.
-        //
-        // Antes afirmaba `could not read`: en un repo sin `Cargo.toml` no falló
-        // ninguna lectura — el fichero no está, que es el caso NORMAL en un
-        // proyecto Gradle, no un error de E/S. El mensaje nuevo dice lo que de
-        // verdad pasó y **lista los ocho manifiestos que se buscaron**, que es
-        // justo lo que hace falta para diagnosticar.
-        //
-        // Lo que NO se toca es el comportamiento: sigue fallando cerrado. La
-        // aserción sobre "could not read" era sobre redacción; la de abajo
-        // sigue siendo sobre el hecho, y es más específica.
-        assert!(
-            err.message.contains("no known manifest found"),
-            "un repo sin ningun manifiesto conocido debe fallar cerrado: {}",
-            err.message
-        );
-        assert!(
-            err.message.contains("Cargo.toml"),
-            "el mensaje debe decir que se busco, no solo que no se encontro: {}",
-            err.message
-        );
-        assert!(
-            err.message.contains("go.mod"),
-            "y debe enumerar los demas, no solo el de Rust: {}",
-            err.message
-        );
-    }
-
-    #[test]
-    fn lockstep_errors_when_version_key_absent_in_workspace() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        writeln!(f, "[workspace]").unwrap();
-        writeln!(f, "members = []").unwrap();
-        let err = ensure_version_lockstep(dir.path(), "v1.0.0").unwrap_err();
-        assert!(err.message.contains("could not find `version`"));
-    }
-    /// RED measured (session-65i). The lockstep parser matched table headers
-    /// with `starts_with("[workspace")`, which also matches
-    /// `[workspace.dependencies]`. When that table precedes
-    /// `[workspace.package]` in the file — legal TOML, and the order Cargo
-    /// itself emits when dependencies are declared first — the parser read the
-    /// `version` key of a DEPENDENCY and compared the tag against it.
+    /// The convention is un `v` y NADA MAS.
     ///
-    /// The failure was silent: a confident verdict built from the wrong
-    /// number. A tag equal to `1.42.5` was REJECTED because the parser saw
-    /// `9.9.9`, and a tag equal to `9.9.9` would have been ACCEPTED — a
-    /// release authorised on a value describing a dependency.
-    ///
-    /// The assertion is on the verdict, not on the parsed string. An earlier
-    /// draft of this test forced `unwrap_err()` and then inspected
-    /// `err.workspace_version`, which couples the test to the failure path:
-    /// with the fix in place the lockstep correctly PASSES here, and the test
-    /// failed for that reason. The property worth pinning is the one a caller
-    /// observes — the project's own version decides.
+    /// MEDIDO como el riesgo que es: un recorte mas —una `v` por dentro, un
+    /// sufijo de candidata, un `=`— haria que dos valores distintos se
+    /// presentaran como el mismo, y eso no es una comprobacion laxa: es una
+    /// release autorizada sobre un numero que no es el del proyecto.
     #[test]
-    fn lockstep_uses_the_project_version_not_a_dependencies() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        // `[workspace.dependencies]` FIRST, so a prefix match on the table
-        // name would pick up 9.9.9 before ever reaching 1.42.5.
-        writeln!(f, "[workspace.dependencies]").unwrap();
-        writeln!(f, "version = \"9.9.9\"").unwrap();
-        writeln!(f, "[workspace.package]").unwrap();
-        writeln!(f, "version = \"1.42.5\"").unwrap();
-
-        // The project's version: the tag is accepted.
-        ensure_version_lockstep(dir.path(), "v1.42.5")
-            .expect("the tag matches the PROJECT version, not the dependency's");
-
-        // The dependency's version: the tag is refused. This is the half that
-        // matters — a release must never be authorised on 9.9.9.
-        let err = ensure_version_lockstep(dir.path(), "v9.9.9")
-            .expect_err("a dependency's version must never authorise a release");
-        assert_eq!(err.workspace_version, "1.42.5");
+    fn la_convencion_no_recorta_nada_mas_que_el_prefijo() {
+        let registry = registry_of(vec![Fixed::declaring("p", "1.42.5")]);
+        for tag in [
+            "v1.42.5-rc2",
+            "release-1.42.5",
+            "1.42.5+build",
+            "vv1.42.5",
+            "v 1.42.5",
+        ] {
+            let err = ensure_version_lockstep(&registry, &target(), tag)
+                .expect_err("una referencia que NO es la version no puede autorizar un release");
+            assert!(
+                err.message.contains("LOCKSTEP FAILED"),
+                "«{tag}» deberia fallar por lockstep, no por otra cosa: {}",
+                err.message
+            );
+        }
     }
 
-    /// RED measured (session-65i). A single-quoted string is valid TOML —
-    /// `version = '1.42.5'` parses identically to the double-quoted form —
-    /// and the hand-rolled line parser only ever stripped `"`. A project
-    /// using single quotes aborted its release on a file Cargo itself
-    /// accepts.
+    /// Un target que declara que su version la lleva la release ref pasa, y
+    /// devuelve un veredicto que lo dice. No es un verde silencioso: el
+    /// veredicto no tiene version y no esta cross-validado.
     #[test]
-    fn lockstep_accepts_a_single_quoted_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        writeln!(f, "[workspace.package]").unwrap();
-        writeln!(f, "version = '1.42.5'").unwrap();
-        ensure_version_lockstep(dir.path(), "v1.42.5")
-            .expect("a single-quoted version is valid TOML and must be honoured");
+    fn una_ausencia_declarada_pasa_y_lo_dice() {
+        let registry = registry_of(vec![Fixed {
+            id: "p",
+            probe: VersionProbe::ReleaseRefIsAuthority {
+                declared_by: "su convencion lo lleva la release ref".to_owned(),
+            },
+        }]);
+        let authority = ensure_version_lockstep_detailed(&registry, &target(), "v1.42.5")
+            .expect("no hay version que comparar");
+        assert!(authority.version().is_none());
+        assert!(!authority.was_cross_validated());
+        assert!(!authority.is_failure());
+        assert_eq!(
+            authority.release_ref_declarations(),
+            ["su convencion lo lleva la release ref"]
+        );
     }
 
-    /// RED measured (session-65i, falsification). A malformed `Cargo.toml`
-    /// must be reported AS A PARSE ERROR, not as "this project declares no
-    /// version". Those are different facts: the first says the file is
-    /// broken, the second says the project has nothing to compare.
-    ///
-    /// Falsified by degrading the parse to
-    /// `unwrap_or(Table::default())` — a change that turns a typed error
-    /// naming the file and the cause into a confident "no version here",
-    /// and every existing test stayed green. That is the same substitution
-    /// as `prompts_count = 0` and `is_empty()`: a failure wearing the
-    /// costume of an absence, indistinguishable from the real thing.
+    /// Y el silencio no es lo mismo: sin declaracion, falla cerrado.
     #[test]
-    fn lockstep_reports_a_parse_failure_as_such() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        // Unterminated table header: not valid TOML.
-        writeln!(f, "[workspace.package").unwrap();
-        writeln!(f, "version = \"1.42.5\"").unwrap();
-        let err = ensure_version_lockstep(dir.path(), "v1.42.5").unwrap_err();
+    fn el_silencio_no_es_una_declaracion() {
+        let registry = registry_of(vec![Fixed {
+            id: "p",
+            probe: VersionProbe::NotApplicable {
+                reason: "nada aqui que mirar".to_owned(),
+            },
+        }]);
+        let err = ensure_version_lockstep(&registry, &target(), "v1.42.5").unwrap_err();
         assert!(
-            err.message.contains("could not parse"),
-            "a malformed manifest must be named as a PARSE failure, not reported \
-             as a missing version. Got: {}",
+            err.message.contains("no version declared for target"),
+            "{}",
             err.message
         );
         assert!(
-            err.message.contains("Cargo.toml"),
-            "the error must name the file it could not parse: {}",
+            err.message.contains("nada aqui que mirar"),
+            "el mensaje tiene que decir que se busco: {}",
             err.message
         );
     }
 
-    /// The mirror of the above: a well-formed file that genuinely declares no
-    /// version is a DIFFERENT error, and conflating the two is what the
-    /// mutation above exploited. Pinned so the two can never be merged back
-    /// into one message.
+    /// Un fichero presente que no declara tampoco es una declaracion.
     #[test]
-    fn lockstep_distinguishes_a_missing_version_from_a_broken_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        writeln!(f, "[workspace]").unwrap();
-        writeln!(f, "members = []").unwrap();
-        let err = ensure_version_lockstep(dir.path(), "v1.0.0").unwrap_err();
+    fn un_fichero_que_no_declara_no_abre_la_puerta() {
+        let registry = registry_of(vec![Fixed {
+            id: "p",
+            probe: VersionProbe::Undeclared {
+                reason: "existe y no declara version".to_owned(),
+            },
+        }]);
+        let err = ensure_version_lockstep(&registry, &target(), "v1.42.5").unwrap_err();
         assert!(
-            err.message.contains("could not find `version`"),
-            "a valid file with no version is a different fact from a broken one. Got: {}",
+            err.message.contains("presentes-pero-sin-declarar"),
+            "el mensaje tiene que distinguirlo de «no hay nada»: {}",
             err.message
         );
     }
 
-    /// The same table-prefix confusion, in the shape Cargo emits for a
-    /// non-workspace (single-crate) repository. A `[package]` table is not a
-    /// workspace table, so a project version declared there must not be
-    /// silently ignored — nor must the absence of one be read as "no
-    /// version at all" when the workspace table does carry it.
+    /// Dos fuentes que discrepan: se nombran las dos y no se elige.
     #[test]
-    fn lockstep_does_not_confuse_package_and_workspace_tables() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut f = std::fs::File::create(dir.path().join("Cargo.toml")).unwrap();
-        writeln!(f, "[package]").unwrap();
-        writeln!(f, "name = \"demo\"").unwrap();
-        writeln!(f, "version = \"1.42.5\"").unwrap();
-        writeln!(f, "[workspace]").unwrap();
-        writeln!(f, "members = []").unwrap();
-        // A single-crate repo declares its version under [package]; refusing
-        // here would be the mirror image of the original bug.
-        let result = ensure_version_lockstep(dir.path(), "v1.42.5");
+    fn una_discrepancia_no_se_resuelve_eligiendo() {
+        let registry = registry_of(vec![
+            Fixed::declaring("p-a", "1.0.0"),
+            Fixed::declaring("p-b", "2.0.0"),
+        ]);
+        let err = ensure_version_lockstep(&registry, &target(), "v1.0.0").unwrap_err();
         assert!(
-            result.is_ok(),
-            "a single-crate repo declares version under [package]; the lockstep \
-             must honour it rather than abort (message: {:?})",
-            result.err().map(|e| e.message)
+            err.message.contains("declarations disagree"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("p-a=1.0.0"), "{}", err.message);
+        assert!(err.message.contains("p-b=2.0.0"), "{}", err.message);
+    }
+
+    /// Dos fuentes que coinciden SI se cruzaron, y el veredicto lo dice.
+    #[test]
+    fn dos_fuentes_que_coinciden_se_cruzan() {
+        let registry = registry_of(vec![
+            Fixed::declaring("p-a", "1.0.0"),
+            Fixed::declaring("p-b", "1.0.0"),
+        ]);
+        let authority =
+            ensure_version_lockstep_detailed(&registry, &target(), "v1.0.0").expect("coinciden");
+        assert!(authority.was_cross_validated(), "{authority:?}");
+    }
+
+    /// Un provider que no pudo responder no es evidencia de que no haya
+    /// respuesta: falla cerrado, y dice cual fue el provider y por que.
+    #[test]
+    fn un_provider_que_no_pudo_responder_falla_cerrado_y_se_nombra() {
+        struct Broken;
+        impl VersionResolverPort for Broken {
+            fn provider_id(&self) -> &str {
+                "p-roto"
+            }
+            fn provider_version(&self) -> &str {
+                "test"
+            }
+            fn capabilities(&self) -> &[String] {
+                Box::leak(vec![PRODUCT_VERSION_OBSERVATION.to_owned()].into_boxed_slice())
+            }
+            fn observe(&self, _t: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
+                Err(ProviderError::Unavailable {
+                    provider_id: "p-roto".to_owned(),
+                    reason: "el disco no estaba".to_owned(),
+                })
+            }
+        }
+        let mut registry = VersionResolverRegistry::new();
+        registry.register(Box::new(Broken));
+        let err = ensure_version_lockstep(&registry, &target(), "v1.0.0").unwrap_err();
+        assert!(err.message.contains("p-roto"), "{}", err.message);
+        assert!(
+            err.message.contains("el disco no estaba"),
+            "el motivo del provider no puede perderse en el hueco: {}",
+            err.message
         );
     }
 }

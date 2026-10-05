@@ -68,12 +68,49 @@ const FORBIDDEN: &[&str] = &[
     "cpp_cmake",
 ];
 
+/// Busca `needle` como PALABRA, no como subcadena.
+///
+/// ## El defecto que esto arregla, medido en el escáner hermano
+///
+/// La primera versión de este escáner usaba `contains`. Al aplicarlo al módulo
+/// del motor —que sí tenía las tres palabras en su prosa— dio tres rojos que
+/// no eran del defecto que el guard vigila: `rust` dentro de **«trusted»**,
+/// `pip` dentro de **«pipeline»** y `cargo` dentro del nombre de una variable
+/// de compilación. El defecto estaba en el instrumento, no en el código, y se
+///icidal aquí antes de que apareciera por azar.
+///
+/// Un guard que produce rojos falsos entrena a su lector a ignorarlo, que es
+/// como un guard desactivado se parece a uno que pasa.
+fn find_word(haystack: &str, needle: &str) -> bool {
+    let bytes = haystack.as_bytes();
+    let target = needle.as_bytes();
+    if target.is_empty() || bytes.len() < target.len() {
+        return false;
+    }
+    for start in 0..=(bytes.len() - target.len()) {
+        if &bytes[start..start + target.len()] != target {
+            continue;
+        }
+        let before_ok = start == 0 || !is_word_byte(bytes[start - 1]);
+        let after = start + target.len();
+        let after_ok = after == bytes.len() || !is_word_byte(bytes[after]);
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.' || byte == b'-'
+}
+
 #[test]
 fn the_decision_module_names_no_concrete_technology() {
     let source = include_str!("../src/version_authority.rs").to_lowercase();
     let mut hits: Vec<&str> = Vec::new();
     for needle in FORBIDDEN {
-        if source.contains(needle) {
+        if find_word(&source, needle) {
             hits.push(needle);
         }
     }

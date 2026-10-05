@@ -4542,23 +4542,46 @@ fn cli_release_plan_admits_a_go_project_has_nothing_to_cross_check() {
     );
     let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     assert_eq!(
-        plan_json["version_authority"]["kind"], "tag_is_the_only_authority",
+        plan_json["version_authority"]["verdict"], "release_ref_is_authority",
         "{plan_json}"
     );
     assert!(
         plan_json["version_authority"]["version"].is_null(),
-        "sin version declarada no hay version que reportar: {plan_json}"
+        "sin version de producto no hay version que reportar: {plan_json}"
     );
-    assert_eq!(
-        plan_json["version_authority"]["ecosystems"][0], "go",
-        "{plan_json}"
+    assert!(
+        !plan_json["version_authority"]["declarations"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "el veredicto tiene que decir QUIEN declaro la convencion: {plan_json}"
+    );
+    assert!(
+        plan_json["version_authority"]["declarations"][0]
+            .as_str()
+            .unwrap()
+            .contains("go"),
+        "y tiene que ser la del ecosistema presente: {plan_json}"
     );
 }
 
-/// El caso contrario: un proyecto Rust se presenta como comprobado, y declara
-/// contra qué manifiesto se comprobó. El criterio 2 del SCOPE del lote 2.
+/// El caso contrario: un proyecto Rust declara contra qué fichero se leyó su
+/// versión.
+///
+/// ## Lo que este test afirmaba antes, y lo que afirmar ahora
+///
+/// Antes se llamaba `…_was_cross_checked` y exigía `kind == "cross_checked"`
+/// para un repositorio con **un** `Cargo.toml`. Ese nombre era el defecto:
+/// un solo fichero no se cruza con nadie, y el plan de un proyecto con una
+/// declaración era indistinguible del de uno con dos fuentes que coinciden.
+///
+/// Lo que este test sigue valiendo —y es lo que lo hacia valioso— se conserva
+/// entero: el plan tiene que **nombrar el fichero que se leyó**, decir qué
+/// versión declaró, y no inventarse una comprobación. Lo único que cambia es
+/// que la palabra `cross_checked` se sustituye por la que describe lo que
+/// pasó: `resolved`, con su línea de "nothing was cross-checked".
 #[test]
-fn cli_release_plan_declares_a_rust_project_was_cross_checked() {
+fn cli_release_plan_declares_where_a_rust_project_version_came_from() {
     let fixture = CliFixture::new("release-plan-rust-authority");
     write(
         fixture.root.join("workflow/workflow.yaml"),
@@ -4592,17 +4615,117 @@ fn cli_release_plan_declares_a_rust_project_was_cross_checked() {
         String::from_utf8_lossy(&plan.stderr)
     );
     let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
-    assert_eq!(plan_json["version_authority"]["kind"], "cross_checked");
+    assert_eq!(plan_json["version_authority"]["verdict"], "resolved");
     assert_eq!(plan_json["version_authority"]["version"], "1.0.0");
-    let declared_in = &plan_json["version_authority"]["candidates"][0];
-    assert_eq!(declared_in["ecosystem"], "rust");
-    assert_eq!(declared_in["version"], "1.0.0");
+    let declared = plan_json["version_authority"]["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["probe"]["result"] == "declared")
+        .unwrap_or_else(|| {
+            panic!("el plan tiene que traer la observacion que declaro: {plan_json}")
+        });
+    assert_eq!(declared["probe"]["version"], "1.0.0");
     assert!(
-        declared_in["path"]
+        declared["probe"]["evidence"]["location"]
             .as_str()
             .unwrap()
             .ends_with("Cargo.toml"),
-        "el plan tiene que nombrar el manifiesto que se leyo: {declared_in}"
+        "el plan tiene que nombrar el manifiesto que se leyo: {declared}"
+    );
+}
+
+/// Dos target que declaren la misma version SI se cruzan, y el plan lo dice.
+/// Es la mitad que el test anterior no podia cubrir: «encontrado» y
+/// «verificado» solo se distinguen cuando hay dos fuentes independientes.
+#[test]
+fn cli_release_plan_says_when_two_sources_agree() {
+    let fixture = CliFixture::new("release-plan-two-sources");
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    write(
+        fixture.root.join("Cargo.toml"),
+        "[workspace]\nversion = \"1.0.0\"\n",
+    );
+    write(
+        fixture.root.join("package.json"),
+        r#"{"name":"x","version":"1.0.0"}"#,
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+    let plan = run_with_root(
+        &fixture,
+        &["release", "plan", "--tag", "v1.0.0", "--format", "json"],
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(
+        plan_json["version_authority"]["verdict"], "cross_validated",
+        "dos fuentes independientes que coinciden se han cruzado: {plan_json}"
+    );
+}
+
+/// Y el caso que motivo el bloque entero, end-to-end y sobre ficheros reales:
+/// una configuracion auxiliar que no declara version al lado de otra que si.
+/// Antes abortaba con «could not find `version`» y no habia plan que ver.
+#[test]
+fn cli_release_plan_publishes_past_a_file_that_declares_nothing() {
+    let fixture = CliFixture::new("release-plan-undeclared-neighbour");
+    write(
+        fixture.root.join("workflow/workflow.yaml"),
+        CANONICAL_WORKFLOW,
+    );
+    write(
+        fixture.root.join("gradle.properties"),
+        "org.gradle.caching=true\nkotlin.code.style=official\n",
+    );
+    write(
+        fixture.root.join("package.json"),
+        r#"{"name":"x","version":"1.0.0"}"#,
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+    let plan = run_with_root(
+        &fixture,
+        &["release", "plan", "--tag", "v1.0.0", "--format", "json"],
+        &[
+            "--root",
+            fixture.root.to_str().unwrap(),
+            "--scope",
+            ".",
+            "--remote",
+            "https://example.com/acme/repo.git",
+        ],
+    );
+    assert!(
+        plan.status.success(),
+        "un fichero legitimo que no declara version no puede impedir publicar: {}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let plan_json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(
+        plan_json["version_authority"]["version"], "1.0.0",
+        "{plan_json}"
     );
 }
 
@@ -4643,13 +4766,17 @@ fn cli_release_plan_text_says_the_authority_out_loud() {
     );
     let text = String::from_utf8_lossy(&plan.stdout);
     assert!(
-        text.contains("version_authority: tag_is_the_only_authority"),
+        text.contains("version_authority: release_ref_is_authority"),
         "{text}"
     );
     assert!(text.contains("nothing was cross-checked"), "{text}");
     assert!(
-        !text.contains("version_authority: cross_checked"),
-        "un proyecto Go no puede aparecer como comprobado: {text}"
+        text.contains("version_carried_by_release_ref:"),
+        "el texto tiene que decir por que no hay version: {text}"
+    );
+    assert!(
+        !text.contains("cross_validated"),
+        "un proyecto sin version de producto no puede aparecer como comprobado: {text}"
     );
 }
 

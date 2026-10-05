@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::forge::{Forge, ForgeError, PrRequest, ReleaseRequest};
 use crate::gateway::{CapabilityGateway, CapabilityPlanInput, GatewayError};
 use crate::git::{GitError, GitExecutor};
-use sddk_engine::version_source::VersionAuthority;
+use sddk_domain::version_authority::VersionAuthority;
 use sddk_storage::{CapabilityReceipt, CapabilityStatus};
 
 /// Inputs for one release across a forge.

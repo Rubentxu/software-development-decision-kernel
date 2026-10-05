@@ -147,7 +147,6 @@ pub mod up_to_date;
 pub mod vault_boundary;
 pub mod verify_kernel;
 pub mod version;
-pub mod version_source;
 pub mod why_queries;
 pub mod workflow_metrics;
 pub mod workflow_runtime;

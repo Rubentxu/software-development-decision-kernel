@@ -1,6 +1,8 @@
 //! Release flow integration tests: plan, idempotent apply, reconciliation.
 
-use sddk_engine::version_source::VersionAuthority;
+use sddk_domain::version_authority::{
+    ProductVersion, VersionAuthority, VersionEvidence, VersionObservation, VersionProbe,
+};
 use sddk_gateway::{
     CapabilityGateway, CapabilityPlanInput, CapabilityPolicy, Forge, GitExecutor,
     LocalReleaseInput, LocalReleasePreconditions, MockForge, ReleasePlanInput, apply_local_release,
@@ -70,10 +72,14 @@ fn local_release_input(tag: &str) -> LocalReleaseInput {
 /// La autoridad que estos tests declaran. Antes se pasaba `false`, y el valor
 /// era arbitrario porque nadie leia el campo: se llevaba a `ReleaseOutcome` y
 /// de ahi a ninguna parte. Ahora es un hecho comprobable, y un test lo fija.
-fn checked_version() -> VersionAuthority {
-    VersionAuthority::CrossChecked {
-        version: "1.0.0".to_string(),
-        candidates: Vec::new(),
+///
+/// Se construye con una declaracion, luego `Resolved` y no `CrossValidated`:
+/// el nombre viejo admitia una lectura unica como si estuviera comprobada, y esa
+/// es exactamente la distincion que el modelo nuevo vuelve explicita.
+fn resolved_version() -> VersionAuthority {
+    VersionAuthority::Resolved {
+        version: ProductVersion::new("1.0.0").expect("version valida"),
+        observations: declaring("1.0.0"),
     }
 }
 
@@ -117,7 +123,7 @@ fn full_release_creates_pr_merges_and_publishes() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps.len(), 3);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
     assert_eq!(outcome.applied.len(), 3);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -237,13 +243,13 @@ fn interrupted_release_converges_without_duplicating_effects() {
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
     assert_eq!(plan.steps, vec![sddk_gateway::ReleaseStep::MergePr]);
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
     assert_eq!(outcome.applied.len(), 1);
     assert!(outcome.converged);
     assert_eq!(outcome.skipped.len(), 0);
     assert!(forge.is_merged(3));
 
-    let second = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
+    let second = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
     assert!(second.applied.is_empty());
     assert_eq!(second.skipped.len(), 1);
     assert!(second.converged);
@@ -267,7 +273,7 @@ fn release_without_open_pr_creates_and_merges() {
             .is_none()
     );
 
-    let outcome = apply_release(&mut gateway, &plan, &mut forge, checked_version()).unwrap();
+    let outcome = apply_release(&mut gateway, &plan, &mut forge, resolved_version()).unwrap();
     assert_eq!(outcome.applied.len(), 2);
     assert!(outcome.skipped.is_empty());
     assert!(outcome.converged);
@@ -395,47 +401,89 @@ fn release_outcome_records_where_the_version_came_from() {
     let mut forge = MockForge::new();
     let plan = plan_release(release_input("v1.0.0"), &forge).unwrap();
 
-    let checked = apply_release(
+    // Dos fuentes independientes que coinciden: el veredicto mas fuerte.
+    let cross_validated = apply_release(
         &mut gateway,
         &plan,
         &mut forge,
-        VersionAuthority::CrossChecked {
-            version: "1.0.0".into(),
-            candidates: Vec::new(),
+        VersionAuthority::CrossValidated {
+            version: ProductVersion::new("1.0.0").unwrap(),
+            observations: declaring("1.0.0"),
         },
     )
     .unwrap();
-    assert!(matches!(
-        checked.version_authority,
-        VersionAuthority::CrossChecked { .. }
-    ));
+    assert!(
+        cross_validated.version_authority.was_cross_validated(),
+        "dos fuentes que coinciden se han cruzado: {:?}",
+        cross_validated.version_authority
+    );
 
-    // Un proyecto Go o Bazel no declara versión en ningún manifiesto: el tag
-    // no tenía contra qué contrastarse, y el resultado tiene que decirlo en
-    // vez de presentarse como comprobado.
-    let tag_only = apply_release(
+    // Un proyecto Go o Bazel no declara version de producto: la release ref la
+    // lleva. No hay nada contra que contrastar, y el resultado tiene que
+    // decirlo en vez de presentarse como comprobado.
+    let declared_by_convention = apply_release(
         &mut gateway,
         &plan,
         &mut forge,
-        VersionAuthority::TagIsTheOnlyAuthority {
-            ecosystems: vec!["go"],
+        VersionAuthority::ReleaseRefIsAuthority {
+            declarations: vec!["go no declara version de producto".into()],
+            observations: vec![VersionObservation {
+                provider_id: "p-go".into(),
+                provider_version: "test".into(),
+                capability: "product-version.observation/v1".into(),
+                probe: VersionProbe::ReleaseRefIsAuthority {
+                    declared_by: "go no declara version de producto".into(),
+                },
+            }],
         },
     )
     .unwrap();
     assert_eq!(
-        tag_only.version_authority,
-        VersionAuthority::TagIsTheOnlyAuthority {
-            ecosystems: vec!["go"]
+        declared_by_convention.version_authority,
+        VersionAuthority::ReleaseRefIsAuthority {
+            declarations: vec!["go no declara version de producto".into()],
+            observations: vec![VersionObservation {
+                provider_id: "p-go".into(),
+                provider_version: "test".into(),
+                capability: "product-version.observation/v1".into(),
+                probe: VersionProbe::ReleaseRefIsAuthority {
+                    declared_by: "go no declara version de producto".into(),
+                },
+            }],
         }
     );
     assert!(
-        !checked.version_authority.was_cross_checked()
-            || !matches!(
-                tag_only.version_authority,
-                VersionAuthority::CrossChecked { .. }
-            ),
-        "un proyecto sin version declarada no puede registrarse como comprobado"
+        !declared_by_convention
+            .version_authority
+            .was_cross_validated()
+            && !declared_by_convention.version_authority.is_failure(),
+        "un proyecto que declara su convencion no esta ni comprobado ni roto: {:?}",
+        declared_by_convention.version_authority
     );
+}
+
+/// Una observacion que declara `version`, firmada por `provider`.
+fn declaring_one(provider: &str, version: &str) -> VersionObservation {
+    VersionObservation {
+        provider_id: provider.to_string(),
+        provider_version: "test".to_string(),
+        capability: "product-version.observation/v1".to_string(),
+        probe: VersionProbe::Declared {
+            version: ProductVersion::new(version).expect("version valida"),
+            evidence: VersionEvidence {
+                source_kind: "test".to_string(),
+                digest: None,
+                location: None,
+            },
+        },
+    }
+}
+
+/// Dos observaciones que declaran la misma version, de providers DISTINTOS.
+/// Que sean distintos es lo que las convierte en corroboracion: un provider
+/// consultado dos veces no se ha cruzado consigo mismo.
+fn declaring(version: &str) -> Vec<VersionObservation> {
+    vec![declaring_one("p-a", version), declaring_one("p-b", version)]
 }
 
 /// El nombre `version_lockstep_passed` ya no aparece en el resultado: lo que
@@ -447,20 +495,18 @@ fn the_outcome_has_no_boolean_named_after_the_lockstep() {
         applied: Vec::new(),
         skipped: Vec::new(),
         converged: true,
-        version_authority: VersionAuthority::TagIsTheOnlyAuthority {
-            ecosystems: vec!["go"],
-        },
+        version_authority: resolved_version(),
     })
     .unwrap();
     assert!(
         json.get("version_lockstep_passed").is_none(),
         "el resultado no puede afirmar un lockstep que no se comprobó: {json}"
     );
-    assert_eq!(
-        json["version_authority"]["kind"], "tag_is_the_only_authority",
-        "{json}"
-    );
-    assert_eq!(json["version_authority"]["ecosystems"][0], "go");
+    // Y la autoridad que lo acompaña es un veredicto con nombre, no un
+    // `bool` disfrazado ni una etiqueta de ecosistema: el modelo la decide y
+    // el resultado la registra.
+    assert_eq!(json["version_authority"]["verdict"], "resolved", "{json}");
+    assert_eq!(json["version_authority"]["version"], "1.0.0", "{json}");
 }
 
 /// Test **estructural** del doc de `apply_release`. Un doc no se ejecuta, así

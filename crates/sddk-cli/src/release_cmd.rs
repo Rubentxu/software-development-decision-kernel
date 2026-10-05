@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
+use sddk_domain::version_authority::{ReleaseTarget, VersionAuthority};
 use sddk_engine::version::{ensure_version_lockstep, ensure_version_lockstep_detailed};
-use sddk_engine::version_source::VersionAuthority;
 use sddk_gateway::{
     CapabilityGateway, CapabilityPolicy, GitExecutor, GitHubForge, LocalReleaseInput,
     LocalReleaseOutcome, LocalReleasePreconditions, PermissionPolicy, ReleasePlanInput,
@@ -679,7 +679,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         // La variante `detailed` y no la que aplana: el plan declara de dónde
         // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
         // que reportar. Sigue fallando cerrado ante un desajuste.
-        let authority = ensure_version_lockstep_detailed(git.root(), &args.tag)?;
+        let authority = version_authority_or_fail(git.root(), &args.tag)?;
         let head = git.inspect()?.head;
 
         // REQ-RDI-002 / REQ-RDI-003: gather manifest + receipt fields.
@@ -996,7 +996,39 @@ fn version_authority_or_fail(
     root: &std::path::Path,
     tag: &str,
 ) -> anyhow::Result<VersionAuthority> {
-    ensure_version_lockstep_detailed(root, tag).map_err(|error| anyhow::anyhow!("{error}"))
+    ensure_version_lockstep_detailed(&version_registry(), &release_target(root), tag).map_err(
+        |error| {
+            // El mensaje del motor dice lo que se pregunto y lo que contesto.
+            // La ayuda para salir de ahi la pone quien SABE que existe una
+            // declaracion del proyecto, que es esta capa: el motor no puede
+            // nombrar un fichero porque ya no conoce ninguno.
+            anyhow::anyhow!(
+                "{error}\nIf this project does not declare its version in any file, it can say \
+                 so explicitly in {}",
+                sddk_gateway::version_provider::DECLARED_AUTHORITY_PATH
+            )
+        },
+    )
+}
+
+/// Los providers que el release usa para preguntar.
+///
+/// Es una línea, y esa es la medida del éxito de este bloque: lo que antes era
+/// un registro de ocho ecosistemas con sus extractores vive ahora en el
+/// adapter, y añadir un TARGET más —un subdirectorio, un segundo producto— no
+/// toca ni el motor ni el dominio.
+fn version_registry() -> sddk_domain::version_authority::VersionResolverRegistry {
+    sddk_gateway::version_provider::default_version_registry()
+}
+
+/// El target que se versiona: el repositorio entero.
+///
+/// Deliberadamente **no** es «el repositorio» en el tipo. Es un producto, con
+/// nombre, y que hoy coincida con la raiz del repositorio es una decision de
+/// composicion —la que un monorepo con varios productos todavia no toma— y no
+/// una suposicion del modelo.
+fn release_target(root: &std::path::Path) -> ReleaseTarget {
+    ReleaseTarget::at("repository", root.display().to_string())
 }
 
 /// Si la regla del lockstep se cumplió. `true` **no** significa que la versión
@@ -1007,7 +1039,7 @@ fn version_authority_or_fail(
 /// No es lo mismo que [`version_authority_or_fail`], y confundirlos es el
 /// defecto que este lote cierra: uno es una **puerta** y el otro un **registro**.
 fn version_lockstep_satisfied(root: &std::path::Path, tag: &str) -> bool {
-    ensure_version_lockstep(root, tag).is_ok()
+    ensure_version_lockstep(&version_registry(), &release_target(root), tag).is_ok()
 }
 
 fn local_release_preconditions(
@@ -1202,11 +1234,7 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
     );
     // La autoridad se imprime antes de los pasos: es la línea que decide si lo
     // que viene después fue comprobado o no tenía nada que comprobarlo.
-    text.push_str(&version_authority_text(
-        &output.version_authority,
-        "version_declared_in: ",
-        "version_undeclared_in: ",
-    ));
+    text.push_str(&version_authority_text(&output.version_authority));
     text.push_str("steps:\n");
     for step in &output.steps {
         text.push_str(&format!("- {step}\n"));
@@ -1217,39 +1245,101 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
 /// Un solo render para los dos comandos: `release plan` y `release apply`
 /// declaran la autoridad y sus líneas no pueden divergir, porque salen de la
 /// misma función sobre el mismo tipo.
-fn version_authority_text(
-    authority: &VersionAuthority,
-    declared: &str,
-    undeclared: &str,
-) -> String {
+fn version_authority_text(authority: &VersionAuthority) -> String {
+    use sddk_domain::version_authority::VersionProbe;
+
     let mut text = match authority {
-        VersionAuthority::CrossChecked {
+        VersionAuthority::Resolved {
             version,
-            candidates,
+            observations,
+            ..
         } => {
-            let mut text = format!("version_authority: cross_checked\nversion: {version}\n");
-            for candidate in candidates {
+            let mut text = format!("version_authority: resolved\nversion: {version}\n");
+            for observation in observations
+                .iter()
+                .filter(|o| matches!(o.probe, VersionProbe::Declared { .. }))
+            {
+                let VersionProbe::Declared { version, evidence } = &observation.probe else {
+                    unreachable!("filtrado por Declared")
+                };
                 text.push_str(&format!(
-                    "{declared}{} ({}) = {}\n",
-                    candidate.path.display(),
-                    candidate.ecosystem,
-                    candidate.version
+                    "version_declared_in: {} ({}) = {version}\n",
+                    evidence.location.as_deref().unwrap_or("sin localizacion"),
+                    observation.provider_id
                 ));
+            }
+            // Una lectura no es una comprobación, y el nombre `resolved` solo
+            // no lo dice. Esta línea es la que evita que el plan de un
+            // proyecto con un unico manifiesto se lea como el de uno con
+            // dos fuentes que coinciden.
+            text.push_str("note: one declaration; nothing was cross-checked\n");
+            text
+        }
+        VersionAuthority::CrossValidated { version, .. } => {
+            let mut text = format!("version_authority: cross_validated\nversion: {version}\n");
+            for observation in observations_of(authority) {
+                let VersionProbe::Declared { version, evidence } = &observation.probe else {
+                    continue;
+                };
+                text.push_str(&format!(
+                    "version_declared_in: {} ({}) = {version}\n",
+                    evidence.location.as_deref().unwrap_or("sin localizacion"),
+                    observation.provider_id
+                ));
+            }
+            text.push_str("note: independent sources agree\n");
+            text
+        }
+        VersionAuthority::ReleaseRefIsAuthority { declarations, .. } => {
+            let mut text = String::from(
+                "version_authority: release_ref_is_authority\nversion: null\n\
+                 note: this target declares no product version; the release reference carries \
+                 it, and nothing was cross-checked\n",
+            );
+            for declaration in declarations {
+                text.push_str(&format!("version_carried_by_release_ref: {declaration}\n"));
             }
             text
         }
-        VersionAuthority::TagIsTheOnlyAuthority { ecosystems } => {
-            let mut text = String::from(
-                "version_authority: tag_is_the_only_authority\nversion: null\nnote: no manifest declares a version; the tag is the only authority and nothing was cross-checked\n",
-            );
-            for ecosystem in ecosystems {
-                text.push_str(&format!("{undeclared}{ecosystem}\n"));
+        // Los tres veredictos de fallo no llegan a un render: son `Err` antes
+        // de que exista un plan. Se dibujan igual, y no con `unreachable!`,
+        // porque un `unreachable!` en la salida de un release es un panic en
+        // produccion por una diferencia de versiones entre dos copias del
+        // binario —que es exactamente el caso que este bloque no puede
+        // descartar.
+        VersionAuthority::Ambiguous { candidates, .. } => {
+            let mut text = String::from("version_authority: ambiguous\nversion: null\n");
+            for (who, version) in candidates {
+                text.push_str(&format!("version_conflict: {who} = {version}\n"));
             }
             text
+        }
+        VersionAuthority::Invalid { failures, .. } => {
+            let mut text = String::from("version_authority: invalid\nversion: null\n");
+            for (who, why) in failures {
+                text.push_str(&format!("version_unreadable: {who} = {why}\n"));
+            }
+            text
+        }
+        VersionAuthority::Unresolved { .. } => {
+            String::from("version_authority: unresolved\nversion: null\n")
         }
     };
     text.push('\n');
     text
+}
+
+fn observations_of(
+    authority: &VersionAuthority,
+) -> &[sddk_domain::version_authority::VersionObservation] {
+    match authority {
+        VersionAuthority::Resolved { observations, .. }
+        | VersionAuthority::CrossValidated { observations, .. }
+        | VersionAuthority::Ambiguous { observations, .. }
+        | VersionAuthority::Invalid { observations, .. }
+        | VersionAuthority::Unresolved { observations }
+        | VersionAuthority::ReleaseRefIsAuthority { observations, .. } => observations,
+    }
 }
 
 fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
@@ -1261,11 +1351,7 @@ fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
     // El resultado de un release dice de dónde salió la versión, igual que el
     // plan. Informar solo `converged` deja al lector sin forma de saber si la
     // versión se comprobó contra algo o si no había nada que comprobar.
-    text.push_str(&version_authority_text(
-        &output.version_authority,
-        "version_declared_in: ",
-        "ecosystems: ",
-    ));
+    text.push_str(&version_authority_text(&output.version_authority));
     for step in &output.applied {
         text.push_str(&format!("- {} {}\n", step.step, step.receipt_id));
     }
@@ -1943,22 +2029,80 @@ mod tests {
     }
 
     use super::{ReleasePlanOutput, ReleaseRoute, VersionAuthority, release_plan_text};
-    use sddk_engine::version_source::VersionCandidate;
+    use sddk_domain::version_authority::{
+        ProductVersion, VersionEvidence, VersionObservation, VersionProbe,
+    };
 
-    fn cross_checked() -> VersionAuthority {
-        VersionAuthority::CrossChecked {
-            version: "1.0.0".to_string(),
-            candidates: vec![VersionCandidate {
-                ecosystem: "rust",
-                path: std::path::PathBuf::from("Cargo.toml"),
-                version: "1.0.0".to_string(),
-            }],
+    fn declaring(provider: &str, path: &str, version: &str) -> VersionObservation {
+        VersionObservation {
+            provider_id: provider.to_owned(),
+            provider_version: "test".to_owned(),
+            capability: "product-version.observation/v1".to_owned(),
+            probe: VersionProbe::Declared {
+                version: ProductVersion::new(version).expect("version valida"),
+                evidence: VersionEvidence {
+                    source_kind: "test".to_owned(),
+                    digest: None,
+                    location: Some(path.to_owned()),
+                },
+            },
         }
     }
 
-    fn tag_only() -> VersionAuthority {
-        VersionAuthority::TagIsTheOnlyAuthority {
-            ecosystems: vec!["go"],
+    /// Una sola declaracion. Antes este caso se llamaba `CrossChecked` y esa
+    /// era la mentira que este bloque quita: no hubo nada que cruzar.
+    fn resolved() -> VersionAuthority {
+        VersionAuthority::Resolved {
+            version: ProductVersion::new("1.0.0").expect("version valida"),
+            observations: vec![
+                declaring(
+                    "sddk.gateway.declaration-file/Cargo.toml",
+                    "Cargo.toml",
+                    "1.0.0",
+                ),
+                VersionObservation {
+                    provider_id: "sddk.gateway.declaration-file/package.json".to_owned(),
+                    provider_version: "test".to_owned(),
+                    capability: "product-version.observation/v1".to_owned(),
+                    probe: VersionProbe::NotApplicable {
+                        reason: "package.json no esta en este target".to_owned(),
+                    },
+                },
+            ],
+        }
+    }
+
+    /// Dos fuentes independientes que dicen lo mismo.
+    fn cross_validated() -> VersionAuthority {
+        VersionAuthority::CrossValidated {
+            version: ProductVersion::new("1.0.0").expect("version valida"),
+            observations: vec![
+                declaring(
+                    "sddk.gateway.declaration-file/Cargo.toml",
+                    "Cargo.toml",
+                    "1.0.0",
+                ),
+                declaring(
+                    "sddk.gateway.declaration-file/package.json",
+                    "package.json",
+                    "1.0.0",
+                ),
+            ],
+        }
+    }
+
+    /// Un target que declara que su version la lleva la release ref.
+    fn release_ref_only() -> VersionAuthority {
+        VersionAuthority::ReleaseRefIsAuthority {
+            declarations: vec!["go no declara version de producto".to_owned()],
+            observations: vec![VersionObservation {
+                provider_id: "sddk.gateway.declaration-file/go.mod".to_owned(),
+                provider_version: "test".to_owned(),
+                capability: "product-version.observation/v1".to_owned(),
+                probe: VersionProbe::ReleaseRefIsAuthority {
+                    declared_by: "go no declara version de producto".to_owned(),
+                },
+            }],
         }
     }
 
@@ -1974,27 +2118,51 @@ mod tests {
         }
     }
 
-    /// Un proyecto que declara versión se presenta como comprobado, y dice
-    /// contra qué se comprobó: el manifiesto concreto que se leyó.
+    /// Un proyecto que declara version dice contra que se leyo, y ADMITE que
+    /// no se cruzo con nadie. Antes esta linea decia `cross_checked` sobre un
+    /// unico manifiesto, y el nombre era el problema entero: una lectura se
+    /// presentava como una comprobacion.
     #[test]
-    fn release_plan_text_declares_the_cross_checked_authority() {
-        let text = release_plan_text(&plan(cross_checked()));
-        assert!(text.contains("version_authority: cross_checked"), "{text}");
+    fn release_plan_text_declares_where_the_version_came_from() {
+        let text = release_plan_text(&plan(resolved()));
+        assert!(text.contains("version_authority: resolved"), "{text}");
         assert!(text.contains("version: 1.0.0"), "{text}");
         assert!(
-            text.contains("version_declared_in: Cargo.toml (rust) = 1.0.0"),
-            "{text}"
+            text.contains(
+                "version_declared_in: Cargo.toml (sddk.gateway.declaration-file/Cargo.toml) = 1.0.0"
+            ),
+            "el plan tiene que nombrar el fichero que se leyo Y quien lo leyó: {text}"
+        );
+        assert!(
+            text.contains("nothing was cross-checked"),
+            "una lectura tiene que decir que no se cruzo con nadie: {text}"
         );
     }
 
-    /// Un proyecto sin versión declarada no se presenta como comprobado, y
-    /// dice por qué. Esta es la razón del lote: sin esto, el plan de un repo
-    /// Go es indistinguible del de un repo Rust.
+    /// Dos fuentes que coinciden SI se cruzan, y el texto lo distingue de la
+    /// lectura unica. Si estas dos lineas se parecieran, el nombre
+    /// `cross_validated` seria una palabra.
     #[test]
-    fn release_plan_text_admits_when_nothing_was_cross_checked() {
-        let text = release_plan_text(&plan(tag_only()));
+    fn release_plan_text_distinguishes_a_check_from_a_read() {
+        let text = release_plan_text(&plan(cross_validated()));
         assert!(
-            text.contains("version_authority: tag_is_the_only_authority"),
+            text.contains("version_authority: cross_validated"),
+            "{text}"
+        );
+        assert!(text.contains("independent sources agree"), "{text}");
+        assert!(
+            !text.contains("nothing was cross-checked"),
+            "una comprobacion cruzada no puede decir que no se cruzo: {text}"
+        );
+    }
+
+    /// Un target que declara que su version la lleva la release ref no esta
+    /// roto y no esta comprobado, y el texto dice las dos cosas.
+    #[test]
+    fn release_plan_text_admits_when_nothing_declares_a_version() {
+        let text = release_plan_text(&plan(release_ref_only()));
+        assert!(
+            text.contains("version_authority: release_ref_is_authority"),
             "{text}"
         );
         assert!(
@@ -2002,50 +2170,52 @@ mod tests {
             "el texto tiene que decir que no hubo comprobacion: {text}"
         );
         assert!(text.contains("version: null"), "{text}");
-        assert!(text.contains("version_undeclared_in: go"), "{text}");
         assert!(
-            !text.contains("cross_checked\n"),
-            "un proyecto sin version declarada no puede aparecer como comprobado: {text}"
+            text.contains("version_carried_by_release_ref: go no declara version de producto"),
+            "el texto tiene que decir POR QUE no hay version: {text}"
+        );
+        assert!(
+            !text.contains("cross_validated"),
+            "un target sin version de producto no puede aparecer como comprobado: {text}"
         );
     }
 
-    /// El JSON y el texto no pueden divergir porque salen del mismo mapeo: el
-    /// riesgo declarado en el PRE-FLIGHT, verificado sobre la forma serializada.
+    /// El JSON y el texto no pueden divergir porque salen del mismo tipo.
+    /// El riesgo declarado en el PRE-FLIGHT, verificado sobre la forma
+    /// serializada.
     #[test]
     fn the_serialized_authority_matches_the_rendered_one() {
-        let json = serde_json::to_value(plan(cross_checked())).unwrap();
-        assert_eq!(json["version_authority"]["kind"], "cross_checked");
+        let json = serde_json::to_value(plan(resolved())).unwrap();
+        assert_eq!(json["version_authority"]["verdict"], "resolved");
         assert_eq!(json["version_authority"]["version"], "1.0.0");
-        assert_eq!(
-            json["version_authority"]["candidates"][0]["path"],
-            "Cargo.toml"
-        );
-        assert_eq!(
-            json["version_authority"]["candidates"][0]["ecosystem"],
-            "rust"
-        );
-        assert_eq!(
-            json["version_authority"]["candidates"][0]["version"],
-            "1.0.0"
-        );
+        let observation = &json["version_authority"]["observations"][0];
+        assert_eq!(observation["probe"]["result"], "declared");
+        assert_eq!(observation["probe"]["evidence"]["location"], "Cargo.toml");
+        assert_eq!(observation["probe"]["version"], "1.0.0");
 
-        let tag_json = serde_json::to_value(plan(tag_only())).unwrap();
+        let checked = serde_json::to_value(plan(cross_validated())).unwrap();
+        assert_eq!(checked["version_authority"]["verdict"], "cross_validated");
+
+        let ref_json = serde_json::to_value(plan(release_ref_only())).unwrap();
         assert_eq!(
-            tag_json["version_authority"]["kind"],
-            "tag_is_the_only_authority"
+            ref_json["version_authority"]["verdict"],
+            "release_ref_is_authority"
         );
         assert!(
-            tag_json["version_authority"]["version"].is_null(),
-            "sin version declarada no hay version que reportar: {tag_json}"
+            ref_json["version_authority"]["version"].is_null(),
+            "sin version de producto no hay version que reportar: {ref_json}"
         );
-        assert_eq!(tag_json["version_authority"]["ecosystems"][0], "go");
+        assert_eq!(
+            ref_json["version_authority"]["declarations"][0],
+            "go no declara version de producto"
+        );
     }
 
     /// Los campos existentes no se mueven: el campo nuevo es aditivo, y un
     /// consumidor que lee `tag` o `steps` tiene que seguir viendo lo mismo.
     #[test]
     fn the_plan_keeps_its_previous_fields() {
-        let json = serde_json::to_value(plan(cross_checked())).unwrap();
+        let json = serde_json::to_value(plan(resolved())).unwrap();
         assert_eq!(json["route"], "local");
         assert_eq!(json["branch"], "main");
         assert_eq!(json["base"], "main");
@@ -2079,16 +2249,47 @@ mod tests {
         dir
     }
 
-    /// Un proyecto Rust registra que se comparo el tag contra su manifiesto.
+    /// Un proyecto Rust resuelve su version por el manifest que se leyo, y
+    /// dice que NO se cruzo con nadie. Un unico manifiesto es una lectura.
     #[test]
-    fn a_rust_project_reports_a_cross_checked_authority() {
+    fn a_rust_project_resolves_its_version_without_claiming_a_check() {
         let dir = rust_project();
         let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
         assert!(
-            matches!(authority, VersionAuthority::CrossChecked { .. }),
+            matches!(authority, VersionAuthority::Resolved { .. }),
             "{authority:?}"
         );
-        assert!(authority.was_cross_checked());
+        assert_eq!(
+            authority.version().map(|v| v.to_string()),
+            Some("1.0.0".into())
+        );
+        assert!(
+            !authority.was_cross_validated(),
+            "un solo manifiesto no se cruza consigo mismo: {authority:?}"
+        );
+    }
+
+    /// Y dos target que si declaren se cruzan de verdad. La mitad que de esto
+    /// no se podia probar antes es que la CRUZ requires dos fuentes
+    /// INDEPENDIENTES, no dos ficheros en el mismo repositorio.
+    #[test]
+    fn dos_fuentes_que_coinciden_se_cruzan_de_verdad() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"x","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        assert!(
+            authority.was_cross_validated(),
+            "dos fuentes independientes que coinciden se han cruzado: {authority:?}"
+        );
     }
 
     /// Un proyecto Go **no** puede presentarse como comprobado, y este test
@@ -2099,18 +2300,58 @@ mod tests {
     /// la ejecuta con un doble -- pero este test sigue aqui porque el defecto
     /// que lo motivo era del comando de al lado, no de la ruta forge.
     #[test]
-    fn a_go_project_reports_the_tag_as_the_only_authority() {
+    fn a_go_project_declares_that_the_release_ref_carries_its_version() {
         let dir = go_project();
         let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
-        assert_eq!(
-            authority,
-            VersionAuthority::TagIsTheOnlyAuthority {
-                ecosystems: vec!["go"]
-            }
+        assert!(
+            matches!(authority, VersionAuthority::ReleaseRefIsAuthority { .. }),
+            "un go.mod presente DECLARA que su version no esta en un manifiesto, \
+             que no es lo mismo que no declarar nada: {authority:?}"
         );
         assert!(
-            !authority.was_cross_checked(),
-            "sin manifiesto no hubo comparacion, y no puede decir lo contrario"
+            !authority.was_cross_validated(),
+            "sin manifest no hubo comparacion, y no puede decir lo contrario"
+        );
+        assert!(
+            !authority.is_failure(),
+            "y no esta roto: declaro su convencion y eso es una respuesta: {authority:?}"
+        );
+    }
+
+    /// El caso del que salio todo, medido sobre ficheros reales: una
+    /// configuracion auxiliar que no declara version, al lado de otra que si.
+    /// Antes abortaba la resolucion entera.
+    #[test]
+    fn una_configuracion_que_no_declara_no_impide_publicar() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("gradle.properties"),
+            "org.gradle.caching=true\nkotlin.code.style=official\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"x","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        assert_eq!(
+            authority.version().map(|v| v.to_string()),
+            Some("1.0.0".into()),
+            "un fichero legitimo que no declara version no puede impedir publicar: {authority:?}"
+        );
+    }
+
+    /// Y un repositorio en el que no declara NADIE sigue fallando cerrado. La
+    /// puerta no se abre por ser permisiva con los ficheros: se abre solo
+    /// cuando alguien ha declarado.
+    #[test]
+    fn un_repositorio_sin_declarar_ninguna_version_sigue_cerrado() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("README.md"), "nada que declarar\n").unwrap();
+        assert!(
+            super::version_authority_or_fail(dir.path(), "v1.0.0").is_err(),
+            "silencio no es una declaracion de convencion"
         );
     }
 
@@ -2150,12 +2391,10 @@ mod tests {
             applied: Vec::new(),
             skipped: Vec::new(),
             converged: true,
-            version_authority: VersionAuthority::TagIsTheOnlyAuthority {
-                ecosystems: vec!["go"],
-            },
+            version_authority: release_ref_only(),
         });
         assert!(
-            tag_only.contains("version_authority: tag_is_the_only_authority"),
+            tag_only.contains("version_authority: release_ref_is_authority"),
             "{tag_only}"
         );
         assert!(tag_only.contains("nothing was cross-checked"), "{tag_only}");
@@ -2164,13 +2403,10 @@ mod tests {
             applied: Vec::new(),
             skipped: Vec::new(),
             converged: true,
-            version_authority: VersionAuthority::CrossChecked {
-                version: "1.0.0".into(),
-                candidates: Vec::new(),
-            },
+            version_authority: cross_validated(),
         });
         assert!(
-            checked.contains("version_authority: cross_checked"),
+            checked.contains("version_authority: cross_validated"),
             "{checked}"
         );
         assert!(checked.contains("version: 1.0.0"), "{checked}");
