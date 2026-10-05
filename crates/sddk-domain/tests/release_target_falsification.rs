@@ -12,7 +12,7 @@
 //!    sistema de ficheros.
 //! 2. **Un nombre que no casa cae al único que hay.** Convierte el nombre en
 //!    decoracion, y es el modo por el que un monorepo acabaría publicando la
-//!    versión de un producto书写 al que se quería nombrar con otro nombre.
+//!    versión de un producto al que se quería nombrar con otro nombre.
 //! 3. **Lo desconocido se degrada a ambiguo.** Parece cosmético y no lo es:
 //!    quien recibe «hay varios» busca un segundo producto, y quien recibe
 //!    «ese no existe» corrige el nombre. Son dos reparaciones distintas, y la
