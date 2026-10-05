@@ -62,6 +62,16 @@
 
 # --- estado que mantiene el llamador -----------------------------------------
 
+# Caché de _cargo_effective_target, indexada por DIRECTORIO.
+#
+# MEDIDO (session-82): sin `declare -A`, `arr[$dir]` con una ruta en la clave hace
+# que bash la evalúe como índice ARITMÉTICO y el subscript falle con «error de
+# sintaxis aritmética». El fallo se quedaba silencioso en cuanto el resultado se
+# usaba dentro de un `if`, y un guard que pasa porque su comprobación reventó no
+# está midiendo nada.
+declare -A _SDDK_EFFECTIVE_TARGET_CACHE=()
+declare -A _SDDK_CACHE_SEEN=()
+
 # RELEASE_CURRENT_STEP — nombre del paso en curso. `release_step` lo escribe.
 RELEASE_CURRENT_STEP="${RELEASE_CURRENT_STEP:-}"
 # RELEASE_DIAGNOSED — guardia de idempotencia, cuando no hay fichero marcador.
@@ -247,6 +257,41 @@ _is_own_descendant() {
     return 1
 }
 
+# _cargo_effective_target <dir> — el target dir que cargo usaria con el cwd
+# <dir> y sin declarar ninguno. Cacheado por directorio.
+#
+# NO se reimplementa la resolucion de cargo: se le PREGUNTA. `cargo metadata` es
+# la autoridad, y con la configuracion global de esta maquina
+# (`~/.cargo/config.toml` fija `build.target-dir`) la respuesta NO es
+# `<dir>/target` sino un unico directorio compartido por TODOS los proyectos
+# Rust del host. Reimplementar esa regla aqui la dejaria vieja en cuanto el
+# operador cambie su config.
+#
+# Vacio cuando no se puede resolver, y un vacio NO se adivina: quien no puede
+# decir donde compila un cargo no puede afirmar que compila sobre ESTE target.
+_cargo_effective_target() {
+    local dir="$1" resolved effective
+    if [ -n "${_SDDK_CACHE_SEEN[$dir]+x}" ]; then
+        printf '%s' "${_SDDK_EFFECTIVE_TARGET_CACHE[$dir]}"
+        return 0
+    fi
+    _SDDK_CACHE_SEEN[$dir]=1
+    resolved=""
+    if command -v cargo >/dev/null 2>&1 && [ -d "$dir" ]; then
+        resolved="$( cd "$dir" 2>/dev/null \
+            && cargo metadata --no-deps --format-version 1 2>/dev/null \
+            | tr ',' '\n' | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p' | head -1 )"
+    fi
+    if [ -n "$resolved" ]; then
+        effective="$(readlink -f "$resolved" 2>/dev/null || echo "$resolved")"
+    else
+        effective=""
+    fi
+    _SDDK_EFFECTIVE_TARGET_CACHE[$dir]="$effective"
+    printf '%s' "$effective"
+    return 0
+}
+
 # _cargo_uses_target <pid> <target_real> — 1 si el proceso de ese PID compila
 # sobre ESTE target dir.
 #
@@ -257,12 +302,17 @@ _is_own_descendant() {
 #      que el proceso recibio de verdad. Si el fichero no es legible (otro uid)
 #      se pasa al siguiente criterio, sin inventar.
 #   2. La linea de ordenes lleva `--target-dir <target>`. Explicito.
-#   3. El directorio de trabajo del proceso es el repo. El mas aproximado: un
-#      cargo lanzado aqui sin declarar target compila donde le digan, que suele
-#      ser este. Se admite porque el caso que hay que cubrir —el preflight en la
-#      raiz del repo— es exactamente ese.
+#   3. El proceso corre desde el repo Y cargo resolveria para ahi ESTE target.
+#      MEDIDO (session-82, INC-DEBT-075): el criterio 3 era SOLO «el cwd es el
+#      repo», y decia «compila donde le digan, que suele ser este». Ese «suele»
+#      es una suPOSICION no verificada, y se ha MEDIDO que es falsa: un cargo
+#      ajeno con nuestro mismo cwd puede compilar en el target dir COMPARTIDO
+#      de la maquina, que no es el que se le pregunta. El aviso decia entonces
+#      «el target dir compartido esta retenido: pid N» sobre un pid que no
+#      espera ese target, y quien lo lee no tiene forma de saber que el aviso se
+#      refiere a otro directorio.
 _cargo_uses_target() {
-    local pid="$1" target="$2" env_target
+    local pid="$1" target="$2" env_target subject_cwd effective
 
     if [ -r "/proc/$pid/environ" ]; then
         env_target="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null \
@@ -281,7 +331,15 @@ _cargo_uses_target() {
         *"--target-dir $target"*|*"--target-dir=$target"*) return 0 ;;
     esac
 
-    [ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo '?')" = "$PWD" ] && return 0
+    subject_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo '?')"
+    [ "$subject_cwd" = "$PWD" ] || return 1
+
+    # Mismo cwd, pero hay que COMPROBAR que ahi cargo usaria nuestro target, no
+    # suponerlo.
+    effective="$(_cargo_effective_target "$subject_cwd")"
+    if [ -n "$effective" ] && [ "$effective" = "$target" ]; then
+        return 0
+    fi
     return 1
 }
 
