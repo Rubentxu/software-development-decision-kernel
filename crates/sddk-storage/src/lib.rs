@@ -150,6 +150,26 @@ pub enum StorageError {
         /// The offending runtime-derived status.
         status: sddk_domain::CycleStatus,
     },
+    /// A cycle row was written before its `(project_id, workspace_id)`
+    /// parent pair existed in the ledger.
+    ///
+    /// MEDIDO (session-84 bis 7, `sddk 2.11.3`): `sddk cycle start` against a
+    /// fresh state home failed 3/3 with a raw `FOREIGN KEY constraint
+    /// failed`, because adoption is what registers the parent pair and
+    /// nothing in `cycle start` requires or names it. The check below turns
+    /// that into the cause it actually is, so `recovery()` can name the one
+    /// command that fixes it.
+    #[error("cannot store cycle {cycle_id}: this ledger has no {missing} row {parent_id}")]
+    ProjectNotAdopted {
+        /// The cycle that could not be stored.
+        cycle_id: String,
+        /// The project the cycle claims to belong to.
+        project_id: String,
+        /// Which parent row is absent: `"project"` or `"workspace"`.
+        missing: &'static str,
+        /// Identifier of the missing parent row.
+        parent_id: String,
+    },
     /// Existing identity data disagrees with an idempotent registration request.
     #[error("adoption registration conflicts with existing {entity}: {id}")]
     RegistrationConflict {
@@ -657,6 +677,7 @@ impl Storage {
                 status: cycle.manifest.status,
             });
         }
+        ensure_cycle_parents_on(&self.connection, cycle)?;
         insert_cycle_on(&self.connection, cycle)
     }
 
@@ -680,7 +701,13 @@ impl Storage {
             });
         }
         // SQLITE-BUSY-R2: bounded retry on DatabaseBusy under concurrent writers.
-        self.with_busy_retry(|transaction| insert_cycle_on(transaction, cycle))?;
+        // The parent check runs INSIDE the retry closure so it reads the same
+        // transaction the insert will use; a check made before the transaction
+        // opened would race another writer's adoption.
+        self.with_busy_retry(|transaction| {
+            ensure_cycle_parents_on(transaction, cycle)?;
+            insert_cycle_on(transaction, cycle)
+        })?;
         self.emit_canonical_event(event)
     }
 
@@ -1902,6 +1929,44 @@ pub(crate) fn migrate(connection: &mut Connection) -> Result<()> {
     run_migrations(connection)
 }
 
+/// Rejects a cycle whose `(project_id, workspace_id)` parent pair is absent.
+///
+/// The `cycles` foreign key is the authoritative integrity guarantee and is
+/// left in place — this runs *in addition* to it, before the insert, so the
+/// same guarantee is reported as the situation it is instead of escaping as
+/// a generic SQLite fault. Two cases are named apart because they are
+/// different situations: nothing registered at all (`project`), or a second
+/// clone of an already-adopted project whose canonical path resolves a
+/// different `workspace_id` for the same `project_id` (`workspace`).
+fn ensure_cycle_parents_on(connection: &Connection, cycle: &CycleRecord) -> Result<()> {
+    let missing = |missing: &'static str, parent_id: String| {
+        StorageError::ProjectNotAdopted {
+            cycle_id: cycle.manifest.cycle_id.clone(),
+            project_id: cycle.manifest.project_id.clone(),
+            missing,
+            parent_id,
+        }
+    };
+    let project_present: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id = ?1)",
+        [&cycle.manifest.project_id],
+        |row| row.get(0),
+    )?;
+    if !project_present {
+        return Err(missing("project", cycle.manifest.project_id.clone()));
+    }
+    let workspace_present: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM workspaces
+                       WHERE project_id = ?1 AND workspace_id = ?2)",
+        params![cycle.manifest.project_id, cycle.manifest.workspace_id],
+        |row| row.get(0),
+    )?;
+    if !workspace_present {
+        return Err(missing("workspace", cycle.manifest.workspace_id.clone()));
+    }
+    Ok(())
+}
+
 fn insert_cycle_on(connection: &Connection, cycle: &CycleRecord) -> Result<()> {
     connection.execute(
         "INSERT INTO cycles (
@@ -2235,6 +2300,7 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::EventScopeMismatch => "STORAGE_EVENT_SCOPE_MISMATCH",
             Self::RuntimeStatusWriteForbidden { .. } => "STORAGE_RUNTIME_STATUS_FORBIDDEN",
             Self::RegistrationConflict { .. } => "STORAGE_REGISTRATION_CONFLICT",
+            Self::ProjectNotAdopted { .. } => "STORAGE_PROJECT_NOT_ADOPTED",
             Self::SchemaVersion { .. } => "STORAGE_SCHEMA_VERSION",
             Self::InconsistentMigrationState { .. } => "STORAGE_INCONSISTENT_MIGRATION_STATE",
             Self::LedgerIntegrity { .. } => "STORAGE_LEDGER_INTEGRITY",
@@ -2253,6 +2319,11 @@ impl sddk_domain::SddkErrorCode for StorageError {
             Self::Serialization(..) => "fix the malformed JSON value before retrying".into(),
             Self::Io(..) => "check the filesystem path and permissions".into(),
             Self::NotFound { .. } => "create the record or fix the reference".into(),
+            Self::ProjectNotAdopted { .. } => {
+                "run `sddk adopt apply --scope .` at this checkout to register its \
+                 project and workspace, then retry the cycle"
+                    .into()
+            }
             Self::IdempotencyConflict { .. } => {
                 "use a fresh idempotency key or the original request".into()
             }
@@ -2337,6 +2408,17 @@ impl From<StorageError> for sddk_domain::StorageError {
             StorageError::NotFound { entity, id } => {
                 sddk_domain::StorageError::NotFound { entity, id }
             }
+            StorageError::ProjectNotAdopted {
+                cycle_id,
+                project_id,
+                missing,
+                parent_id,
+            } => sddk_domain::StorageError::ProjectNotAdopted {
+                cycle_id,
+                project_id,
+                missing,
+                parent_id,
+            },
             StorageError::Database(msg) => sddk_domain::StorageError::Database(msg.to_string()),
             StorageError::LeaseConflict {
                 cycle_id, owner, ..

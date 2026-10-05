@@ -2200,7 +2200,16 @@ impl sddk_domain::SddkErrorCode for EngineError {
             Self::ResumeFromPausedOnly => {
                 "resume is only allowed when the cycle is in Paused status".into()
             }
-            Self::Storage(..) => "resolve the underlying storage error first".into(),
+            // MEDIDO (session-84 bis 7, `sddk 2.11.3`): este brazo era un
+            // catch-all que sustituia la linea `recovery:` de la capa interior
+            // por un texto generico. Con el, un `STORAGE_PROJECT_NOT_ADOPTED`
+            // —que si sabe decir el comando que lo arregla— llegaba al
+            // operador como "resolve the underlying storage error first", que
+            // es exactamente el defecto que el error tipado venia a
+            // corregir. Delegar conserva el juicio de quien sabe el hecho.
+            // `StorageError` (dominio) es el mismo tipo que ya implementa
+            // `SddkErrorCode`, luego la delegacion no puede fallar.
+            Self::Storage(inner) => inner.recovery(),
             Self::AuthorityContextRejected { .. } => {
                 "authority context rejected: check actor_kind is admitted for the target surface".into()
             }
