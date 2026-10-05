@@ -12,6 +12,9 @@ All notable changes to this project are documented in this file.
 ### Other
   - docs(debt): INC-DEBT-077, con la distincion que evita dos errores opuestos — El censo de guards dependia del glifo `test_` en el nombre, y seis guards de integracion que NADIE ejecutaba eran invisibles para el gate que existe para que no queden sin runner. Se declara tambien, con el falsador como evidencia, que las tres reglas que mantienen `NOT_GUARDS` honesta HOY NO VIGILAN: desactivarlas deja el gate en verde. Se conservan y se dice que no vigilan, para que nadie lo lea al reves
 
+  - docs(changelog): seccion 2.11.3, con el motivo de orden y no un motivo inventado
+  - docs(journal): session-84 cierra con la 2.11.2 verificada y con el 1b ejecutando los ocho tests
+
 ## [2.11.2] - 2026-10-05
 
 ### Fixes
