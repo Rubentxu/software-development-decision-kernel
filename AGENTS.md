@@ -118,6 +118,34 @@ y se actualiza con `sddk dev install`.
 - `cargo test --workspace`, clippy/fmt globales siguen siendo gates válidos en el
   **full verification profile** de este repositorio y en el flujo de release.
 
+### 2.3.1. Antes de medir: el binario tiene que ser el de este checkout
+- **La comparación de versiones NO dice si el binario está al día.** El binario
+  se instala desde un release y el workspace no bumpea entre releases, luego todo
+  el trabajo posterior a la última publicación comparte número con ella: `sddk
+  2.9.1` y `workspace 2.9.1` pueden ser dos códigos distintos y la comparación
+  sale **verde**. MEDIDO: el binario de `e9d368fe` con HEAD en `147f2bef` —el
+  checkout dos commits por delante— declara la misma versión y no tiene el
+  código del checkout.
+- **Antes de tomar una medición como evidencia, comprueba la frescura:**
+  ```bash
+  bash scripts/check_binary_freshness.sh          # veredicto legible
+  bash scripts/check_binary_freshness.sh --format json   # evidencia de gate
+  ```
+  Falla cerrado con `behind`, `diverged`, `dirty`, `unknown-commit` y
+  `no-build-id`; solo `matches` y `ahead` salen en verde, y `ahead` significa
+  que el problema es el checkout, no el binario.
+- **Por qué el juez vive en el repo y no en el binario** (INC-DEBT-064): el
+  veredicto se pide al artefacto que juzga, y un artefacto no puede declarar su
+  propia antigüedad. Un binario anterior a `032e9553` no tiene `dev build-id`
+  —contesta "unrecognized subcommand" y sale con 2—, luego **no puede ni decir
+  que no lo tiene**. Ese es el estado más viejo de todos y desde dentro es
+  invisible. El juez externo pide al binario solo un **hecho** (su commit y si
+  su árbol estaba sucio) y calcula la **relación** contra este checkout, que es
+  el punto de referencia.
+- `sddk dev doctor` publica `binary.build_identity` y `--strict` sale con 1
+  cuando el binario va atrasado. Es la detección; este script es la que se puede
+  correr **antes** de instalar nada, y la que se puede consultar como evidencia.
+
 ### 2.4. Memory + Engram
 - Sesiones largas DEBEN cerrar con `engram_mem_session_summary` (goal, discoveries,
   accomplished, next steps, relevant files). Sobrevive compactaciones. Reglas en
