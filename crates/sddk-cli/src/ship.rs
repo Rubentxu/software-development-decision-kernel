@@ -14,6 +14,7 @@ use crate::{
 pub(crate) fn run_ship(
     tag: String,
     cycle: Option<String>,
+    naming: String,
     format: OutputFormat,
     environment: &CliEnvironment,
 ) -> CommandOutput {
@@ -30,6 +31,7 @@ pub(crate) fn run_ship(
         branch: "main".into(),
         base: "main".into(),
         target: None,
+        naming,
         title: "SDDK release".into(),
         tag,
         cycle,

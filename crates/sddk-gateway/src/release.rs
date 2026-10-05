@@ -89,6 +89,18 @@ pub struct ReleaseOutcome {
     /// the choice is the plan's business, and duplicating a narrative in the
     /// durable record is how two versions of the same story start to disagree.
     pub release_target: String,
+    /// The declared convention this release was authorised under.
+    ///
+    /// The product identity above says *what* was released. This says *under
+    /// which rule* the tag was accepted as naming its version, and it is
+    /// recorded because that rule is a decision someone can get wrong: a
+    /// release that says `release_target: runtime` without saying whether the
+    /// tag had to be `v0.47.0` or `0.47.0` is a record nobody can re-check,
+    /// including whoever wrote it.
+    ///
+    /// A value, not a narrative and not a re-derivation: the same
+    /// `VersionNaming::style()` the plan printed and the check used.
+    pub release_naming: String,
 }
 
 /// Receipt of one executed release step.
@@ -430,6 +442,7 @@ pub fn apply_release(
     forge: &mut dyn Forge,
     version_authority: VersionAuthority,
     release_target: String,
+    release_naming: String,
 ) -> Result<ReleaseOutcome, ReleaseError> {
     let mut applied = Vec::new();
     let mut skipped = Vec::new();
@@ -532,6 +545,7 @@ pub fn apply_release(
         converged,
         version_authority,
         release_target,
+        release_naming,
     })
 }
 

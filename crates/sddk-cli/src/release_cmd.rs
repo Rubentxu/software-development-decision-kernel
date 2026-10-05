@@ -4,8 +4,11 @@ use std::path::PathBuf;
 
 use clap::{Args, Subcommand, ValueEnum};
 use sddk_domain::GateOutcomeStatus;
+use sddk_domain::release_ref::VersionNaming;
 use sddk_domain::version_authority::{ReleaseTarget, VersionAuthority};
-use sddk_engine::version::{ensure_version_lockstep, ensure_version_lockstep_detailed};
+use sddk_engine::version::{
+    VersionLockstepError, ensure_version_lockstep, ensure_version_lockstep_detailed,
+};
 use sddk_gateway::{
     CapabilityGateway, CapabilityPolicy, GitExecutor, GitHubForge, LocalReleaseInput,
     LocalReleaseOutcome, LocalReleasePreconditions, PermissionPolicy, ReleasePlanInput,
@@ -131,6 +134,18 @@ pub(crate) struct ReleaseArgs {
     /// a refusal, and the refusal lists the paths so naming one is mechanical.
     #[arg(long)]
     pub(crate) target: Option<String>,
+    /// How a release reference names a product version.
+    ///
+    /// `v_prefixed` (the default) means a release is tagged `v1.2.3` for
+    /// version `1.2.3`; `exact` means the reference **is** the version, with no
+    /// prefix. The prefix is not optional: a convention that may or may not be
+    /// applied cannot reject anything, so it cannot authorise anything either.
+    ///
+    /// A project whose tags carry no `v` says so here rather than being
+    /// refused with no way out. The declared value is printed in the plan, so a
+    /// release records the convention it was authorised under.
+    #[arg(long, default_value = "v_prefixed")]
+    pub(crate) naming: String,
     /// Release cycle providing local verification and UAT evidence.
     #[arg(long)]
     pub(crate) cycle: Option<String>,
@@ -668,6 +683,8 @@ struct ReleasePlanOutput {
     version_authority: VersionAuthority,
     /// Which product this plan is about, and how it was chosen.
     release_target: ResolvedTarget,
+    /// The declared convention the tag was checked under.
+    release_naming: String,
 }
 
 /// Which product a plan is about, and the evidence for the choice.
@@ -703,6 +720,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         }
         let context = RuntimeContext::open(&args.runtime, environment, false)?;
         let git = sddk_gateway::GitExecutor::new(context.root.clone());
+        let naming = resolve_naming(&args.naming)?;
 
         // REQ-RDI-001: MANIFEST exact-set preflight (before any push/tag).
         // Production release route always verifies; no escape hatch.
@@ -713,9 +731,13 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
         // que reportar. Sigue fallando cerrado ante un desajuste.
         let selected = resolve_release_target(git.root(), args.target.as_deref())?;
-        let authority =
-            ensure_version_lockstep_detailed(&version_registry(), &selected.target, &args.tag)
-                .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let authority = ensure_version_lockstep_detailed(
+            &version_registry(),
+            &selected.target,
+            &args.tag,
+            &naming,
+        )
+        .map_err(|error| lockstep_rejection(&error, &naming))?;
         let head = git.inspect()?.head;
 
         // REQ-RDI-002 / REQ-RDI-003: gather manifest + receipt fields.
@@ -797,6 +819,7 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
             base: args.base.clone(),
             tag: args.tag.clone(),
             release_target: selected.report.clone(),
+            release_naming: naming.style().to_owned(),
             head,
             steps: match route {
                 ReleaseRoute::Local => vec![
@@ -832,6 +855,7 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
         let root = context.root.clone();
         let permissions = PermissionPolicy::from_file(root.join("permissions.yaml"))?;
         authorize_release(&permissions, route)?;
+        let naming = resolve_naming(&args.naming)?;
         let local_preconditions = matches!(route, ReleaseRoute::Local)
             .then(|| {
                 local_release_preconditions(
@@ -840,7 +864,10 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
                     args.cycle.as_deref(),
                     args.previous_tag.as_deref(),
                     args.release_type.map(|r| r.into()),
-                    &args.tag,
+                    &NamedReference {
+                        name: args.tag.clone(),
+                        naming,
+                    },
                     environment,
                 )
             })
@@ -939,13 +966,14 @@ fn apply_release_forge(
     timestamp: &str,
     actor: &str,
 ) -> anyhow::Result<sddk_gateway::ReleaseOutcome> {
+    let naming = resolve_naming(&args.naming)?;
     // L1 lockstep: el tag tiene que coincidir con la versión
     // declarada. Se pregunta por la variante que devuelve de
     // dónde salió, y no por un literal: escribir `true` a mano
     // informaba un lockstep comprobado en proyectos donde no se
     // comprobó nada, porque no hay manifiesto contra el que
     // comparar. Sigue fallando cerrado ante un desajuste.
-    let version_authority = version_authority_or_fail(root, &args.tag)?;
+    let version_authority = version_authority_or_fail(root, &args.tag, &naming)?;
     // La identidad del producto, de la MISMA seleccion que produjo la
     // autoridad. Volver a resolverla aqui podria dar otra respuesta si el arbol
     // cambiase entre medias, y un outcome que dice una cosa y el plan otra es
@@ -992,6 +1020,7 @@ fn apply_release_forge(
                 forge,
                 version_authority,
                 release_target_id.clone(),
+                naming.style().to_owned(),
             )?)
         },
     )
@@ -1048,6 +1077,7 @@ fn authorize_release(policy: &PermissionPolicy, route: ReleaseRoute) -> anyhow::
 fn version_authority_or_fail(
     root: &std::path::Path,
     tag: &str,
+    naming: &VersionNaming,
 ) -> anyhow::Result<VersionAuthority> {
     // El mensaje del motor se pasa tal cual. Una version anterior de esta
     // capa anadia encima «si tu proyecto no declara su version, puede
@@ -1057,8 +1087,54 @@ fn version_authority_or_fail(
     // si aplica, el mensaje ya trae el nombre: lo dice el provider de la
     // declaracion al responder que este target no declara nada.
     let selected = resolve_release_target(root, None)?;
-    ensure_version_lockstep_detailed(&version_registry(), &selected.target, tag)
-        .map_err(|error| anyhow::anyhow!("{error}"))
+    ensure_version_lockstep_detailed(&version_registry(), &selected.target, tag, naming)
+        .map_err(|error| lockstep_rejection(&error, naming))
+}
+
+/// La convencion con la que este release se autoriza.
+///
+/// ## Por qué vive aquí y no en el motor
+///
+/// El motor decide; esta capa compone. Una convención de nombres es una
+/// declaración **del proyecto**, y un crate que decide ya ha decidido la
+/// convención de todos los proyectos en el momento en que pone un valor por
+/// defecto. Que el valor por defecto sea `v_prefixed` no lo hace menos
+/// cableado: lo hace *invisible*, que es peor.
+///
+/// El precio de sacarlo de ahí es que el motor ya no tiene nada que decir sobre
+/// la forma de un tag, y esta capa tiene que decirlo cada vez. Es un coste
+/// real y es el correcto.
+///
+/// Y falla cerrado con la lista: quien escribe `--naming mal` tiene que ver
+/// **qué** se puede escribir, no un error de sintaxis de un enum.
+fn resolve_naming(style: &str) -> anyhow::Result<VersionNaming> {
+    VersionNaming::parse(style).map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+/// El rechazo de lockstep, con la convención que se aplicó y cómo cambiarla.
+///
+/// ## Por qué esto vive en la CLI y no en el motor
+///
+/// El mensaje del motor dice las dos cadenas —la que la naming daría y la que
+/// traía la referencia—, que es lo que hace la corrección mecánica. No dice
+/// **cómo** se cambia la convención, porque el motor no tiene ninguna: la
+/// Flag es de esta capa y el motor no la conoce.
+///
+/// Y el consejo va **siempre**, no solo cuando el prefijo parece el culpable.
+/// Enseñar la convención aplicada en todo rechazo es un hecho —el release se
+/// autorizó bajo `v_prefixed`— y un hecho en un rechazo no puede ser consejo
+/// equivocado. Un consejo condicional, en cambio, necesita acertar en su
+/// diagnóstico, y el día que acierte mal le enseñará a alguien a despreciarlo.
+///
+/// Lo que NO se dice es «renombra tu tag» ni «añade un prefijo»: eso sería
+/// decidirle al proyecto su modelo, y la convención la declara quien la
+/// publica.
+fn lockstep_rejection(error: &VersionLockstepError, naming: &VersionNaming) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{error}\ndeclared naming: {} — change it with `--naming <{}>`",
+        naming.style(),
+        VersionNaming::NAMED.join("|")
+    )
 }
 
 /// Los providers que el release usa para preguntar.
@@ -1158,11 +1234,23 @@ struct SelectedTarget {
 /// target distinto del que el plan autorizo, la puerta estaria comprobando una
 /// cosa y el release publicando otra, y un desajuste ahi es invisible porque
 /// los dos exits son cero.
-fn version_lockstep_satisfied(root: &std::path::Path, tag: &str) -> bool {
+fn version_lockstep_satisfied(root: &std::path::Path, tag: &str, naming: &VersionNaming) -> bool {
     let Ok(selected) = resolve_release_target(root, None) else {
         return false;
     };
-    ensure_version_lockstep(&version_registry(), &selected.target, tag).is_ok()
+    ensure_version_lockstep(&version_registry(), &selected.target, tag, naming).is_ok()
+}
+
+/// El release tal como lo nombra quien publica: su nombre y la convención con
+/// que ese nombre se lee.
+///
+/// Van juntos porque son **una** declaración partida en dos campos por el
+/// parseo de la línea de comandos. Un tag sin la convención que lo autoriza no
+/// es un tag: es una cadena que algún sitio tendrá que interpretar, y ese
+/// «algún sitio» es donde se cuelan los recortes.
+struct NamedReference {
+    name: String,
+    naming: VersionNaming,
 }
 
 fn local_release_preconditions(
@@ -1171,13 +1259,14 @@ fn local_release_preconditions(
     cycle_id: Option<&str>,
     previous_tag: Option<&str>,
     release_type_arg: Option<sddk_domain::ReleaseType>,
-    current_tag: &str,
+    reference: &NamedReference,
     environment: &CliEnvironment,
 ) -> anyhow::Result<LocalReleasePreconditions> {
     // L1 lockstep: la puerta local. `true` significa que la regla no se incumplio,
     // no que la version se comprobara: un proyecto sin version declarada no
     // tiene contra que compararse y no se bloquea por ello.
-    let version_lockstep_passed = version_lockstep_satisfied(&context.root, current_tag);
+    let version_lockstep_passed =
+        version_lockstep_satisfied(&context.root, &reference.name, &reference.naming);
     let cycle_id = cycle_id.ok_or_else(|| {
         anyhow::anyhow!("--cycle is required for --route local to verify local release evidence")
     })?;
@@ -1234,7 +1323,7 @@ fn local_release_preconditions(
         let config = crate::uat::load_uat_config(project_id, environment)?;
         let release_type = release_type_arg.unwrap_or_else(|| {
             if let Some(prev) = previous_tag {
-                sddk_domain::release_type_from_diff(current_tag, prev)
+                sddk_domain::release_type_from_diff(&reference.name, prev)
                     .unwrap_or(sddk_domain::ReleaseType::Major)
             } else {
                 // No signal → fail-closed (default to Major, which requires UAT).
@@ -1298,7 +1387,7 @@ fn local_release_preconditions(
             let head_match = receipt.head_sha == local_head;
 
             // tag must match the planned tag.
-            let tag_match = receipt.tag == current_tag;
+            let tag_match = receipt.tag == reference.name;
 
             // bundle_roundtrip_verified is explicit in the receipt.
             let bundle_ok = receipt.bundle_roundtrip_verified;
@@ -1359,6 +1448,11 @@ fn release_plan_text(output: &ReleasePlanOutput) -> String {
     // de versión porque es lo primero que hay que saber para leerla: un número
     // sin producto no significa nada.
     text.push_str(&release_target_text(&output.release_target));
+    // Y la convencion con la que el tag se leyo. Va pegada al target porque es
+    // la otra mitad de la pregunta «que se esta autorizando»: sin ella, un
+    // `v0.47.0` y un `0.47.0` son el mismo numero en un plan que no dice cual
+    // de los dos es el nombre.
+    text.push_str(&format!("release_naming: {}\n", output.release_naming));
     // La autoridad se imprime antes de los pasos: es la línea que decide si lo
     // que viene después fue comprobado o no tenía nada que comprobarlo.
     text.push_str(&version_authority_text(&output.version_authority));
@@ -1505,6 +1599,7 @@ fn release_outcome_text(output: &sddk_gateway::ReleaseOutcome) -> String {
     // plan. Informar solo `converged` deja al lector sin forma de saber si la
     // versión se comprobó contra algo o si no había nada que comprobar.
     text.push_str(&format!("release_target: {}\n", output.release_target));
+    text.push_str(&format!("release_naming: {}\n", output.release_naming));
     text.push_str(&version_authority_text(&output.version_authority));
     for step in &output.applied {
         text.push_str(&format!("- {} {}\n", step.step, step.receipt_id));
@@ -2186,6 +2281,7 @@ mod tests {
         ReleasePlanOutput, ReleaseRoute, ResolvedTarget, VersionAuthority, release_plan_text,
         release_target_text,
     };
+    use sddk_domain::release_ref::VersionNaming;
     use sddk_domain::version_authority::{
         ProductVersion, VersionEvidence, VersionObservation, VersionProbe,
     };
@@ -2297,6 +2393,7 @@ mod tests {
             steps: vec!["push_main"],
             version_authority: authority,
             release_target: single_target(),
+            release_naming: VersionNaming::v_prefixed().style().to_owned(),
         }
     }
 
@@ -2436,7 +2533,9 @@ mod tests {
     #[test]
     fn a_rust_project_resolves_its_version_without_claiming_a_check() {
         let dir = rust_project();
-        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        let authority =
+            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
+                .unwrap();
         assert!(
             matches!(authority, VersionAuthority::Resolved { .. }),
             "{authority:?}"
@@ -2467,7 +2566,9 @@ mod tests {
             r#"{"name":"x","version":"1.0.0"}"#,
         )
         .unwrap();
-        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        let authority =
+            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
+                .unwrap();
         assert!(
             authority.was_cross_validated(),
             "dos fuentes independientes que coinciden se han cruzado: {authority:?}"
@@ -2484,7 +2585,9 @@ mod tests {
     #[test]
     fn a_go_project_declares_that_the_release_ref_carries_its_version() {
         let dir = go_project();
-        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        let authority =
+            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
+                .unwrap();
         assert!(
             matches!(authority, VersionAuthority::ReleaseRefIsAuthority { .. }),
             "un go.mod presente DECLARA que su version no esta en un manifiesto, \
@@ -2516,7 +2619,9 @@ mod tests {
             r#"{"name":"x","version":"1.0.0"}"#,
         )
         .unwrap();
-        let authority = super::version_authority_or_fail(dir.path(), "v1.0.0").unwrap();
+        let authority =
+            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
+                .unwrap();
         assert_eq!(
             authority.version().map(|v| v.to_string()),
             Some("1.0.0".into()),
@@ -2532,7 +2637,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("README.md"), "nada que declarar\n").unwrap();
         assert!(
-            super::version_authority_or_fail(dir.path(), "v1.0.0").is_err(),
+            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
+                .is_err(),
             "silencio no es una declaracion de convencion"
         );
     }
@@ -2546,7 +2652,7 @@ mod tests {
     fn the_local_gate_lets_a_go_project_through() {
         let dir = go_project();
         assert!(
-            super::version_lockstep_satisfied(dir.path(), "v1.0.0"),
+            super::version_lockstep_satisfied(dir.path(), "v1.0.0", &VersionNaming::v_prefixed()),
             "un proyecto sin version declarada no tiene contra que comparar, y eso no es una infraccion"
         );
     }
@@ -2556,12 +2662,19 @@ mod tests {
     #[test]
     fn the_local_gate_still_refuses_a_mismatch() {
         let dir = rust_project();
-        assert!(super::version_lockstep_satisfied(dir.path(), "v1.0.0"));
+        assert!(super::version_lockstep_satisfied(
+            dir.path(),
+            "v1.0.0",
+            &VersionNaming::v_prefixed()
+        ));
         assert!(
-            !super::version_lockstep_satisfied(dir.path(), "v9.9.9"),
+            !super::version_lockstep_satisfied(dir.path(), "v9.9.9", &VersionNaming::v_prefixed()),
             "un tag que no coincide con la version declarada tiene que cerrar la puerta"
         );
-        assert!(super::version_authority_or_fail(dir.path(), "v9.9.9").is_err());
+        assert!(
+            super::version_authority_or_fail(dir.path(), "v9.9.9", &VersionNaming::v_prefixed())
+                .is_err()
+        );
     }
 
     /// Un plan de un monorepo nombra su producto Y dice que habia mas.
@@ -2617,6 +2730,7 @@ mod tests {
             converged: true,
             version_authority: release_ref_only(),
             release_target: "packages/runtime".into(),
+            release_naming: VersionNaming::v_prefixed().style().to_owned(),
         });
         assert!(
             tag_only.contains("version_authority: release_ref_is_authority"),
@@ -2630,6 +2744,7 @@ mod tests {
             converged: true,
             version_authority: cross_validated(),
             release_target: "packages/runtime".into(),
+            release_naming: VersionNaming::v_prefixed().style().to_owned(),
         });
         assert!(
             checked.contains("version_authority: cross_validated"),
@@ -2880,6 +2995,7 @@ mod tests {
             title: "SDDK release".into(),
             tag: "v1.0.0".into(),
             target: None,
+            naming: "v_prefixed".into(),
             notes: String::new(),
             approve: true,
             cycle: None,

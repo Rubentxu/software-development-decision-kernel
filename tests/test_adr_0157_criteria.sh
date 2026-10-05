@@ -124,16 +124,31 @@ criterion 3 "los ecosistemas del principio resuelven por una razon declarada" sd
 
 # C4. Un repo Rust conserva el lockstep, incluido el texto del rechazo. Criterio
 # de paridad con lo que habia antes de la migracion.
+#
+# MEDIDO: la fila `lockstep_passes_when_the_ref_has_no_v_prefix` FE con
+# ADR-0159, y no por un descuido. Fijaba que un tag sin `v` pasaba, que era
+# exactamente el recorte: un prefijo opcional de facto, y una convencion que no
+# puede rechazar nada no puede autorizar nada. La fila nueva mide la ley que la
+# sustituye, y son las dos mitades de la misma decision: **sin declarar se
+# rechaza diciendo que nombre daria**, y **quien declara `Exact` pasa**. Repuntar
+# el criterio a un test que dijera lo contrario habria sido dejar el gate verde
+# sobre una ley que ya no existe, que es peor que un N/A.
 criterion 4 "el lockstep se conserva, y el rechazo nombra los dos lados" sddk-engine \
   lockstep_passes_when_the_ref_matches \
-  lockstep_passes_when_the_ref_has_no_v_prefix \
+  una_referencia_sin_el_prefijo_se_rechaza_y_dice_que_nombre_daria \
+  una_naming_exacta_hace_pasar_lo_sin_prefijo_y_no_lo_otro \
   lockstep_fails_and_names_both_sides
 
-# C5. La convencion de la release ref es un prefijo y nada mas. Un recorte mas
-# haria que dos valores distintos se presentaran como el mismo.
-criterion 5 "la convencion de la release ref no recorta nada mas" sddk-engine \
+# C5. La relacion entre una release ref y una version es DECLARADA, y no
+# recorta nada mas que lo que la naming dice. La fila vieja
+# (`la_convencion_de_la_release_ref_es_un_prefijo_y_nada_mas`) mediaba lo
+# mismo sobre una funcion de recorte que ADR-0159 retira; la nueva lo mide
+# sobre la relacion, que es donde vive ahora.
+criterion 5 "la relacion entre referencia y version no recorta nada mas" sddk-engine \
   la_convencion_no_recorta_nada_mas_que_el_prefijo \
-  la_convencion_de_la_release_ref_es_un_prefijo_y_nada_mas
+  la_relacion_entre_referencia_y_version_es_declarada_y_no_recortada
+criterion 5 "y una candidata no nombra a la version de su producto" sddk-domain \
+  una_candidata_no_nombra_a_la_version_de_su_producto
 
 # C6. Dos declaraciones que discrepan son un error duro que nombra LAS DOS.
 criterion 6 "una discrepancia no se resuelve eligiendo" sddk-engine \

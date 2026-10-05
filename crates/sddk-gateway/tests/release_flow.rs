@@ -129,6 +129,7 @@ fn full_release_creates_pr_merges_and_publishes() {
         &mut forge,
         resolved_version(),
         target_id(),
+        naming(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 3);
@@ -256,6 +257,7 @@ fn interrupted_release_converges_without_duplicating_effects() {
         &mut forge,
         resolved_version(),
         target_id(),
+        naming(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 1);
@@ -269,6 +271,7 @@ fn interrupted_release_converges_without_duplicating_effects() {
         &mut forge,
         resolved_version(),
         target_id(),
+        naming(),
     )
     .unwrap();
     assert!(second.applied.is_empty());
@@ -300,6 +303,7 @@ fn release_without_open_pr_creates_and_merges() {
         &mut forge,
         resolved_version(),
         target_id(),
+        naming(),
     )
     .unwrap();
     assert_eq!(outcome.applied.len(), 2);
@@ -439,6 +443,7 @@ fn release_outcome_records_where_the_version_came_from() {
             observations: declaring("1.0.0"),
         },
         target_id(),
+        naming(),
     )
     .unwrap();
     assert!(
@@ -466,6 +471,7 @@ fn release_outcome_records_where_the_version_came_from() {
             }],
         },
         target_id(),
+        naming(),
     )
     .unwrap();
     assert_eq!(
@@ -514,6 +520,14 @@ fn declaring_one(provider: &str, version: &str) -> VersionObservation {
 /// Una constante y no un literal repetido, porque el nombre del producto es un
 /// **hecho** del resultado y repetirlo en cada llamada es exactamente como un
 /// registro acaba describiendo releases de productos distintos.
+/// La convencion que declara el llamador, que es donde vive desde que el
+/// motor dejo de tener default.
+fn naming() -> String {
+    sddk_domain::release_ref::VersionNaming::v_prefixed()
+        .style()
+        .to_owned()
+}
+
 fn target_id() -> String {
     "runtime".to_owned()
 }
@@ -536,6 +550,7 @@ fn the_outcome_has_no_boolean_named_after_the_lockstep() {
         converged: true,
         version_authority: resolved_version(),
         release_target: "runtime".into(),
+        release_naming: naming(),
     })
     .unwrap();
     assert!(

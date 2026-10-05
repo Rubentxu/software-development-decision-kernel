@@ -449,6 +449,10 @@ enum Command {
         /// Release cycle.
         #[arg(long)]
         cycle: Option<String>,
+        /// How a release reference names a product version. See
+        /// `release --naming`.
+        #[arg(long, default_value = "v_prefixed")]
+        naming: String,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -1013,7 +1017,12 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             policy,
             format,
         } => run_view::run_run_view(run_id, as_of, policy, format, environment),
-        Command::Ship { tag, cycle, format } => ship::run_ship(tag, cycle, format, environment),
+        Command::Ship {
+            tag,
+            cycle,
+            naming,
+            format,
+        } => ship::run_ship(tag, cycle, naming, format, environment),
         Command::Recover {
             cycle,
             dry_run,

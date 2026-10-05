@@ -4862,7 +4862,13 @@ fn cli_release_plan_names_the_product_it_resolved() {
     monorepo_with_two_products(&fixture);
 
     for (target, expected_version) in [("packages/api", "1.0.0"), ("packages/runtime", "0.47.0")] {
-        let plan = plan_for(&fixture, expected_version, &["--target", target]);
+        // El tag lleva el prefijo que declara la convencion por defecto. Este
+        // test es sobre `--target` —que producto se resolvio— y no sobre la
+        // convencion, asi que usa la de fabrica en vez de tener que declararla;
+        // la convencion declarada por el operador tiene su propio test, porque
+        // un test con dos sujetos deja de ser sobre ninguno.
+        let tag = format!("v{expected_version}");
+        let plan = plan_for(&fixture, &tag, &["--target", target]);
         assert!(
             plan.status.success(),
             "{target} deberia resolver: {}",
@@ -4883,6 +4889,77 @@ fn cli_release_plan_names_the_product_it_resolved() {
             "{json}"
         );
     }
+}
+
+/// Un prefijo declarado es obligatorio, y quien no lo usa **tiene como decirlo**.
+///
+/// Este es el otro lado del cambio de comportamiento: antes, un tag sin `v`
+/// pasaba porque el prefijo era opcional de facto, y hacerlo obligatorio sin
+/// dejar forma de declarar la convencia habria convertido cada proyecto que
+/// etiqueta sin `v` en un release irrecuperable — un guard que prohibe sin
+/// dejar salida empuja a escribir una mentira, que es la leccion que
+/// ADR-0155 ya escribio para otro puerto.
+///
+/// Las tres filas, en orden: la de fabrica, la que declara `exact`, y la que
+/// no declara nada. La tercera es la que mas importa: un tag sin `v` bajo la
+/// convencion por defecto tiene que **fallar diciendo que nombre daria**, y no
+/// aprobarse en silencio como antes.
+#[test]
+fn la_convencion_de_nombres_se_declara_y_no_se_supone() {
+    let fixture = CliFixture::new("release-plan-naming-declarada");
+    write(
+        fixture.root.join("package.json"),
+        r#"{"name":"solo","version":"1.4.0"}"#,
+    );
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&fixture.root)
+        .output()
+        .unwrap();
+
+    // 1. La de fabrica: prefijo `v`, y el plan lo dice.
+    let con_prefijo = plan_for(&fixture, "v1.4.0", &[]);
+    assert!(
+        con_prefijo.status.success(),
+        "{}",
+        String::from_utf8_lossy(&con_prefijo.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&con_prefijo.stdout).unwrap();
+    assert_eq!(json["release_naming"], "v_prefixed", "{json}");
+
+    // 2. La declarada: un proyecto que etiqueta sin `v` lo dice, y entonces la
+    //    misma version pasa sin prefijo.
+    let sin_prefijo = plan_for(&fixture, "1.4.0", &["--naming", "exact"]);
+    assert!(
+        sin_prefijo.status.success(),
+        "quien declara `exact` no puede ser rechazado por una convencion que \
+         no es la suya: {}",
+        String::from_utf8_lossy(&sin_prefijo.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&sin_prefijo.stdout).unwrap();
+    assert_eq!(json["release_naming"], "exact", "{json}");
+
+    // 3. Y sin declarar nada, el prefijo es obligatorio y el rechazo lo dice.
+    //    Esta fila es el cambio de comportamiento: antes pasaba.
+    let sin_declarar = plan_for(&fixture, "1.4.0", &[]);
+    assert!(
+        !sin_declarar.status.success(),
+        "sin declarar, la convencion de fabrica es la que manda, y manda \
+         prefijo"
+    );
+    let err = String::from_utf8_lossy(&sin_declarar.stderr);
+    assert!(
+        err.contains("v1.4.0"),
+        "el rechazo dice que nombre daria: {err}"
+    );
+    assert!(err.contains("--naming"), "y dice como se declara: {err}");
+
+    // Y una convencion que no existe dice cuales hay, en vez de un error de
+    // sintaxis de un enum que el operador no ha visto nunca.
+    let inexistente = plan_for(&fixture, "v1.4.0", &["--naming", "charmander"]);
+    assert!(!inexistente.status.success());
+    let err = String::from_utf8_lossy(&inexistente.stderr);
+    assert!(err.contains("v_prefixed") && err.contains("exact"), "{err}");
 }
 
 #[test]

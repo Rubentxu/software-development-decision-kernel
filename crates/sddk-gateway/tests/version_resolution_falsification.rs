@@ -50,6 +50,7 @@
 //! 6. ¿Un target que declara que su versión la lleva la release ref sigue
 //!    publicando, y se distingue de uno que no declaró nada?
 
+use sddk_domain::release_ref::VersionNaming;
 use sddk_domain::version_authority::{
     PRODUCT_VERSION_OBSERVATION, ReleaseTarget, VersionAuthority,
 };
@@ -101,7 +102,16 @@ fn verdict(dir: &Path) -> String {
 /// mensaje de rechazo. Es la mitad que importa, porque un veredicto correcto
 /// con un mensaje que no dice nada sigue dejando al operador sin poder actuar.
 fn refusal(dir: &Path, tag: &str) -> String {
-    match ensure_version_lockstep_detailed(&default_version_registry(), &target(dir), tag) {
+    // La convencion la declara quien llama, y este es quien llama. Todos los
+    // tags de la tabla llevan el prefijo `v` porque su sujeto es la resolucion
+    // y no la forma del nombre, luego la unica naming bajo la cual nombran sus
+    // versiones es la de prefijo.
+    match ensure_version_lockstep_detailed(
+        &default_version_registry(),
+        &target(dir),
+        tag,
+        &VersionNaming::v_prefixed(),
+    ) {
         Ok(authority) => format!("OK {authority:?}"),
         Err(e) => format!("ERROR {e}"),
     }

@@ -27,7 +27,74 @@
 //! source, and a fitness that is only a comment is a comment that will be
 //! wrong in six months.
 
-use sddk_engine::version::{product_version_of_release_ref, version};
+use sddk_domain::channel::ReleaseChannel;
+use sddk_domain::release_ref::{CandidateSequence, ReleaseRef, VersionNaming, binds};
+use sddk_domain::version_authority::{
+    ProductVersion, ReleaseTarget, VersionAuthority, VersionResolverRegistry,
+};
+use sddk_engine::version::{VersionLockstepError, ensure_release_ref_lockstep, version};
+
+/// La versión del test, por el constructor que declara la identidad.
+fn product_version(value: &str) -> ProductVersion {
+    ProductVersion::new(value).expect("version valida en el test")
+}
+
+/// ¿El módulo que decide fabrica alguna convención de nombres?
+///
+/// Un default no es una función que **reciba** una naming y la use: es una
+/// función que la **devuelve** sin que nadie se la pidiera. Se busca la
+/// segunda, que es la que hace que la primera sea opcional en la practica.
+fn el_modulo_fabrica_una_naming() -> bool {
+    include_str!("../src/version.rs")
+        .lines()
+        .map(str::trim)
+        .any(fabrica_una_naming)
+}
+
+/// Una línea declara una fábrica de namings cuando su tipo de retorno **es**
+/// `VersionNaming`, y no una cosa que lo contenga.
+///
+/// El tipo se mira **desenvuelto** y no con un `contains`: la primera versión
+/// buscaba `-> VersionNaming` en la línea entera, y eso marcaba también
+/// `-> Option<VersionNaming>` — que es una función capaz de decir «no tengo
+/// ninguna», justo lo **opuesto** de tener un default. Es el segundo falso
+/// positivo de la misma familia en este mismo bloque, y el motivo de que los
+/// dos escáneres comparen el tipo y no la línea.
+fn fabrica_una_naming(linea: &str) -> bool {
+    if !linea.contains("pub fn ") && !linea.contains("const fn ") {
+        return false;
+    }
+    let Some((_, retorno)) = linea.split_once("->") else {
+        return false;
+    };
+    // Se corta en la llave de apertura del cuerpo: `-> VersionNaming {` y
+    // `-> VersionNaming` son el mismo tipo escrito de dos maneras.
+    let retorno = retorno.trim();
+    let retorno = retorno.split('{').next().unwrap_or(retorno).trim();
+    retorno.starts_with("VersionNaming")
+}
+
+/// El control: el escaner ve una fábrica si la hay, y no la ve si no lo es.
+///
+/// Sin el caso positivo, el `!el_modulo_fabrica_una_naming()` de arriba podría
+/// pasar porque el escaner no mira nada. Sin el **negativo**, no demuestra que
+/// sepa cuándo NO disparar — y un guard que solo tiene el caso positivo es la
+/// forma mas comun de que un fitness de source-level se apague sin que nadie lo
+/// note.
+#[test]
+fn el_escaner_de_naming_distingue_fabricar_de_devolver_opcional() {
+    assert!(
+        fabrica_una_naming("pub fn default_version_naming() -> VersionNaming {"),
+        "una fabrica de defaults tiene que verse: es justo lo que este \
+         criterio prohibe"
+    );
+    assert!(
+        !fabrica_una_naming("pub fn naming_de(&self) -> Option<VersionNaming> {"),
+        "devolver Option<VersionNaming> es poder no tener ninguna, que es lo \
+         contrario que tener un default"
+    );
+    assert!(!fabrica_una_naming("pub fn usa(naming: &VersionNaming) {"));
+}
 
 /// Names that must never appear in the module that decides.
 ///
@@ -208,62 +275,186 @@ fn the_fitness_scanner_can_actually_see_a_name() {
     );
 }
 
-/// La convención de la release reference es un prefijo, y solo un prefijo.
+/// La relación entre una release reference y una versión es **declarada**.
 ///
-/// Este criterio no va de tecnología sino de lo que más se parece: una
-/// **coerción**. Un recorte es cómo dos valores distintos acaban presentándose
-/// como el mismo, y un release autorizado sobre un número que no es el del
-/// proyecto es la peor clase de verde. Se fija aquí, en el sitio donde vive,
-/// para que nadie añada un segundo recorte al lado sin notar que hay uno.
+/// ## Qué cambió respecto a la versión anterior de este criterio
+///
+/// Antes decíamos que la convención «es un prefijo y solo un prefijo» y lo
+/// medíamos con un recorte: `product_version_of_release_ref("v1.2.3") ==
+/// "1.2.3"`. Esa función ha desaparecido, y su desaparición **es** el
+/// criterio. Un recorte no es una convención, es una coerción: quita texto a
+/// una referencia y llama al resultado «la versión», de modo que
+/// `v1.2.3-rc2` y `v1.2.3`.authorizan la misma release.
+///
+/// Ahora la convención es un valor —`default_version_naming()`— y la
+/// relación se comprueba por construcción: la naming **construye** el nombre
+/// que la versión tendría, y las dos cadenas se comparan. Eso no solo quita el
+/// recorte: además hace que el prefijo sea **obligatorio**, que antes era
+/// opcional de facto. Un proyecto sin `v` que antes pasaba ahora tiene que
+/// declarar `VersionNaming::Exact`.
+///
+/// ## Por qué aquí y no solo en el dominio
+///
+/// Porque la pieza que se puede quebrar en este crate no es la comparación —esa
+/// vive en el dominio— sino el **valor por defecto** que el motor pasa. Si
+/// `default_version_naming()` volviera a ser un recorte, el dominio seguiría
+/// en verde y el motor volvería a coercionar. Este criterio mira las tres
+/// cosas que el motor decide: que la convención **entre declarada** y no
+/// impuesta, el canal que se le pasa a una referencia, y qué mensaje ve quien
+/// recibe un `Err`.
 #[test]
-fn la_convencion_de_la_release_ref_es_un_prefijo_y_nada_mas() {
-    assert_eq!(product_version_of_release_ref("v1.2.3"), "1.2.3");
-    assert_eq!(product_version_of_release_ref("1.2.3"), "1.2.3");
-
-    // Una referencia de candidata: se le quita el prefijo como a cualquier
-    // otra, y el `-rc2` se queda. Ese es el punto — una candidata NO autoriza
-    // una release estable, y la unica forma de que lo hiciera seria recortar
-    // el sufijo para que las dos cadenas coincidieran.
-    assert_eq!(product_version_of_release_ref("v1.2.3-rc2"), "1.2.3-rc2");
-    assert_ne!(
-        product_version_of_release_ref("v1.2.3-rc2"),
-        "1.2.3",
-        "una candidata no puede autorizarse como la version del producto"
+fn la_relacion_entre_referencia_y_version_es_declarada_y_no_recortada() {
+    // 1. El motor NO tiene default. Que la relacion se compruebe por construccion
+    //    solo es verdad si la convencion la trae quien llama: un default aqui
+    //    seria el recorte de vuelta, con la diferencia de que ahora estaria
+    //    invisible. Se mide por la ausencia de la firma, no por un valor.
+    assert!(
+        !el_modulo_fabrica_una_naming(),
+        "el modulo de version vuelve a tener una naming por defecto: con ella \
+         presente, «declarada» es una palabra y el recorte vuelve a existir, \
+         solo que escondido en una constante"
     );
 
-    // Lo que NO empieza por `v` no se toca, ni se busca un `v` por dentro.
-    for untouched in ["1.2.3+build.7", "release-1.2.3", "1.2.3v", "V1.2.3"] {
-        assert_eq!(
-            product_version_of_release_ref(untouched),
-            untouched,
-            "«{untouched}» no es la version con un prefijo `v`: recortarlo seria \
-             decidir que dos valores distintos son el mismo"
-        );
-    }
+    // 2. Y lo que esa naming declara es un prefijo EXACTO, en las dos
+    //    direcciones. La fila `1.2.3` es el cambio de comportamiento real: antes
+    //    pasaba sin `v` porque el prefijo era opcional de facto; ahora hay que
+    //    declararlo.
+    let naming = VersionNaming::v_prefixed();
+    assert!(
+        binds(
+            &ReleaseRef::new("v1.2.3", ReleaseChannel::Stable),
+            &product_version("1.2.3"),
+            &naming
+        )
+        .is_bound(),
+        "un release estable con la convencion por defecto nombra a la version"
+    );
+    assert!(
+        !binds(
+            &ReleaseRef::new("1.2.3", ReleaseChannel::Stable),
+            &product_version("1.2.3"),
+            &naming
+        )
+        .is_bound(),
+        "sin el prefijo declarado ya no nombra: un prefijo opcional es una \
+         sugerencia, y una sugerencia no puede autorizar un release"
+    );
 
-    // Y la ley que de verdad importa, sobre todo lo que lleva una `v` cerca y
-    // no es la version: NINGUNA se convierte en `1.2.3`. Un recorte mas —un
-    // sufijo de candidata, un `=`, espacios— haria que dos valores distintos
-    // se presentaran como el mismo, y eso autoriza un release sobre un numero
-    // que no es el del proyecto.
-    for not_the_version in [
+    // 3. Y una candidata NO nombra a la version de su producto. Esto es lo que
+    //    el recorte de sufijo hacia, y lo que hace que una candidata no pueda
+    //    autorizarse como release estable. Antes esta fila la cubria `assert_ne`
+    //    sobre una cadena recortada; ahora la cubre la relacion entera.
+    let candidata = ReleaseRef::candidate(
+        "v1.2.3-rc2",
+        ReleaseChannel::Candidate,
+        CandidateSequence::nth(2).expect("la segunda candidata existe"),
+    );
+    assert!(
+        !binds(&candidata, &product_version("1.2.3"), &naming).is_bound(),
+        "una candidata no nombra a la version de su producto: solo podria \
+         hacerlo recortando el sufijo, que es la coercion que este criterio \
+         lleva prohibiendo desde antes de existir la naming"
+    );
+
+    // 4. NINGUNA de estas se convierte en `1.2.3` bajo la naming por defecto.
+    //    Mismo conjunto que antes, misma ley, y ahora sobre la relacion y no
+    //    sobre una cadena recortada.
+    for referencia in [
         "v1.2.3-rc2",
         "v1.2.3+build.7",
         "v1.2.4",
         "v 1.2.3",
         "vv1.2.3",
         "v1.2",
+        "1.2.3",
+        "release-1.2.3",
+        "1.2.3v",
+        "V1.2.3",
     ] {
-        assert_ne!(
-            product_version_of_release_ref(not_the_version),
-            "1.2.3",
-            "«{not_the_version}» no es la version del producto y no puede \
-            (authorizarse) como si lo fuera"
+        assert!(
+            !binds(
+                &ReleaseRef::new(referencia, ReleaseChannel::Stable),
+                &product_version("1.2.3"),
+                &naming
+            )
+            .is_bound(),
+            "«{referencia}» no es la version del producto y no puede \
+             autorizarse como si lo fuera"
         );
     }
-    // El prefijo doble deja un `v` que NO se vuelve a quitar: la convencion es
-    // una, no una normalizacion.
-    assert_eq!(product_version_of_release_ref("vv1.2.3"), "v1.2.3");
+}
+
+/// El motor pasa un **canal declarado**, nunca uno leído del nombre.
+///
+/// Una referencia cuyo canal hay que adivinar por su texto es una referencia
+/// cuyo canal nadie declaró, y el bloque entero consiste en no adivinar. Aquí
+/// se mide la mitad observable: la función que decide recibe un `&ReleaseRef`,
+/// y la de convenience construye ese `ReleaseRef` con un canal explícito en
+/// lugar de deducido.
+#[test]
+fn el_motor_recibe_una_referencia_con_canal_y_no_una_cadena() {
+    // La firma que decide es la que lleva `ReleaseRef`: canal y secuencia son
+    // entradas, no cosas que se lean del nombre.
+    let decide: fn(
+        &VersionResolverRegistry,
+        &ReleaseTarget,
+        &ReleaseRef,
+        &VersionNaming,
+    ) -> Result<VersionAuthority, VersionLockstepError> = ensure_release_ref_lockstep;
+
+    // Un release estable con la convencion por defecto es la unica combinacion
+    // que la convenience admite, y la construye en vez de deducirla.
+    let estable = ReleaseRef::new("v1.2.3", ReleaseChannel::Stable);
+    assert_eq!(estable.channel(), ReleaseChannel::Stable);
+    assert!(!estable.is_candidate());
+
+    // Y una candidata entra por la otra firma, con su secuencia declarada. Si
+    // estas dos funciones se confunden —si la convenience aceptara candidatas
+    // como si fueran estables— el candidato pasaria por el camino que declara
+    // `Stable` y la distinction entre candidata y estable seria solo textual.
+    let candidata = ReleaseRef::candidate(
+        "v1.2.3-rc2",
+        ReleaseChannel::Candidate,
+        CandidateSequence::nth(2).expect("la segunda candidata existe"),
+    );
+    assert_eq!(candidata.channel(), ReleaseChannel::Candidate);
+    assert!(candidata.is_candidate());
+    assert_eq!(
+        candidata.sequence(),
+        Some(CandidateSequence::nth(2).expect("existe")),
+        "la secuencia se conserva porque se declaro, no porque este en el nombre"
+    );
+
+    // Las dos firmas coexisten y no se solapan: la primera acepta cualquier
+    // referencia, la segunda no. Que ambas compilen es la prueba de que la
+    // convenience sigue siendo un wrapper y no un atajo con reglas propias.
+    let _ = decide;
+}
+
+/// El mensaje de un rechazo dice **los dos lados**.
+///
+/// Antes el `Err` traía `workspace_version` y `release_ref`, y quien lo leía
+/// tenía que adivinar cuál de los dos estaba mal. Con la relación declarada, el
+/// nombre que la naming da a la versión es calculable, así que el mensaje puede
+/// enseñarlo: la corrección pasa de ser una adivinanza a ser mecánica.
+#[test]
+fn un_rechazo_dice_el_nombre_esperado_y_el_encontrado() {
+    let naming = VersionNaming::v_prefixed();
+    let version = product_version("1.2.3");
+    let desajuste = binds(
+        &ReleaseRef::new("v9.9.9", ReleaseChannel::Stable),
+        &version,
+        &naming,
+    );
+    let mensaje = desajuste.message(&version);
+    assert!(
+        mensaje.contains("v1.2.3"),
+        "el mensaje dice el nombre que la naming daria a la version: {mensaje}"
+    );
+    assert!(
+        mensaje.contains("v9.9.9"),
+        "y dice el nombre que realmente traia la referencia: {mensaje}"
+    );
 }
 
 #[test]

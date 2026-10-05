@@ -164,14 +164,77 @@ modelo; su registro, no. El gate de sus siete criterios se sustituyó por
 instrumento: el anterior reportaba PASS para un criterio cuyos tests ya no
 existían.
 
-**Continuación declarada, no empezada: VA4–VA7.** En orden y con su alcance:
-`ReleaseTarget` y monorepos con varios productos y versiones distintas;
-separar `ProductVersion` de `ReleaseRef` y `ReleaseChannel` —la convención del
-prefijo `v` es el sitio a reemplazar, y está escrita como tal—; roles
-productor/certificador/promotor para que un repo que solo produce candidatas no
-intente publicar; y `sddk release version inspect` con salida humana y `--json`
-para que un agente vea providers, observaciones, evidencia y conflictos sin
-inspeccionar internals. Cada uno es un bloque con su puerta completa.
+**Cerrado también VA4 (ADR-0158, `accepted` 2026-10-05).** Un repositorio puede
+contener varios productos y cada uno se publica por separado. `ReleaseTarget`
+dejó de ser un tipo que nadie elegía: la elección es una función pura con
+**cuatro** respuestas, porque las reparaciones son cuatro —no hay target,
+hay varios, el nombrado no existe, y dos directorios con la misma identidad— y
+fusionar las dos últimas manda a quien recibe «hay varios» a buscar un segundo
+producto en vez de a corregir el nombre. El escaneo descubre targets con
+profundidad declarada (y el número está justificado donde vive: `packages/x`
+está **dos** niveles bajo la raíz, y con uno el escaneo declara que un monorepo
+con un producto no tiene ninguno). Una raíz que declara su versión es el target
+y no se busca debajo, y esa precedencia es entre **entidades**, no entre
+respuestas, que es la diferencia con la preferencia que el reducer prohíbe.
+`--target` nombra el producto, y **no existe bandera para dudar entre
+candidatos**. El plan declara el target, sus candidatos y que hay más; el
+outcome registra la identidad del producto. Dos hechos medidos antes de escribir
+nada: `ReleaseChannel` **ya existía** como tipo canónico con su retículo de
+promoción, así que VA5 lo reutiliza en vez de crear un canal; y `target_id`
+ya existe con **otro** sentido —el destino de un ticket o de una promoción de
+backlog—, que es homónimo y no autoridad competidora.
+
+**Cambio de comportamiento que hay que decir, no un detalle:** `release plan`
+ahora **falla en un monorepo sin `--target`**, que es lo que el bloque pide.
+
+**Cerrado también VA5.** `ProductVersion`, `ReleaseRef`, `ReleaseChannel` y
+`SourceRevision` son cuatro conceptos, no tres, y la relación entre los dos
+primeros es un **valor declarado** —`VersionNaming`— donde antes había un
+`strip_prefix('v')`. El `product_version_of_release_ref` desaparece y **su
+desaparición es el criterio**: un recorte no es una convención, es una coerción,
+y con él `v1.2.3-rc2` acababa autorizando lo mismo que `v1.2.3`. La asimetria
+es el diseño —la naming **construye** el nombre que la versión tendría y se
+compara exacto, porque generar un nombre es enumerable y parsear uno no— y por
+eso un tag sin prefijo **ahora se rechaza** en vez de pasar.
+
+**Y ese rechazo no es una trampa, que es donde estuvo a punto de quedarse.** El
+fixture de `--target` del monorepo etiquetaba `1.0.0` sin `v` y pasó a rojo —
+el cambio de comportamiento funcionando—, y al arreglarlo apareció el hueco
+real: la convención estaba cableada en `sddk_engine::version` y **no había
+ninguna superficie para declarar otra**. Un guard que prohíbe sin dejar forma de
+decir la verdad empuja al primero que llega a escribir una falsehood; es la
+lección de ADR-0155 repetida con la misma forma. Así que el motor **no tiene
+naming por defecto** —la recibe por parámetro— y la declara quien publica:
+`--naming v_prefixed|exact` en `release` y `ship`. Dos consecuencias que se
+declaran en vez de esconderse: es una bandera **por release**, no una convención
+guardada en el repo, y el rechazo lleva **siempre** la convención aplicada
+—un hecho, no un consejo, y un hecho en un rechazo no puede ser consejo
+equivocado—. `PrefixedCandidate` existe pero **no** es alcanzable desde la
+bandera, porque meter prefijo, separador y marcador en una palabra los
+escondería.
+
+`SourceRevision` es opaca y este módulo **no fabrica versiones**: las recibe y
+no devuelve ninguna, y esa frontera se mide sobre las **firmas**, no con una
+comparación de cadenas. `ReleaseChannel` se **reutiliza** —ya existía— y
+`VersionLockstepError.tag_version` pasa a `release_ref` porque guardaba el
+nombre tal cual.
+
+**Cuatro instrumentos se rompieron a sí mismos** construyendo el falsador, y es
+lo que más cuesta del bloque: dos mutantes escritos como mutantes de **dos**
+leyes, uno que no era mutante sino una función local comparada consigo misma, y
+**dos falsos positivos del mismo tipo y por la misma causa** —un escáner que
+pregunta «¿la línea menciona un tipo?» en vez de «¿la línea **devuelve** ese
+tipo?», que marca tanto `-> ProductVersion` en una función que lo recibe como
+`-> Option<VersionNaming>` en una que puede no tener ninguno—. Los dos escáneres
+comparan el **tipo de retorno** y los dos tienen el caso **negativo** en su
+control, porque un guard que solo tiene el caso positivo no demuestra que sepa
+cuándo **no** disparar.
+
+**Continuación declarada, no empezada: VA6–VA7.** En orden y con su alcance:
+roles productor/certificador/promotor para que un repo que solo produce
+candidatas no intente publicar, y `sddk release version inspect` con salida
+humana y `--json` para que un agente vea providers, observaciones, evidencia y
+conflictos sin inspeccionar internals.
 
 **Fuera de alcance y declarado:** `crates/sddk-engine/src/rules/baseline.rs`
 sigue leyendo el manifiesto del workspace y sus `members` para la línea base de
