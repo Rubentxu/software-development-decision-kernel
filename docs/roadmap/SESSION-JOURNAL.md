@@ -15799,3 +15799,94 @@ release 2.11.3 relanzada desde `26601896`.
 `SDDK_GUARD_BIN="$BIN"` y `$BIN` es el del paso 3, luego el mismo patron con
 `--bin "$BIN"` los ejecuta sin segundo build. Los siete aceptan `--bin` y
 `SDDK_BIN` de forma uniforme, MEDIDO. Queda implementarlo, no decidirlo.
+
+---
+
+## session-84 (bis 5) — ejecutar por primera vez la familia `uat_ctx_*` encuentra cuatro guards rotos
+
+> La 2.11.3 se lanzo por tercera vez. El 1b la paro en
+> `test_release_state_pointer.sh` porque el puntero iba 4 commits atras: yo
+> commitee el journal DESPUES de reconciliarlo. Tercera vez la misma clase de
+> error mio en esta sesion, y la regla que sale de ahi es simple: **reconciliar
+> el puntero es lo ULTIMO, siempre, y nada se commitea despues.**
+>
+> Con el release parado, y con un binario musl ya construido del intento
+> anterior, se ejecuto por primera vez la familia `uat_ctx_*`. Ese era el
+> objetivo abierto desde INC-DEBT-077. Lo que salio no era lo esperado.
+
+### Por que se pudo medir ahora
+
+Los siete aceptan `--bin` y `SDDK_BIN` de forma uniforme, y los pasos 3b/3c del
+propio release ya pasan el binario con `SDDK_GUARD_BIN="$BIN"`, con
+`BIN="$TARGET_DIR/$BUILD_TARGET/release/sddk"` — el del paso 3. **La decision de
+DONDE ejecutar los `uat_ctx_*` ya no era una decision**: hay sitio despues del 3,
+con el binario ya en la mano y sin segundo build. El motivo «ORDEN» con el que
+estan en `NOT_GUARDS` era y sigue siendo cierto para el **1b**, que corre antes.
+
+### Lo que salio: el mismo defecto del trap, en cuatro guards mas
+
+| guard | veredicto impreso | rc |
+|---|---|---|
+| `uat_ctx_001` | `PASS: 3/3 applies complete` | **1** |
+| `uat_ctx_004` | `UAT CTX-UAT-002 + CTX-UAT-003: PASS` | **64** |
+| `uat_ctx_002` | `FAIL: ... cycle not found` | 64 |
+| `uat_ctx_003` | `FAIL: bootstrap exited non-zero` | 64 |
+
+Con `--keep`, que salta el borrado, 001 y 004 salen **0**.
+
+**La causa NO es la misma que en el 1b, y medirla fue lo que la distinguio.** Alli
+era `set -e` + trap que borra. Aqui es mas concreto: los cuatro mueven `HOME`
+DENTRO del sandbox y nunca lo restauran, luego el borrado corre con la casa
+dentro del directorio que va a borrar y `mavis-trash` no puede resolver donde
+dejar la papelera. `uat_ctx_005`, `006` y `007` ya lo hacen bien con `REAL_HOME`.
+
+> **La division es exacta:** de los siete, cuatro con el defecto y tres
+> correctos, y coincide **precisamente con quien declara `REAL_HOME`**. Una
+> correlacion exacta entre un defecto y una variable ausente es la clase de
+> evidencia que no se tiene por hipótesis.
+
+### Tres instrumentos que fallaron a si mismos, en una tarde
+
+1. El `sed` con delimitador `|` sobre un patron con `||` (medido antes).
+2. Los sondeos con `pgrep -f 'scripts/release.sh'`, que se detectan a si mismos
+   y nunca ven `TERMINADO`.
+3. **Mi propio script de arreglo**, en el primer intento: encadenar dos
+   `str.replace` metio `|| true || true`, y el `return "$rc"` quedo fuera de la
+   funcion. Detectado leyendo el resultado, no ejecutandolo. Revertido con
+   `git checkout` y rehecho reconstruyendo la funcion entera.
+
+### Lo que NO se arregla, y es lo mas importante
+
+- **`uat_ctx_002` y `uat_ctx_003` FALLAN de verdad.** `cycle not found:
+  uat-cycle-1`, `bootstrap exited non-zero`. No es el instrumento: es el sujeto.
+- **`uat_ctx_006` es FLAKY.** Tres ejecuciones identicas dieron **1, 1 y 0**
+  mientras imprimian `UAT CTX-UAT-005: FAIL`. Un guard que sale 0 en un FAIL es
+  PEOR que el defecto del trap, y es un defecto distinto que no se arregla
+  copiando un patron.
+
+> **Estos tres no pueden entrar en el release como gate hoy.** 002 y 003 en rojo,
+> 006 sin veredicto estable. Siguen en `NOT_GUARDS` con su motivo de orden.
+
+### El hallazgo que justifica INC-DEBT-077 de forma empirica
+
+El defecto original dio con dos guards del 1b. Al ejecutar por primera vez la
+familia que estaba **excluida del censo por no llevar el glifo `test_` en el
+nombre**, aparecieron **cuatro mas con el mismo defecto**, mas dos en rojo real y
+uno flakey.
+
+> **Lo que el censo no cubre no es que no tenga defectos: es que no se ven.**
+> Los seis guards que nadie ejecutaba no eran un problema teorico de cobertura.
+> Eran seis guards sin medir, y la primera medicion encontro ocho defectos en
+> ellos.
+
+### Estado al cerrar
+
+`uat_ctx_001` 1->0 · `uat_ctx_004` 64->0 · `uat_ctx_002` 64->1 · `uat_ctx_003`
+64->1, todos con su veredicto real · shellcheck rc=0 en los cuatro · censo
+`RESULT: PASS` con los `uat_ctx_*` en `NOT_GUARDS` y su motivo · el codigo de
+salida ya no depende de la limpieza en seis de los siete.
+
+Pendiente, sin tocar: el **paso 3j** que cablearia los siete esta escrito y
+medido, y no se aplica hasta que 002, 003 y 006 dejen de estar en rojo o
+flakey. **Anadir un paso al camino de release porque «deberia funcionar» es la
+misma clase de error que este repo lleva tres commits cerrando.**
