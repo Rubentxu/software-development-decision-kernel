@@ -9,9 +9,23 @@
 //! every consumer inherits.
 //!
 //! Nothing in this module decides anything. It observes: it reads files,
-//! extracts a value, and reports one of the four answers
-//! ([`VersionProbe`]). Deciding what those answers mean is
+//! extracts a value, and reports one of the five answers ([`VersionProbe`]).
+//! Deciding what those answers mean is
 //! [`sddk_domain::version_authority::reduce`], which cannot see a file name.
+//!
+//! # Why there is exactly one provider per file
+//!
+//! An earlier version of this file also had a provider that read *every*
+//! declaration at once, so that "one call resolves the repository". It was
+//! removed, and the reason is worth keeping: that provider had to decide what
+//! to do when two files disagreed, and every answer it could give is a policy
+//! — pick one, or report a conflict. It chose to report a conflict, which is
+//! the right answer, but it chose it *in the adapter layer*, where a second
+//! implementation would have chosen differently and nothing would have
+//! noticed. With one provider per file, disagreement is not a case any
+//! provider has to handle: it is two observations, and the reducer names it
+//! without being asked. A provider that decides is a second authority, and
+//! this repo has a whole debt file about what those cost.
 //!
 //! # Why the extractor belongs to the candidate
 //!
@@ -31,8 +45,8 @@
 //! of the same lie.
 
 use sddk_domain::version_authority::{
-    ProductVersion, ProviderError, ReleaseTarget, VersionEvidence, VersionProbe, VersionResolverPort,
-    PRODUCT_VERSION_OBSERVATION,
+    PRODUCT_VERSION_OBSERVATION, ProductVersion, ProviderError, ReleaseTarget, VersionEvidence,
+    VersionProbe, VersionResolverPort,
 };
 use std::path::Path;
 
@@ -143,10 +157,7 @@ pub const DEFAULT_DECLARATIONS: &[DeclarationSpec] = &[
             DeclarationFormat::Toml,
             // Two declaration dialects, in this order. A project declares in
             // one, not both.
-            ValueLocator::AnyOfKeys(&[
-                &["project", "version"],
-                &["tool", "poetry", "version"],
-            ]),
+            ValueLocator::AnyOfKeys(&[&["project", "version"], &["tool", "poetry", "version"]]),
         )),
         ecosystem: "python",
         tag_is_authority: false,
@@ -162,10 +173,7 @@ pub const DEFAULT_DECLARATIONS: &[DeclarationSpec] = &[
     },
     DeclarationSpec {
         path: "gradle.properties",
-        extraction: Some((
-            DeclarationFormat::KeyValue,
-            ValueLocator::Tag("version"),
-        )),
+        extraction: Some((DeclarationFormat::KeyValue, ValueLocator::Tag("version"))),
         ecosystem: "jvm",
         tag_is_authority: false,
     },
@@ -234,51 +242,6 @@ pub const DEFAULT_DECLARATIONS: &[DeclarationSpec] = &[
     },
 ];
 
-/// Observes a target's version by reading declaration files.
-pub struct DeclarationFileProvider {
-    declarations: &'static [DeclarationSpec],
-    /// Fixed at construction: a provider's identity is provenance, and a
-    /// provider that could rename itself between calls would make two
-    /// observations of the same thing look like two sources.
-    provider_id: String,
-    provider_version: String,
-    capabilities: Vec<String>,
-}
-
-impl Default for DeclarationFileProvider {
-    fn default() -> Self {
-        Self::new(DEFAULT_DECLARATIONS)
-    }
-}
-
-impl DeclarationFileProvider {
-    /// A provider over an explicit set of declarations, each observed as its
-    /// own source.
-    pub fn new(declarations: &'static [DeclarationSpec]) -> Self {
-        Self {
-            declarations,
-            provider_id: "sddk.gateway.declaration-files".to_owned(),
-            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities: vec![PRODUCT_VERSION_OBSERVATION.to_owned()],
-        }
-    }
-
-    /// A provider for exactly one declaration.
-    pub fn for_spec(spec: &'static DeclarationSpec) -> SingleDeclarationProvider {
-        SingleDeclarationProvider {
-            spec,
-            provider_id: format!("sddk.gateway.declaration-file/{}", spec.path),
-            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
-            capabilities: vec![PRODUCT_VERSION_OBSERVATION.to_owned()],
-        }
-    }
-
-    /// The declarations this provider knows.
-    pub fn declarations(&self) -> &'static [DeclarationSpec] {
-        self.declarations
-    }
-}
-
 /// One file, observed as one source.
 ///
 /// This is the granularity that makes the architecture honest. If ONE
@@ -296,6 +259,23 @@ pub struct SingleDeclarationProvider {
     capabilities: Vec<String>,
 }
 
+impl SingleDeclarationProvider {
+    /// A provider over exactly one declaration.
+    pub fn for_spec(spec: &'static DeclarationSpec) -> Self {
+        Self {
+            spec,
+            provider_id: format!("sddk.gateway.declaration-file/{}", spec.path),
+            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities: vec![PRODUCT_VERSION_OBSERVATION.to_owned()],
+        }
+    }
+
+    /// The declaration this provider observes.
+    pub fn spec(&self) -> &'static DeclarationSpec {
+        self.spec
+    }
+}
+
 impl VersionResolverPort for SingleDeclarationProvider {
     fn provider_id(&self) -> &str {
         &self.provider_id
@@ -306,10 +286,7 @@ impl VersionResolverPort for SingleDeclarationProvider {
     fn capabilities(&self) -> &[String] {
         &self.capabilities
     }
-    fn observe(
-        &self,
-        target: &ReleaseTarget,
-    ) -> Result<VersionProbe, ProviderError> {
+    fn observe(&self, target: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
         let path = Path::new(target.root()).join(self.spec.path);
         if !path.exists() {
             return Ok(VersionProbe::NotApplicable {
@@ -317,8 +294,15 @@ impl VersionResolverPort for SingleDeclarationProvider {
             });
         }
         if self.spec.tag_is_authority {
-            return Ok(VersionProbe::Undeclared {
-                reason: format!("el tag es la autoridad de {}", self.spec.ecosystem),
+            // A declaration of absence, not silence. The distinction is what
+            // lets a target whose convention is "the version lives on the
+            // release reference" be reported as resolved, while one that
+            // merely said nothing still fails closed.
+            return Ok(VersionProbe::ReleaseRefIsAuthority {
+                declared_by: format!(
+                    "{} no declara version de producto; su convencion es que la lleva la release ref",
+                    self.spec.ecosystem
+                ),
             });
         }
         let Some((format, locator)) = self.spec.extraction else {
@@ -354,136 +338,6 @@ impl VersionResolverPort for SingleDeclarationProvider {
     }
 }
 
-impl DeclarationFileProvider {
-    /// Observes one directory.
-    ///
-    /// The four answers, and what each one means here:
-    ///
-    /// - nothing present at all -> `NotApplicable`: this provider has no
-    ///   subject in this target.
-    /// - files present, none declaring, or declaring nothing -> `Undeclared`:
-    ///   it looked, and the target is silent. That is a fact about the
-    ///   target, and it is different from the case above.
-    /// - a file that cannot be read or parsed -> `Invalid`: the target HAD
-    ///   something to say and it could not be understood. Fails closed.
-    /// - a value -> `Declared` with the file as its evidence location.
-    ///
-    /// Divergence between two declaring files is **not** decided here. This
-    /// function reports one answer per provider, and if two files disagree
-    /// that is `Invalid` with both names — because a provider that reported
-    /// one of them and stayed silent about the other would be deciding by
-    /// order, and order is not a policy.
-    pub fn observe_at(&self, root: &Path) -> Result<VersionProbe, ProviderError> {
-        let mut declared: Vec<(ProductVersion, &'static str)> = Vec::new();
-        let mut present: Vec<&'static str> = Vec::new();
-        let mut tag_only: Vec<&'static str> = Vec::new();
-
-        for spec in self.declarations {
-            let path = root.join(spec.path);
-            if !path.exists() {
-                continue;
-            }
-            present.push(spec.path);
-
-            if spec.tag_is_authority {
-                tag_only.push(spec.ecosystem);
-                continue;
-            }
-
-            let Some((format, locator)) = spec.extraction else {
-                // Present, and declared as not a version source. Not a
-                // finding, not a failure.
-                continue;
-            };
-
-            let content = std::fs::read_to_string(&path).map_err(|e| ProviderError::Unavailable {
-                provider_id: self.provider_id.clone(),
-                reason: format!("{} no se pudo leer: {e}", spec.path),
-            })?;
-
-            match extract(format, locator, &content) {
-                Ok(version) => declared.push((version, spec.path)),
-                Err(ExtractError::Absent) => {}
-                Err(ExtractError::Parse(reason)) => {
-                    return Err(ProviderError::Unavailable {
-                        provider_id: self.provider_id.clone(),
-                        reason: format!(
-                            "{} no se pudo interpretar como {}: {reason}",
-                            spec.path,
-                            format.label()
-                        ),
-                    });
-                }
-            }
-        }
-
-        match declared.len() {
-            0 => {
-                if !tag_only.is_empty() {
-                    // The ecosystem's tag is the authority and it declares
-                    // nothing. That is `Undeclared`, and it is informative:
-                    // it is exactly the case that must NOT block another
-                    // provider that did read a value.
-                    return Ok(VersionProbe::Undeclared {
-                        reason: format!("el tag es la autoridad de {tag_only:?}"),
-                    });
-                }
-                if present.is_empty() {
-                    return Ok(VersionProbe::NotApplicable {
-                        reason: "ningun fichero de declaracion en este target".to_owned(),
-                    });
-                }
-                Ok(VersionProbe::Undeclared {
-                    reason: format!("encontrados sin declarar: {present:?}"),
-                })
-            }
-            1 => {
-                let (version, path) = declared.remove(0);
-                Ok(VersionProbe::Declared {
-                    version,
-                    evidence: VersionEvidence {
-                        source_kind: format!("declaracion-en-fichero/{path}"),
-                        digest: None,
-                        location: Some(path.to_owned()),
-                    },
-                })
-            }
-            _ => Err(ProviderError::Unavailable {
-                provider_id: self.provider_id.clone(),
-                reason: format!(
-                    "varios ficheros declaran versiones distintas: {}",
-                    declared
-                        .iter()
-                        .map(|(v, p)| format!("{p}={v}"))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                ),
-            }),
-        }
-    }
-}
-
-impl VersionResolverPort for DeclarationFileProvider {
-    fn provider_id(&self) -> &str {
-        &self.provider_id
-    }
-
-    fn provider_version(&self) -> &str {
-        &self.provider_version
-    }
-
-    fn capabilities(&self) -> &[String] {
-        &self.capabilities
-    }
-
-    fn observe(
-        &self,
-        target: &ReleaseTarget,
-    ) -> Result<VersionProbe, ProviderError> {
-        self.observe_at(Path::new(target.root()))
-    }
-}
-
 /// Why reading a file did not yield a value. The two cases are different
 /// facts and the difference is the whole point of this provider existing.
 enum ExtractError {
@@ -505,16 +359,16 @@ fn extract(
                 .map_err(|e: toml::de::Error| ExtractError::Parse(e.to_string()))?;
             let found = match locator {
                 ValueLocator::Keys(keys) => keys.iter().find_map(|k| doc.get(*k)),
-                ValueLocator::AnyOfKeys(paths) => {
-                    paths.iter().find_map(|path| walk(&doc, path))
-                }
+                ValueLocator::AnyOfKeys(paths) => paths.iter().find_map(|path| walk(&doc, path)),
                 ValueLocator::Tag(tag) => doc.get(tag),
             };
-            found.and_then(as_version_string).ok_or(ExtractError::Absent)?
+            found
+                .and_then(as_version_string)
+                .ok_or(ExtractError::Absent)?
         }
         DeclarationFormat::Json => {
-            let doc: serde_json::Value = serde_json::from_str(content)
-                .map_err(|e| ExtractError::Parse(e.to_string()))?;
+            let doc: serde_json::Value =
+                serde_json::from_str(content).map_err(|e| ExtractError::Parse(e.to_string()))?;
             let found = match locator {
                 ValueLocator::Keys(keys) => keys.iter().find_map(|k| doc.get(*k)),
                 ValueLocator::AnyOfKeys(paths) => {
@@ -522,7 +376,9 @@ fn extract(
                 }
                 ValueLocator::Tag(tag) => doc.get(tag),
             };
-            found.and_then(|v| v.as_str().map(str::to_owned)).ok_or(ExtractError::Absent)?
+            found
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .ok_or(ExtractError::Absent)?
         }
         DeclarationFormat::KeyValue => {
             let ValueLocator::Tag(tag) = locator else {
@@ -594,6 +450,125 @@ fn as_version_string(value: &toml::Value) -> Option<String> {
     value.as_str().map(str::to_owned)
 }
 
+// ---------------------------------------------------------------------------
+// The project's own declaration — a provider like any other
+// ---------------------------------------------------------------------------
+
+/// Where a project declares where its own version lives, relative to the
+/// target root.
+///
+/// This used to be a constant in the crate that made the decision, read by a
+/// `match` on the failure it was rescuing. It is a **file name**, so it lives
+/// here now with the other file names. What the engine kept is the law that
+/// a declaration rescues an absence and never an unreadable source — and that
+/// law is no longer special-cased at all: it falls out of the reducer's
+/// ordinary precedence, because a declared version outranks a declared
+/// absence and an unreadable source outranks both.
+pub const DECLARED_AUTHORITY_PATH: &str = ".sddk/version-source.json";
+
+/// Reads the project's own declaration, if it wrote one.
+///
+/// The shape is deliberately tiny and versioned: `{"schema_version": 1,
+/// "authority": "tag"}`. Anything else — a missing file, a broken document, an
+/// unknown schema, a value this build does not know — is answered honestly
+/// and separately, because those are four different situations that an
+/// operator has to tell apart.
+#[derive(Debug)]
+pub struct DeclaredAuthorityProvider {
+    provider_id: String,
+    provider_version: String,
+    capabilities: Vec<String>,
+}
+
+impl Default for DeclaredAuthorityProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DeclaredAuthorityProvider {
+    /// A provider over the project's declaration.
+    pub fn new() -> Self {
+        Self {
+            provider_id: format!("sddk.gateway/{}", DECLARED_AUTHORITY_PATH),
+            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities: vec![PRODUCT_VERSION_OBSERVATION.to_owned()],
+        }
+    }
+}
+
+impl VersionResolverPort for DeclaredAuthorityProvider {
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn provider_version(&self) -> &str {
+        &self.provider_version
+    }
+
+    fn capabilities(&self) -> &[String] {
+        &self.capabilities
+    }
+
+    fn observe(&self, target: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
+        let path = Path::new(target.root()).join(DECLARED_AUTHORITY_PATH);
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            // Absent is the normal case for almost every project, and it is
+            // not a question: this target simply has nothing to declare. Note
+            // that the read error is not inspected — a file that exists but
+            // cannot be read must be reported as unreadable, and treating the
+            // two as one is precisely the substitution that a prior falsifier
+            // exploited on the other side of this codebase.
+            return if path.exists() {
+                Ok(VersionProbe::Invalid {
+                    reason: format!("{DECLARED_AUTHORITY_PATH} existe y no se pudo leer"),
+                })
+            } else {
+                Ok(VersionProbe::NotApplicable {
+                    reason: format!("este target no declara nada en {DECLARED_AUTHORITY_PATH}"),
+                })
+            };
+        };
+
+        let doc: serde_json::Value =
+            raw.parse()
+                .map_err(|e: serde_json::Error| ProviderError::Unavailable {
+                    provider_id: self.provider_id.clone(),
+                    reason: format!("{DECLARED_AUTHORITY_PATH} no se pudo interpretar: {e}"),
+                })?;
+
+        if doc.get("schema_version").and_then(|v| v.as_u64()) != Some(1) {
+            return Err(ProviderError::Unavailable {
+                provider_id: self.provider_id.clone(),
+                reason: format!(
+                    "{DECLARED_AUTHORITY_PATH} declara schema_version {:?} y este build entiende 1",
+                    doc.get("schema_version")
+                ),
+            });
+        }
+
+        match doc.get("authority").and_then(|v| v.as_str()) {
+            Some("tag") => Ok(VersionProbe::ReleaseRefIsAuthority {
+                declared_by: format!(
+                    "el proyecto declara en {DECLARED_AUTHORITY_PATH} que su version la lleva la release ref"
+                ),
+            }),
+            Some(other) => Err(ProviderError::Unavailable {
+                provider_id: self.provider_id.clone(),
+                reason: format!(
+                    "{DECLARED_AUTHORITY_PATH} declara authority {other:?}; este build entiende \"tag\""
+                ),
+            }),
+            None => Err(ProviderError::Unavailable {
+                provider_id: self.provider_id.clone(),
+                reason: format!(
+                    "{DECLARED_AUTHORITY_PATH} no declara \"authority\" (se esperaba \"tag\")"
+                ),
+            }),
+        }
+    }
+}
+
 /// The registry a caller gets when it has not composed one itself.
 ///
 /// **One provider per declaration file**, deliberately. Two files declaring
@@ -601,10 +576,16 @@ fn as_version_string(value: &toml::Value) -> Option<String> {
 /// observations, and the reducer names the conflict. A single provider
 /// reading every file would have to choose, and choosing is a policy that
 /// does not belong here.
+///
+/// The project's own declaration is registered alongside them, and it is
+/// registered rather than special-cased for the same reason: it is one more
+/// way of saying something about the version, so it answers the same question
+/// the same way.
 pub fn default_version_registry() -> sddk_domain::version_authority::VersionResolverRegistry {
     let mut registry = sddk_domain::version_authority::VersionResolverRegistry::new();
+    registry.register(Box::new(DeclaredAuthorityProvider::new()));
     for spec in DEFAULT_DECLARATIONS {
-        registry.register(Box::new(DeclarationFileProvider::for_spec(spec)));
+        registry.register(Box::new(SingleDeclarationProvider::for_spec(spec)));
     }
     registry
 }
