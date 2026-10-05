@@ -279,11 +279,53 @@ else
 fi
 
 BOOT_CHOSEN="$SANDBOX/boot-chosen.json"
+
+# MEDIDO (session-84 bis 7, 6 ejecuciones: 1 verde, 5 con
+# `expected compiled, got recovered`). La causa NO es un flake del runtime: es
+# que `context_source` depende de SI el ciclo elegido tenia capsule, y el guion
+# exigia `compiled` para un candidato que escoge a ciegas.
+#
+#   - `compiled`  = la capsule se reconstruyo ahora.
+#   - `recovered` = ya habia capsule y se reuso por digest (read-reuse, que es
+#                   una capacidad declarada del runtime).
+#
+# En este guion `PREFIXED_ONE` (alpha) compilo su capsule en el paso 4, asi que
+# elegirlo da `recovered` SIEMPRE; `PREFIXED_TWO` (beta) nunca la compilo, asi
+# que elegirlo da `compiled` SIEMPRE. Lo que varia entre corridas es el ORDEN de
+# `candidates` (medido: `['beta','alpha']` una vez, `['alpha','beta']` dos), y
+# por eso el mismo guion daba verde y rojo sin que cambiara nada.
+#
+# La version anterior ataba `compiled` al candidato que saliera primero, o sea
+# a un valor que el runtime no controla: verde por azar cuando salia beta.
+# Lo que se afirma ahora, y es mas fuerte, es la REGLA, en las dos ramas.
+#
+# ORDEN IMPORTA: la regla se mide ANTES de que el paso de la eleccion toque
+# ningun ciclo. Si se midiera despues, elegir beta como `CHOSEN` le habria
+# dado capsule y la rama "sin capsule" devolveria `recovered` — la propia
+# comprobacion volveria a depender del orden de `candidates`.
+if [ "$PREFIXED_TWO" != "$PREFIXED_ONE" ]; then
+    BOOT_FRESH="$SANDBOX/boot-fresh.json"
+    bootstrap "uat-ctx005-fresh" "$BOOT_FRESH" "$PREFIXED_TWO"
+    assert_eq "elegir un ciclo sin capsule la compila" "compiled" \
+        "$(jqf "$BOOT_FRESH" "['context_source']")"
+
+    BOOT_REUSE="$SANDBOX/boot-reuse.json"
+    bootstrap "uat-ctx005-reuse" "$BOOT_REUSE" "$PREFIXED_ONE"
+    assert_eq "elegir un ciclo con capsule la reusa por digest" "recovered" \
+        "$(jqf "$BOOT_REUSE" "['context_source']")"
+else
+    fail "los dos ciclos tienen el mismo id: la regla de las dos ramas no se puede ejercitar"
+fi
+
 bootstrap "uat-ctx005-chosen" "$BOOT_CHOSEN" "$CHOSEN"
 assert_eq "el candidate elegido resuelve" "explicit" "$(jqf "$BOOT_CHOSEN" "['cycle']['state']")"
 assert_eq "resuelve exactamente al elegido" "$CHOSEN" "$(jqf "$BOOT_CHOSEN" "['cycle']['cycle_id']")"
-assert_eq "contexto reconstruido tras la elección" "compiled" "$(jqf "$BOOT_CHOSEN" "['context_source']")"
 assert_eq "status completo tras la elección" "complete" "$(jqf "$BOOT_CHOSEN" "['status']")"
+# Los dos candidatos ya tienen capsule tras la comprobacion de la regla, asi que
+# aqui el valor correcto es `recovered` SIEMPRE. Fijarlo a `compiled` es
+# justamente el defecto que se acababa de medir.
+assert_eq "el candidato elegido reusa la capsule existente" "recovered" \
+    "$(jqf "$BOOT_CHOSEN" "['context_source']")"
 
 # ── 7. Legacy callers intactos: la escalera no rompió a quien ya resolvía ──
 step "legacy callers: los comandos de la skill siguen resolviendo"
