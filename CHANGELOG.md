@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.10.0] - 2026-10-05
+
+### Features
+  - feat(cli): el juez de frescura del binario vive en el checkout, no en el artefacto — Cierra INC-DEBT-064, y lo cierra separando dos cosas que el producto tenía juntas. `sddk dev build-id --check` se ejecutaba **desde el binario que juzga**, y de ahí salían las dos limitaciones que la deuda declaraba: no se puede comprobar nada **antes** de instalar, y un artefacto anterior a `032e9553` no tiene ese subcommand —contesta `unrecognized subcommand` y sale con **2**— luego **no puede ni declarar que no lo tiene**, que es el estado mas viejo de todos y desde dentro es invisible. Un artefacto puede aportar el **HECHO** de sí mismo (su commit, si su árbol estaba sucio); el **JUICIO** necesita un punto de referencia, y ese es el checkout. Por eso el juez nuevo es `scripts/check_binary_freshness.sh`, en el repo, y no un subcommand mas: se puede correr antes de instalar nada y es consultable como evidencia. Siete relaciones, y solo dos en verde: `matches` y `ahead` (que significa que el problema es el checkout, no el binario). Las otras cinco **fallan cerrado** —`behind`, `diverged`, `dirty`, `unknown-commit`, `no-build-id`—, y `no-checkout` sale `N/A` en vez de FALLO: sin checkout no hay nada respecto de que ser viejo, mientras que un artefacto que no se identifica no es una medición con nombre. `--format json` para poder citarla como evidencia de gate. La condición de fondo **no se elimina y no se dice lo contrario**: el binario se instala desde un release y el workspace no bumpea entre releases, luego todo el trabajo posterior a la última publicación comparte número con ella. MEDIDO, con el binario de `e9d368fe` y el checkout dos commits por delante: ambos declaran 2.9.1 y la comparación sale **verde**. Lo que se cierra es el **daño** —medir sin saberlo—, no la condición
+
+### Other
+  - test(cli): el guard del juez de frescura — siete relaciones, hermetico, con autofalsacion — `tests/test_binary_freshness_checker.sh`, **10 checks 0 fallos**, con repo temporal por caso y **7 stubs**: los cuatro estados distinguibles de `binary.build_identity` no se alcanzan sin fabricar binarios, y un guard que necesita el producto real para probarse no puede correr en el 1b. La autofalsacion rompe las cinco clasificaciones con `sed -E 's/REL="[a-z-]+"/REL="matches"/'` y exige que **cada una se note**, porque un guard que juzgue mal en silencio es peor que no tener guard. Cableado en el 1b de `release.sh`; `tests/test_gate_coverage.py` queda en **73 tests, 69 con runner, 0 sin motivo escrito**
+  - docs(cli): la regla de medir solo con el binario de este checkout, en AGENTS.md 2.3.1
+  - docs(debt): INC-DEBT-064 resuelta, y revalidada por ejecucion antes de tratarla como deuda
+  - docs(state): el puntero reconciliado a f8043039, con el unico FAIL del 1b reparado
+  - docs(journal): session-81 cierra con REL-2.9.1 publicada e instalada, e INC-DEBT-071 resuelta
+
 ## [2.9.1] - 2026-10-04
 
 ### Fixes
