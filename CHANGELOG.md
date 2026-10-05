@@ -12,6 +12,8 @@ All notable changes to this project are documented in this file.
 ### Other
   - docs(debt): INC-DEBT-076, con la mitad que no se vio hasta la segunda medicion — El documento se abrio describiendo tres tests con runner solo-CI, y **es cierto y no es lo importante**: la segunda medicion, con un instrumento validado contra el log de un release real, encontro cinco mas que no ejecutaba NADIE, y eso cambia la severidad de `medium/P2` a `high/P1`. Los cinco estan publicados en el changelog como gates con su PASS, luego un artefacto publicado afirma como evidencia pruebas que la release no ejecuta. Queda escrito lo que no se corrige, para que no se lea como hecho: la superficie del 1b sigue siendo una lista escrita a mano, y la linea del changelog que declara los cinco gates esta publicada y pertenece a un tag
 
+  - docs(changelog): seccion 2.11.2, escrita despues de los commits y antes del bump
+
 ## [2.11.1] - 2026-10-05
 
 ### Fixes
