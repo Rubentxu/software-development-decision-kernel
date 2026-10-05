@@ -603,11 +603,26 @@ pub enum ProviderError {
     /// versión que no parsea y un JSON con sintaxis rota se reportaban todos como
     /// «no se pudo ejecutar».
     ///
-    /// Es la misma clase que el banner de Gradle que se corrigió en VA9: un
-    /// mensaje cierto para todos los fallos habidos no distingue ninguno. Y
-    /// distingue dos reparaciones **opuestas** —comprobar el binario cuando el
-    /// problema está en el fichero, o al revés—, luego el operador va al sitio
-    /// equivocado.
+    /// Es la misma clase que el banner de una herramienta que se corrigió en otro
+    /// bloque: un mensaje cierto para todos los fallos habidos no distingue
+    /// ninguno. Y distingue dos reparaciones **opuestas** —comprobar el binario
+    /// cuando el problema está en su fichero, o al revés—, luego el operador va al
+    /// sitio equivocado.
+    ///
+    /// ## Por qué este doc no nombra la herramienta del caso
+    ///
+    /// MEDIDO, y contra este mismo fichero: la primera versión de este párrafo
+    /// citaba la herramienta concreta del ejemplo que lo motivó, y
+    /// `tests/version_authority_fitness.rs` —`the_decision_module_names_no_concrete_technology`—
+    /// cayó en rojo en el perfil completo del workspace. No cayó antes porque el
+    /// perfil que se corrió tras el bloque era el del gateway, y el fichero
+    /// cambiado estaba en el dominio: **el alcance lo decidí por el crate que
+    /// creía haber tocado, no por el que había tocado**.
+    ///
+    /// La ley es del dominio, no de la prosa: este módulo define las preguntas y
+    /// los providers saben obtener la evidencia. Nombrar una herramienta en un
+    /// doc-comment no rompe ninguna regla de tipos, luego nada te avisa — y la
+    /// frontera pasa a ser ficción un fraseado a la vez.
     ///
     /// ## La frontera, y por qué se puede aplicar sin criterio
     ///
