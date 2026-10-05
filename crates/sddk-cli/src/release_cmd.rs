@@ -195,6 +195,24 @@ pub(crate) struct VersionInspectArgs {
     /// `release plan`: dos productos y nada que diga cuál es un rechazo.
     #[arg(long)]
     pub(crate) target: Option<String>,
+    /// Ask the build tool what its model says, instead of only reading files.
+    ///
+    /// Opt-in porque **paga**: MEDIDO, `gradle properties --offline` tarda 3 s
+    /// y levanta una JVM, por target. Sin esta bandera el informe dice
+    /// explícitamente que el modelo del build no se evaluó, porque no
+    /// evaluarlo por defecto es una decisión y callarla sería otra.
+    #[arg(long)]
+    pub(crate) evaluate_build: bool,
+    /// The build tool to ask, when `--evaluate-build` is given.
+    ///
+    /// MEDIDO: no es un detalle. Un proyecto con wrapper usa `./gradlew` y uno
+    /// sin wrapper usa el `gradle` del PATH, que ademas puede estar detras de un
+    /// shim de asdf que **exige** `.tool-versions` —sin el responde `No version
+    /// is set for command gradle` y sale 126—. Suponer cual de los dos es
+    /// suponer, y es la misma palabra que usa el resto de este bloque para lo
+    /// que se declara en vez de deducirse.
+    #[arg(long, default_value = "gradle")]
+    pub(crate) build_tool: String,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -461,10 +479,31 @@ fn run_release_version_inspect(args: VersionInspectArgs) -> CommandOutput {
         // mira un target distinto del que se publico no explica el rechazo que
         // se quiere explicar.
         let selected = resolve_release_target(&root, args.target.as_deref())?;
-        Ok(version_registry().resolve_inspecting(
-            sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
-            &selected.target,
-        ))
+        let mut inspection = version_registry_asking(args.evaluate_build, &args.build_tool)
+            .resolve_inspecting(
+                sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
+                &selected.target,
+            );
+        // Lo que NO se evaluó, y que el informe tiene que decir aunque el
+        // veredicto sea rojo: no preguntar al build tool es una decisión —la
+        // paga quien la pide con `--evaluate-build`— y una decisión que el
+        // informe no menciona se lee como una fuente mas que se consulto.
+        //
+        // El proveedor se DECLARA siempre en `providers_considered` aunque no se
+        // haya pedido, asi que sin esta linea el informe seria internamente
+        // contradictorio: diria «estos fueron los providers mirados» nombrando
+        // uno que no se ejecuto.
+        if !args.evaluate_build {
+            inspection
+                .not_checked
+                .push(sddk_domain::version_inspection::NotChecked {
+                    key: "build_model_not_evaluated".to_owned(),
+                    statement: "the build tool was NOT asked what its model says; that costs a \
+                                process per target, so it happens only with `--evaluate-build`"
+                        .to_owned(),
+                });
+        }
+        Ok(inspection)
     })();
     render_result(result, format, version_inspection_text)
 }
@@ -1974,6 +2013,28 @@ fn naming_rejection(message: &str, naming: &VersionNaming) -> anyhow::Error {
 /// toca ni el motor ni el dominio.
 fn version_registry() -> sddk_domain::version_authority::VersionResolverRegistry {
     sddk_gateway::version_provider::default_version_registry()
+}
+
+/// El mismo registro, y además el provider que **pregunta** a la herramienta
+/// de build — si alguien lo ha pedido.
+///
+/// Que sea una bandera y no una preferencia del repo es la misma razón por la
+/// que `--naming` y `--role` son banderas: un default en el registro se paga
+/// sin que nadie lo pidiera, y lo que se paga sin pedirlo es lo que nadie
+/// revisa.
+fn version_registry_asking(
+    evaluate_build: bool,
+    build_tool: &str,
+) -> sddk_domain::version_authority::VersionResolverRegistry {
+    if !evaluate_build {
+        return version_registry();
+    }
+    sddk_gateway::version_provider::version_registry_with(Some(
+        sddk_gateway::version_provider::BuildModelInvocation {
+            program: build_tool.to_owned(),
+            args: vec!["properties".to_owned(), "--offline".to_owned()],
+        },
+    ))
 }
 
 /// Elige el target, o explica por que no puede, y deja constancia de como.

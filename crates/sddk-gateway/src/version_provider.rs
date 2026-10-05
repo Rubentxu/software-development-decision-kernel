@@ -581,11 +581,361 @@ impl VersionResolverPort for DeclaredAuthorityProvider {
 /// registered rather than special-cased for the same reason: it is one more
 /// way of saying something about the version, so it answers the same question
 /// the same way.
+/// Every provider SDDK ships, and **nothing that runs a process**.
+///
+/// Esta es la función que todo el resto del repo llama, y su propiedad es lo que
+/// hace que el precio de preguntar al build tool sea una decisión y no una
+/// sorpresa: quien quiera pagarlo pide [`version_registry_with`].
 pub fn default_version_registry() -> sddk_domain::version_authority::VersionResolverRegistry {
+    version_registry_with(None)
+}
+
+// ---------------------------------------------------------------------------
+// Asking the build tool, instead of reading its script
+// ---------------------------------------------------------------------------
+
+/// The files whose presence means "this directory is a Gradle build".
+///
+/// **Presence only, and never content.** El criterio es que el directorio tenga
+/// un fichero de build *propio*, no lo que ese fichero diga: decidir con el
+/// contenido sería volver a leer el lenguaje, que es justo lo que este provider
+/// existe para no hacer.
+///
+/// MEDIDO: separa los casos que importan. `docs/guia` dentro de un build no
+/// tiene ninguno y sin este criterio lanzaría un subproceso de 3 s para que
+/// Gradle contestara `Project directory '…' is not part of the build`. Y
+/// `lib-b`, un submódulo que **sí** declara version propia, tiene el suyo y sin
+/// este criterio se perdería.
+pub const GRADLE_BUILD_FILES: &[&str] = &[
+    "build.gradle.kts",
+    "build.gradle",
+    "settings.gradle.kts",
+    "settings.gradle",
+];
+
+/// How to ask the build tool what its model says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildModelInvocation {
+    /// The program to run.
+    pub program: String,
+    /// Its arguments.
+    pub args: Vec<String>,
+}
+
+impl Default for BuildModelInvocation {
+    fn default() -> Self {
+        Self::gradle()
+    }
+}
+
+impl BuildModelInvocation {
+    /// `gradle properties --offline`, measured.
+    ///
+    /// `--offline` porque una resolución de versión no puede necesitar red: un
+    /// provider que dependa de descargar dependencias convierte una pregunta
+    /// local en una que falla cuando el mirror no está.
+    pub fn gradle() -> Self {
+        Self {
+            program: "gradle".to_owned(),
+            args: vec!["properties".to_owned(), "--offline".to_owned()],
+        }
+    }
+}
+
+/// What one run of the tool said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildModelAnswer {
+    /// It named a version.
+    Declared {
+        /// The version, verbatim from the tool.
+        version: ProductVersion,
+        /// Which project it answered for, when it said.
+        project: Option<String>,
+    },
+    /// It answered, and the answer was "no version".
+    ///
+    /// MEDIDO: Gradle responde `version: unspecified`, y esa palabra **no** es
+    /// una versión. Es la respuesta de una herramienta diciendo que no tiene
+    /// nada, y tomarla por un valor sería inventar `unspecified` como si fuera
+    /// `1.2.3`.
+    Unspecified {
+        /// Which project it answered for, when it said.
+        project: Option<String>,
+    },
+    /// It exited successfully and named no version at all.
+    Silent,
+}
+
+/// Reads one `key: value` report, and nothing else.
+///
+/// ## Por qué la ley vive en una función pura
+///
+/// Porque es falsificable sin lanzar un subproceso. Un mutante que rompe esto
+/// necesita un `gradle` de verdad para ejecutarse, y una ley que necesita la
+/// herramienta para falsificarse es una ley que nadie falsifica.
+pub fn parse_build_model(stdout: &str) -> BuildModelAnswer {
+    let mut project = None;
+    let mut version = None;
+    for line in stdout.lines() {
+        let line = line.trim();
+        // `Root project 'multi'` / `Project ':lib-b'`. Solo el encabezado: el
+        // resto de `properties` son valores de otros objetos con `@` en medio,
+        // y un `:` dentro de ellos no convierte la linea en una clave.
+        if let Some(rest) = line.strip_prefix("Root project ") {
+            project = Some(rest.trim_matches('\'').to_owned());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Project ") {
+            project = Some(rest.trim_matches('\'').to_owned());
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.trim() == "version" {
+            version = Some(value.trim().to_owned());
+        }
+    }
+    match version {
+        None => BuildModelAnswer::Silent,
+        Some(value) if value.is_empty() || value == "unspecified" => {
+            BuildModelAnswer::Unspecified { project }
+        }
+        Some(value) => match ProductVersion::new(value) {
+            Ok(version) => BuildModelAnswer::Declared { version, project },
+            // La herramienta dijo algo que no es una versión. No se inventa un
+            // valor y no se pierde SU palabra: se devuelve la ausencia, que es
+            // lo que measurablemente significa.
+            Err(_) => BuildModelAnswer::Unspecified { project },
+        },
+    }
+}
+
+/// A provider that asks the build tool, and reports what it says.
+///
+/// ## Why this exists and why it is not a reader
+///
+/// Because the version of a Gradle project is only knowable by **evaluating**
+/// Gradle: it can come from a literal, from a version catalogue, from a
+/// convention plugin, or from a value computed at configuration time. A reader
+/// would have to guess which, and its guess would be a silent one.
+///
+/// MEDIDO, en `v2/build.gradle.kts`: el fichero menciona `version` **tres veces
+/// en comentarios** —una de ellas con un `0.44.0` que ya no es cierto— y una
+/// vez de verdad. Un patrón que cogiera la primera se llevaría un número que el
+/// proyecto ya había corregido. Ese es el fallo entero, y no es hipotético: está
+/// en el fichero que motivó este provider.
+///
+/// ## Y no hay fallback
+///
+/// Si la herramienta no responde, la respuesta es que no respondió. Nunca un
+/// patrón. Un provider que degrada a «me lo leo yo» reintroduce el defecto en
+/// silencio, que es la forma en que vuelve.
+#[derive(Debug)]
+pub struct BuildModelProvider {
+    provider_id: String,
+    provider_version: String,
+    invocation: BuildModelInvocation,
+}
+
+impl BuildModelProvider {
+    /// A provider that asks the tool this way.
+    pub fn new(invocation: BuildModelInvocation) -> Self {
+        Self {
+            provider_id: format!("sddk.gateway.build-model/{}", invocation.program),
+            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
+            invocation,
+        }
+    }
+}
+
+impl Default for BuildModelProvider {
+    fn default() -> Self {
+        Self::new(BuildModelInvocation::default())
+    }
+}
+
+impl VersionResolverPort for BuildModelProvider {
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn provider_version(&self) -> &str {
+        &self.provider_version
+    }
+
+    fn capabilities(&self) -> &[String] {
+        use std::sync::OnceLock;
+        static ONE: OnceLock<Vec<String>> = OnceLock::new();
+        ONE.get_or_init(|| vec![PRODUCT_VERSION_OBSERVATION.to_owned()])
+    }
+
+    fn observe(&self, target: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
+        let root = std::path::Path::new(target.root());
+        let build_file = GRADLE_BUILD_FILES
+            .iter()
+            .map(|name| root.join(name))
+            .find(|path| path.is_file());
+        let Some(build_file) = build_file else {
+            return Ok(VersionProbe::NotApplicable {
+                reason: format!(
+                    "{} no tiene fichero de build de Gradle, asi que no hay modelo que \
+                     preguntar",
+                    target.root()
+                ),
+            });
+        };
+
+        let output = std::process::Command::new(&self.invocation.program)
+            .args(&self.invocation.args)
+            .current_dir(root)
+            .output()
+            .map_err(|error| ProviderError::Unavailable {
+                provider_id: self.provider_id.clone(),
+                // NUESTRO motivo, y lo es: el programa no esta instalado. Que
+                // sea nuestro no lo hace menos cierto —no hay forma de que el
+                // programa diga que no existe— y confundirlos haria que «no
+                // tengo Gradle» se leyera como «Gradble fallo».
+                reason: format!(
+                    "`{}` no se pudo ejecutar en {}: {error}",
+                    self.invocation.program,
+                    target.root()
+                ),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let motivo = meaningful_line(&stderr)
+                .unwrap_or_else(|| format!("salio con {} sin decir por que", output.status));
+            // El motivo es DE LA HERRAMIENTA, y esa es toda la ley: un fallo
+            // cerrado cuyo motivo es indistinguible de cien causas deja al
+            // operador sin nada que hacer. MEDIDO: Gradle contesta
+            // `Directory '…' does not contain a Gradle build.`, que es mas
+            // util que cualquier resumen que escribiramos aqui.
+            return Err(ProviderError::Unavailable {
+                provider_id: self.provider_id.clone(),
+                reason: format!(
+                    "`{}` no pudo responder por {}",
+                    self.invocation.program, motivo
+                ),
+            });
+        }
+
+        match parse_build_model(&String::from_utf8_lossy(&output.stdout)) {
+            BuildModelAnswer::Declared { version, project } => Ok(VersionProbe::Declared {
+                version,
+                evidence: VersionEvidence {
+                    // Con el proyecto que contesto, porque es de quien es la
+                    // respuesta: MEDIDO, desde un subdirectorio Gradle contesta
+                    // `Project ':lib-b'`, y un informe que no dice de que
+                    // proyecto es el valor tiene el mismo defecto que un provider
+                    // sin `provider_id` — describes algo sin decir de quien es.
+                    source_kind: match &project {
+                        Some(project) => {
+                            format!("build-model/{}/{project}", self.invocation.program)
+                        }
+                        None => format!("build-model/{}", self.invocation.program),
+                    },
+                    // Sin digest, y a proposito: el valor no sale de los bytes de
+                    // un fichero, sale de EVALUAR el build. Poner el digest del
+                    // fichero afirmaria que esos bytes determinan el valor, que
+                    // es exactamente lo falso que este provider vino a evitar.
+                    digest: None,
+                    location: Some(build_file.display().to_string()),
+                },
+            }),
+            BuildModelAnswer::Unspecified { project } => Ok(VersionProbe::Undeclared {
+                reason: match project {
+                    Some(project) => format!(
+                        "{} contesto que {project} no tiene version ({}), y eso es una \
+                         ausencia declarada, no un valor",
+                        self.invocation.program, UNSPECIFIED_WORD
+                    ),
+                    None => format!(
+                        "{} contesto que no hay version ({}), y eso es una ausencia \
+                         declarada, no un valor",
+                        self.invocation.program, UNSPECIFIED_WORD
+                    ),
+                },
+            }),
+            BuildModelAnswer::Silent => Ok(VersionProbe::Undeclared {
+                reason: format!(
+                    "{} salio con {} y no nombr ninguna version: se le pregunto y no \
+                     contesto",
+                    self.invocation.program, output.status
+                ),
+            }),
+        }
+    }
+}
+
+/// The word the tool uses for «no version», measured.
+///
+/// Va en una constante porque es una **palabra de la herramienta**, y porque el
+/// falsador tiene que poder nombrarla sin repetirla en tres sitios del código.
+pub const UNSPECIFIED_WORD: &str = "unspecified";
+
+/// The tool's own words, out of its own noise.
+///
+/// ## Por qué busca despues de «What went wrong:» y no la primera linea
+///
+/// MEDIDO: Gradle imprime su banner antes de la causa, y el banner dice
+/// `FAILURE: Build failed with an exception.` — **que es cierto para todos los
+/// fallos de Gradle que han ocurrido jamás**. Una v1 de esta función tomaba la
+/// primera linea no vacia y devolvia justo eso, luego un provider que fallaba
+/// cerrado con un motivo que no distinguia nada: exactamente el defecto que
+/// `ProviderError::Unavailable` dice evitar.
+///
+/// La causa vive entre `What went wrong:` y la siguiente linea en blanco. Si no
+/// aparece, se cae al primer motivo util, porque hay herramientas que no
+/// usan esa frase y no se puede exigir la de Gradle a todas.
+fn meaningful_line(stderr: &str) -> Option<String> {
+    let mut tras_el_titulo = false;
+    for line in stderr.lines() {
+        let line = line.trim();
+        if tras_el_titulo {
+            if !line.is_empty() {
+                return Some(line.to_owned());
+            }
+            continue;
+        }
+        if line.ends_with("What went wrong:") {
+            tras_el_titulo = true;
+        }
+    }
+    stderr
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_owned)
+}
+
+/// The default registry, plus — when someone asks for it — a provider that
+/// **runs** the build tool.
+///
+/// ## Why evaluating is opt-in and not a default
+///
+/// MEDIDO: `gradle properties --offline` against un build trivial tarda **3
+/// segundos** y levanta una JVM. Ponerlo en el registro por defecto significa
+/// que cada `release version inspect` de un repositorio JVM paga tres segundos
+/// por target, y que uno de esos targets se cuelgue retrasa el diagnóstico que
+/// se pidió precisamente porque algo va mal.
+///
+/// Invocar una herramienta externa es un **coste y un acoplamiento al entorno**
+/// —MEDIDO: el shim de asdf sin `.tool-versions` responde `No version is set
+/// for command gradle` y sale 126—, y ninguno de los dos se paga sin que alguien
+/// lo pida. Es la misma razón por la que `--naming` y `--role` son banderas y no
+/// configuración del repo.
+pub fn version_registry_with(
+    build_tool: Option<BuildModelInvocation>,
+) -> sddk_domain::version_authority::VersionResolverRegistry {
     let mut registry = sddk_domain::version_authority::VersionResolverRegistry::new();
     registry.register(Box::new(DeclaredAuthorityProvider::new()));
     for spec in DEFAULT_DECLARATIONS {
         registry.register(Box::new(SingleDeclarationProvider::for_spec(spec)));
+    }
+    if let Some(invocation) = build_tool {
+        registry.register(Box::new(BuildModelProvider::new(invocation)));
     }
     registry
 }
