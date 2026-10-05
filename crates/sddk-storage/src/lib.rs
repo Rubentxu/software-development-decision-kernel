@@ -1939,13 +1939,11 @@ pub(crate) fn migrate(connection: &mut Connection) -> Result<()> {
 /// clone of an already-adopted project whose canonical path resolves a
 /// different `workspace_id` for the same `project_id` (`workspace`).
 fn ensure_cycle_parents_on(connection: &Connection, cycle: &CycleRecord) -> Result<()> {
-    let missing = |missing: &'static str, parent_id: String| {
-        StorageError::ProjectNotAdopted {
-            cycle_id: cycle.manifest.cycle_id.clone(),
-            project_id: cycle.manifest.project_id.clone(),
-            missing,
-            parent_id,
-        }
+    let missing = |missing: &'static str, parent_id: String| StorageError::ProjectNotAdopted {
+        cycle_id: cycle.manifest.cycle_id.clone(),
+        project_id: cycle.manifest.project_id.clone(),
+        missing,
+        parent_id,
     };
     let project_present: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id = ?1)",

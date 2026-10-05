@@ -30,11 +30,11 @@
 //! Without (3) a reader could "fix" the check by rejecting every insert and
 //! every test above would still pass.
 
+use sddk_domain::Ledger;
 use sddk_domain::SddkErrorCode;
 use sddk_domain::cycle::CycleManifest;
 use sddk_domain::identity::CycleId;
 use sddk_domain::{ProjectRecord, WorkspaceRecord};
-use sddk_domain::Ledger;
 use sddk_storage::{Storage, StorageError};
 use tempfile::TempDir;
 
@@ -135,7 +135,9 @@ fn an_unadopted_workspace_of_an_adopted_project_is_named_separately() {
         .expect_err("the workspace this cycle names is still absent");
 
     match err {
-        StorageError::ProjectNotAdopted { missing, parent_id, .. } => {
+        StorageError::ProjectNotAdopted {
+            missing, parent_id, ..
+        } => {
             assert_eq!(
                 missing, "workspace",
                 "the project IS registered; only this path's workspace is not"
@@ -277,4 +279,3 @@ fn the_cycle_start_path_succeeds_once_adopted() {
         .get_cycle("p-test/c-6")
         .expect("the cycle row is durable");
 }
-
