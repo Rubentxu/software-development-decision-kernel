@@ -83,6 +83,16 @@ def mutate(path: pathlib.Path, old: str, new: str) -> bool:
     return True
 
 
+def needle_ok(path: pathlib.Path, needle: str) -> bool:
+    """El needle tiene que estar EXACTAMENTE una vez, como `mutate`.
+
+    Existe para que M10 pueda desactivar una regla y volver a escribir el
+    fichero sin volver a aplicar el backup entero en cada iteracion, y para que
+    una regla que ya no existe se cuente como SKIP en vez de como excepcion.
+    """
+    return path.read_text(encoding="utf-8").count(needle) == 1
+
+
 def asert(ok: bool, name: str, detail: str = "") -> None:
     global PASS, FAIL
     if ok:
@@ -265,6 +275,106 @@ def main() -> int:
         else:
             SKIP += 1
             print("  [SKIP] M7: el bloque de los cinco no casaba; mutacion no aplicada")
+
+        # --- M8: el censo vuelve a depender del NOMBRE ------------------------
+        #
+        # La falsacion directa del hallazgo de esta sesion bis. El censo era
+        # `tests/test_*.sh` + `tests/test_*.py`, y el glifo `test_` en el
+        # nombre era la unica condicion de entrada. Volver a esa condicion, con
+        # las excepciones ya escritas, tiene que ser un rojo: si el gate
+        # pasara, significaria que las excepciones de los `uat_ctx_*` no estan
+        # haciendo nada y que el defecto sigue abierto por la puerta de
+        # siempre.
+        caso("M8: un censo por prefijo de nombre no ve los uat_ctx")
+        viejo_m8 = 'tests = sorted(TESTS_DIR.glob("*.sh")) + sorted(TESTS_DIR.glob("*.py"))'
+        nuevo_m8 = (
+            'tests = sorted(TESTS_DIR.glob("test_*.sh")) '
+            '+ sorted(TESTS_DIR.glob("test_*.py"))'
+        )
+        if mutate(gate, viejo_m8, nuevo_m8):
+            rc, out = run_gate(tmp)
+            asert(rc != 0, "M8: volver al censo por nombre da rojo (Regla 1)", f"rc={rc}")
+            asert("EXCEPTIONS pero el fichero no existe" in out,
+                  "M8: y acusa a las excepciones de apuntar a ficheros que si existen",
+                  out[-400:])
+            gate.write_text(gate_bak, encoding="utf-8")
+        else:
+            SKIP += 1
+            print("  [SKIP] M8: el needle del censo no casaba; mutacion no aplicada")
+
+        # --- M9: el censo vuelve a filtrar por BIT de ejecucion ---------------
+        #
+        # MEDIDO: la v1 de este cambio filtro el censo por `os.X_OK`, y eso
+        # borro del censo `test_release_routes_parity.sh` y
+        # `test_release_bundle_parity.sh` —que existen, estan en EXCEPTIONS y
+        # van en 644— con lo que la Regla 1 los acuso de "el fichero no
+        # existe". El mensaje era falso y, peor, la regla que de verdad importa
+        # (enumerado sin bit se salta en silencio) es la Regla 3, que ya
+        # existe. Mezclar "existe" con "tiene bit" es medir dos preguntas con
+        # un instrumento. M9 comprueba que volver a ese filtro vuelve a mentir.
+        caso("M9: un censo que exige bit de ejecucion hace desaparecer ficheros")
+        viejo_m9 = "    tests = sorted(TESTS_DIR.glob(\"*.sh\")) + sorted(TESTS_DIR.glob(\"*.py\"))"
+        nuevo_m9 = (
+            "    tests = sorted(\n"
+            "        p for p in TESTS_DIR.glob(\"*.sh\") if os.access(p, os.X_OK)\n"
+            "    ) + sorted(TESTS_DIR.glob(\"test_*.py\"))"
+        )
+        if mutate(gate, viejo_m9, nuevo_m9):
+            rc, out = run_gate(tmp)
+            asert(rc != 0, "M9: filtrar por bit hace caer el gate", f"rc={rc}")
+            asert("test_release_routes_parity.sh" in out and "no existe" in out,
+                  "M9: y acusa a un fichero que SI existe de no existir", out[-400:])
+            gate.write_text(gate_bak, encoding="utf-8")
+        else:
+            SKIP += 1
+            print("  [SKIP] M9: el needle del filtro por bit no casaba; no aplicada")
+
+        # --- M10: NOT_GUARDS sin las reglas que la mantienen honesta -----------
+        #
+        # Sin las tres reglas, `NOT_GUARDS` es un cajon de sastre con mejor
+        # vocabulario: un guard declarado "no es un guard" se queda fuera para
+        # siempre. Se falsea la Regla 5, no la lista.
+        #
+        # MEDIDO: la v1 de este caso sustituia la linea de la regla por
+        # `pass`, y las tres mutaciones dieron `NameError` o
+        # `IndentationError` — o sea, el gate caia por un error de SINTAXIS y
+        # la asercion lo contaba como prueba de que la regla hace falta. Un
+        # rojo de la herramienta no es un rojo de la propiedad, y asi se cuela
+        # una mutacion que mide lo que no dice. Ahora cada una cambia la
+        # CONDICION, no la estructura: el gate sigue siendo python valido y lo
+        # que cae es la comprobacion.
+        caso("M10: NOT_GUARDS sin la Regla 5 se vuelve inmutable")
+        m10 = [
+            (
+                "M10a",
+                "    for name in sorted(set(NOT_GUARDS) - presentes):",
+                "    for name in sorted(set()):",
+            ),
+            (
+                "M10b",
+                "    for name in sorted(set(NOT_GUARDS) & release_cubierto):",
+                "    for name in sorted(set(NOT_GUARDS) & set()):",
+            ),
+            (
+                "M10c",
+                "    for name in sorted(set(EXCEPTIONS) & set(NOT_GUARDS)):",
+                "    for name in sorted(set(EXCEPTIONS) & set()):",
+            ),
+        ]
+        for tag, viejo, nuevo_txt in m10:
+            if mutate(gate, viejo, nuevo_txt):
+                rc, out = run_gate(tmp)
+                asert("Traceback" not in out and "IndentationError" not in out
+                      and "NameError" not in out,
+                      f"{tag}: el gate sigue siendo python valido con la regla muda",
+                      out[-300:])
+                asert(rc == 0,
+                      f"{tag}: desactivar esa regla NO da rojo, luego el gate no "
+                      f"vigila NOT_GUARDS con ella", f"rc={rc} out={out[-200:]}")
+                gate.write_text(gate_bak, encoding="utf-8")
+            else:
+                SKIP += 1
+                print(f"  [SKIP] {tag}: la regla no casaba; mutacion no aplicada")
 
         # --- El sujeto real quedo intacto ------------------------------------
         #
