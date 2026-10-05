@@ -81,14 +81,35 @@ git -C "$PROJ" config user.name "ctx-uat-001"
 git -C "$PROJ" config user.email "ctx-uat-001@example.invalid"
 git -C "$PROJ" commit -q --allow-empty -m "chore: seed"
 
+# shellcheck disable=SC2329  # cleanup se invoca via trap EXIT.
+# MEDIDO (session-84 bis 5): este `cleanup` no preservaba `$?` y no restauraba
+# `HOME` antes de borrar, con lo que el codigo de salida del guard lo decidia el
+# borrado y no lo que el guard midio. MEDIDO con el binario real:
+#   uat_ctx_001 imprime `PASS: 3/3 applies complete` y salia 1, con
+#   `mavis-trash: failed to trash '/tmp/ctx-uat-001...'` como ultima linea;
+#   uat_ctx_004 imprime `UAT CTX-UAT-002 + CTX-UAT-003: PASS` y salia 64.
+# Y con `--keep`, que salta el borrado, los dos salen 0: luego el veredicto era
+# correcto y solo la limpieza lo destruia.
+#
+# LA CAUSA, MEDIDA: los cuatro mueven `HOME` DENTRO del sandbox y nunca lo
+# restauran, luego el borrado corre con la casa dentro del directorio que va a
+# borrar y no puede resolver donde dejar la papelera. `uat_ctx_005`, `006` y
+# `007` ya lo hacen bien con `REAL_HOME` -- son la referencia, y se copia su
+# patron en vez de inventar uno. MEDIDO el alcance: de los siete, cuatro con el
+# defecto y tres correctos, y la division coincide EXACTAMENTE con quien
+# declara `REAL_HOME`.
 cleanup() {
+    local rc=$?
+    export HOME="${REAL_HOME:-$HOME}"
     if [ "$KEEP" = "true" ]; then
         echo "sandbox kept: $SANDBOX"
     else
-        rm -rf -- "$SANDBOX"
+        rm -rf "$SANDBOX" || true
     fi
+    return "$rc"
 }
 trap cleanup EXIT
+REAL_HOME="$HOME"
 
 export SDDK_STATE_HOME="$SANDBOX/state"
 export XDG_DATA_HOME="$SANDBOX/data"
