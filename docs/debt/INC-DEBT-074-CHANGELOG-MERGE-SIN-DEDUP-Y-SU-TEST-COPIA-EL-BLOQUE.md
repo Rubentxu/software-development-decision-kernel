@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-074
 title: "El merge del changelog anade las entradas del bump a ciegas a la seccion que ya existe, y el unico test que vigila ese bloque COPIA el codigo en vez de invocarlo: hoy duplica el contenido publicado, y cualquier arreglo del merge seria invisible para su propio guard"
-status: open
+status: resolved
 severity: medium
 priority: P2
 fingerprint: "changelog_merge_appends_without_dedup_and_its_test_copies_the_block"
@@ -12,7 +12,7 @@ created_by: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
 owner: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
 detected_at: 2026-10-05
 detected_in_session: session-81
-resolved_at:
+resolved_at: 2026-10-05
 component: release pipeline / changelog
 surface: scripts/release-bump.sh (bloque de merge de CHANGELOG) y tests/test_changelog_merge.sh
 related: [INC-DEBT-047, INC-DEBT-070, INC-DEBT-073]
@@ -23,7 +23,7 @@ references:
   - CHANGELOG.md
 ---
 
-# INC-DEBT-074 — el merge del changelog no deduplica, y su test copia el bloque
+# INC-DEBT-074 — RESUELTO — el merge deduplica, y el test ejecuta el codigo que vigila
 
 ## Que se midio
 
@@ -80,17 +80,80 @@ persigue — y por eso P2 y no P3: el coste no fue el duplicado en si, fue
 un recorte manual no repetible que habria que repetir en cada release
 mientras esto siga abierto.
 
-## Salidas
+## Resuelto
 
-1. Extraer el merge a una funcion invocable y que **tanto**
-   `release-bump.sh` **como** el test la ejecuten, de modo que el guard
-   deje de ser una copia. Esto va PRIMERO: sin esto, el punto 2 no es
-   verificable.
-2. Deduplicar por la misma regla que el gate 2b (tipo + scope + 4
-   primeras palabras), para que las dos herramientas no tengan cada una
-   su definicion de "mismo commit".
-3. Anadir al test una asercion de que un commit ya representado **no**
-   aparece dos veces, y falsarla quitando el dedup.
+Las tres salidas, en el orden que la propia deuda fijaba, y la razon por la
+que el orden no era negociable.
 
-Ninguna de las tres se hace aqui: publicaba 2.10.0 y hacerlas con el
-release a medias seria la forma de introduzirlas sin un 1b que las mida.
+### 1. El merge vive en una libreria que EJECUTAN los dos
+
+`scripts/lib/changelog_merge.sh`, sourceada por `scripts/release-bump.sh` y
+por `tests/test_changelog_merge.sh`. El test ya no pega el bloque: lo
+llama. Se comprobo que el seam no hace falta: el guard saca su codigo de
+`$ROOT/scripts/lib/changelog_merge.sh`, luego el falsificador monta un repo
+en miniatura con la libreria mutada y el guard intacto y corre el guard
+ahi. Ningun hueco en el codigo de produccion.
+
+### 2. Deduplica con la MISMA regla que el gate 2b
+
+`changelog_item_fingerprint` imprime `<type(scope)>|<4 primeras palabras>`
+y la usa el merge. La regla del gate 2b sigue siendo la suya y no se toco:
+el gate mide PRESENCIA sobre el rango de commits y el merge decide que
+items anadir, y copiar la funcion entero habria movido un gate que hoy
+pasa y cuyo fallo es el mas caro del camino.
+
+**Lo que si se unifico, y por que era obligatorio**: el concepto "¿es el
+mismo commit?" tiene ahora una definicion, y tener dos se manifesto de
+una forma concreta:
+
+- La huella.quitaba la vineta **antes** que los espacios, luego
+  `${line#- }` no casaba con `  - fix(cli): ...` y la clave salia
+  `- fix(cli)` con la vineta pegada. El dedup SEGUIA funcionando porque
+  los dos lados del merge son los dos con vineta — invisible desde
+  dentro —, pero la huella ya no era la misma que la del gate 2b, luego
+  la promesa de "una sola regla" era falsa. MEDIDO y corregido.
+
+### 3. Asercion de no-duplicado, falsada quitando el dedup
+
+`tests/test_changelog_merge.sh` con **PASS=34 FAIL=0**, y
+`tests/test_changelog_merge_mutation.sh` con **PASS=9 FAIL=0 SKIP=0**: las
+siete mutaciones caen, cada una por su comprobacion.
+
+## Lo que aparecio al construirlo, y que no estaba en la deuda
+
+Cuatro cosas, todas medidas, ninguna hipotetica.
+
+**Un `case` cuyo patron no distinguia lo que su nombre decia.** El primer
+`case` de `release-bump.sh` uso `"*disposition: merged"*`, que tambien
+casa con `merged_nothing`: la rama `merged_nothing` era CODIGO MUERTO. Lo
+dijo el linter (SC2221). Y el fallo va en la direccion buena: ahora la
+comparacion es EXACTA, luego si algo escribiera en stdout el `case` cae
+en el error en vez de tomar la rama equivocada.
+
+**El merge no hacia NADA cuando la seccion destino era la ultima.** El
+ensamblado terminaba en `[ "$after_line" -le "$total" ] && tail ...`; sin
+seccion siguiente la condicion es falsa, el grupo entero sale con estado 1
+y el `|| { return 1; }` de al lado abortaba ANTES de escribir. Sin
+disposicion declarada, luego indistinguible de un acierto. Salio al
+escribir el caso de prueba C4, que es el unico que tiene esa forma.
+
+**La propiedad "sin grupos vacios" tenia DOS autores y por eso no se podia
+falsar.** La aplicaba el filtro y tambien el awk emisor. MEDIDO: la
+mutacion M7, que quita solo la del filtro, dejaba el guard en VERDE. No
+es una guarda fuerte, es redundancia: una propiedad que no se puede
+falsar no esta vigilada. Se dejo un solo autor —el que EMITE— y con eso
+M7 cae. Es la regla de AGENTS.md 2.7 aplicada a una propiedad mia, y la
+cuarta vez que esta sesion la encuentra en el mismo sitio.
+
+**Cinco de las siete mutaciones estaban rotas de origen, no mal aplicadas.**
+La primera version del falsificador paso los pares como `viejo<TAB>` sin
+texto de reemplazo, luego **borro** la linea entera, rompio la libreria, y
+el guard cayo por todo en vez de por su comprobacion. Una mutacion que
+cae "por algo" no mide nada. Ademas el par de M5 mia `$'\n'`, que CIERRA
+la cadena de comillas simples que lo contiene. Se reescribio con heredocs
+de comillas y separador `%%` en vez de un TAB escrito a mano.
+
+Y una direccion que queda escrita porque es la que importa: cuando un item
+NO se puede clasificar, el merge lo **conserva** y lo declara. Un item
+duplicado es ruido; un item perdido es un artefacto que no describe lo que
+publica. Ante la duda, el dedup no descarta.
