@@ -17,24 +17,63 @@ sessions 65g/65h y que se ejecutaban a mano en cada slice.
 LA PROPIEDAD
 ------------
 Para todo `tests/test_*.sh` y `tests/test_*.py`:
-  - o algún runner lo ejecuta, o
-  - está en `EXCEPTIONS` con un motivo escrito.
+  - o el CAMINO DE RELEASE lo ejecuta, o
+  - esta en `EXCEPTIONS` con un motivo escrito.
 
-Y dos reglas que impiden que la lista de excepciones se pudra:
+Y cuatro reglas que impiden que la lista de excepciones se pudra:
 
-1. Una excepción que **apunta a un test que ya no existe** es un FAIL: la
-   excepción quedó obsoleta y hay que borrarla.
-2. Una excepción para un test que **ya tiene runner** es un FAIL: la razón
-   caducó, y dejarla convertiría la lista de excepciones en un cajón de sastre
-   donde cualquier test puede acabar sin correr.
+1. Una excepcion que **apunta a un test que ya no existe** es un FAIL: la
+   excepcion quedo obsoleta y hay que borrarla.
+2. Una excepcion para un test que **ya ejecuta el camino de release** es un
+   FAIL: la razon caduco, y dejarla convertiria la lista en un cajon de
+   sastre donde cualquier test puede acabar sin correr.
+3. Un test **enumerado en el bucle gateado** (`for t in` con `[ -x ]`) **sin
+   bit de ejecucion** es un FAIL: el paso lo saltaria en silencio.
+4. Un test cuyo **unico runner esta en `.github/workflows/`** es un FAIL, y
+   el mensaje lo dice. No es una agracia: es una consecuencia medida de una
+   politica del repo.
 
-POR QUÉ SE DESCARTAN LOS COMENTARIOS
-------------------------------------
-Un test nombrado en un comentario **no está gated**. La nota de exclusión de
-`release.sh` nombra dos tests precisamente porque NO se ejecutan, y un
-`in` a pelo los puntuaba como cubiertos: la medición dio 7 sin runner donde
-había 13. Contar prosa como cobertura es el mismo error que contar una
-declaración como obediencia.
+POR QUE UN RUNNER DE CI NO CUENTA (Regla 4)
+-------------------------------------------
+AGENTS.md seccion 2.5, que es norma de este repo y no una preferencia:
+
+    GitHub Actions cloud NO bloquea: sin required status checks, runs =
+    evidencia asincrona.
+    Prohibido esperar runs de la nube.
+
+Es decir, un runner de CI **no bloquea nada en el camino de publicacion**. Un
+test cuyo unico runner esta ahi se ha ejecutado, en el mejor caso, *despues*
+de publicar, y nadie lo mira. Contarlo como cubierto es la misma clase de
+error que la Regla 3: la cobertura que cuenta el nombre no es la cobertura
+que ejecuta el bit.
+
+MEDIDO al escribir esta regla: tres tests estaban solo en `ci.yml`, los tres
+hermeticos, y uno de ellos --`test_release_state_pointer_mutation.sh`-- es el
+autofalsador del guard que `af98f9af` cita como causa de 41 commits de deriva.
+Corren 6,5 s en total. Y los tres PASABAN, luego el defecto no era de
+correccion sino de cobertura: la release publicaba sin ejecutar nada que
+maldiga.
+
+El segundo defecto lo destapo el falsador de esta misma regla, y por eso
+importa que exista: la Regla 2 miraba "tiene runner" en vez de "lo ejecuta el
+release", con lo que declarar el motivo de un test que CI cubre era un FAIL.
+Es decir, la Regla 4 se podia cumplir cableando, pero **no tenia salida
+legitima** -- una regla sin salida obliga a la unica accion que no siempre es
+la correcta.
+
+POR QUÉ SE DESCARTAN LOS COMENTARIOS Y LOS SCOPES
+--------------------------------------------------
+Un test nombrado en un comentario **no está gated**, y uno nombrado en un
+**scope de shellcheck** tampoco: `release.sh` mantiene una lista de ficheros
+que shellcheck revisa, y esa lista se parecía a un runner sin serlo. La nota
+de exclusión nombra dos tests precisamente porque NO se ejecutan, y un `in` a
+pelo los puntuaba como cubiertos: la medición dio 7 sin runner donde había 13.
+
+Contar prosa como cobertura es el mismo error que contar una declaración como
+obediencia, y **contar una lista de lint como cobertura** es el mismo error con
+un disfraz mas. Por eso la cobertura se mide sobre la SINTAXIS que ejecuta —
+bucles `for ... in` e invocaciones `test_gate` / `bash` / `python3`— y no
+sobre el nombre, que aparece en sitios donde no ocurre nada.
 
 Salida: exit 0 si la propiedad se sostiene; 1 con el detalle si no.
 """
@@ -49,14 +88,106 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TESTS_DIR = ROOT / "tests"
 
-# Todo fichero que puede ejecutar un test. Los guards de `scripts/` se
-# incluyen porque un test puede ser invocado por un guard en vez de por un
-# `for t in`.
-RUNNERS = [
+# Todo fichero que puede ejecutar un test, en DOS grupos y no en uno.
+#
+# El separation no es cosmetica. `RUNNERS` incluia `.github/workflows/*.yml`
+# porque un test puede ser invocado por un guard en vez de por un `for t in`,
+# y la inclusion era correcta para su contrato. Lo que no sevio es que
+# AGENTS.md §2.5 declara que "GitHub Actions cloud NO bloquea: sin required
+# status checks, runs = evidencia asincrona" y que "Prohibido esperar runs de
+# la nube". Es decir: un runner de CI no BLOQUEA NADA en el camino de
+# publicacion. Un test cuyo unico runner esta en CI se ha ejecutado, en el
+# mejor caso, despues de publicar, y nadie lo mira.
+#
+# MEDIDO en esta sesion: tres tests estaban en esa situacion, los tres
+# hermeticos, y uno de ellos es el autofalsador del guard del puntero de
+# estado — el mismo guard que `af98f9af` cita como causa de 41 commits de
+# deriva. Corren 6,5 s en total.
+#
+# Por eso los dos grupos se nombran: `RELEASE_RUNNERS` es lo que puede
+# bloquear una publicacion, `CI_RUNNERS` es lo que no.
+RELEASE_RUNNERS = [
     ROOT / "scripts" / "release.sh",
     *sorted((ROOT / "scripts").glob("*.sh")),
-    *sorted((ROOT / ".github" / "workflows").glob("*.yml")),
 ]
+CI_RUNNERS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+RUNNERS = RELEASE_RUNNERS + CI_RUNNERS
+
+# --- Que es EJECUTAR un test, y que es NOMBRARLO --------------------------------
+#
+# MEDIDO, y es la segunda mitad del mismo defecto. La primera version de la
+# Regla 4 miraba `nombre in release_code`, con `release_code` siendo el TEXTO
+# de `release.sh`. Y hay un sitio donde `release.sh` nombra un test sin
+# ejecutarlo nunca: **el scope de shellcheck del 1b**, una lista de ficheros
+# que shellcheck revisa. Cinco guards estaban ahi y en ningun otro sitio:
+#
+#   tests/test_release_final_state_figures.sh
+#   tests/test_release_final_state_figures_mutation.sh
+#   tests/test_lint_gate_scope_severity_mutation.sh
+#   tests/test_release_bump_pointer_sync.sh
+#   tests/test_reconcile_pointer_yaml_safety.sh
+#
+# MEDIDO contra el log de un release que paso el 1b entero: **0 apariciones
+# de los cinco**, 0 en `ci.yml`, 0 en cualquier otro script. No los corre
+# nadie. Y el changelog los publica como gates con su PASS:
+# "Guard `test_release_final_state_figures.sh` `PASS=12 FAIL=0`".
+#
+# Es el mismo punto ciego que la Regla 3 ya tuvo y que su propio comentario
+# describe: *"el alcance es el bucle gateado, NO todo el fichero"*. Repetirlo
+# en la regla siguiente, en el mismo fichero, es la forma de que la leccion
+# no se aprenda.
+#
+# Por eso aqui se separa EJECUTAR de NOMBRAR, y se hace por SINTAXIS y no por
+# prosa: un test se ejecuta si esta en un bucle `for t in` / `for p in` o si
+# aparece en una invocacion (`test_gate "X"`, `bash tests/X`,
+# `python3 tests/X`). Estar en un scope de shellcheck, en un `ok`, o en un
+# comentario es nombrarlo.
+_TEST_PATH_RE = re.compile(r"tests/([A-Za-z0-9_.-]+\.(?:sh|py))")
+_INVOKE_RE = re.compile(
+    r"\b(?:bash|python3)\s+tests/[A-Za-z0-9_.-]+\.(?:sh|py)"
+    r"|\btest_gate\s+\"([A-Za-z0-9_.-]+)\""
+)
+
+
+def tests_ejecutados(text: str) -> set[str]:
+    """Nombres de los tests que `text` EJECUTA, no los que nombra.
+
+    MEDIDO tres veces el mismo bug al escribir el extractor, y las tres por
+    el dato y no por la lectura: (1) hacer `continue` en la linea que abre el
+    bucle perdia el PRIMER elemento; (2) cerrar el bucle antes de recolectar
+    perdia el ULTIMO, que es el unico sin continuacion; (3) olvidar poner
+    `en_bucle = True` dejaba los bucles casi vacios. Un instrumento que se
+    equivoca en el caso mas obvio no puede usarse para acusar a nadie, y por
+    eso la extraccion se valida contra el log de un release real.
+    """
+    ejecuta: set[str] = set()
+    en_bucle = False
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith("#"):
+            continue
+        code = raw.split(" #")[0]
+
+        abriendo = bool(re.match(r"for\s+[a-z]\s+in\b", s))
+        cerrando = s.endswith("; do")
+        # `esta_en_bucle` describe la LINEA; `en_bucle` describe lo que viene
+        # despues. Confundir las dos cosas es el bug (2) de la lista.
+        esta_en_bucle = en_bucle or abriendo
+
+        if cerrando:
+            en_bucle = False
+        elif abriendo:
+            en_bucle = True
+
+        if esta_en_bucle:
+            ejecuta.update(_TEST_PATH_RE.findall(code))
+            continue
+        for m in _INVOKE_RE.finditer(code):
+            if m.group(1):
+                ejecuta.add(m.group(1))
+            else:
+                ejecuta.update(_TEST_PATH_RE.findall(m.group(0)))
+    return ejecuta
 
 # Tests que NO deben correr en un gate automático, cada uno con su motivo.
 # Añadir aquí una entrada es una decisión, no un descuido: por eso el motivo es
@@ -100,23 +231,16 @@ EXCEPTIONS: dict[str, str] = {
 }
 
 
-def code_only(text: str) -> str:
-    """Drop full-line comments and inline `# ...` tails.
-
-    Prose is not obedience. See the module docstring.
-    """
-    kept: list[str] = []
-    for line in text.splitlines():
-        if line.strip().startswith("#"):
-            continue
-        kept.append(line.split(" #")[0])
-    return "\n".join(kept)
-
-
 def main() -> int:
-    runner_code = "\n".join(
-        code_only(p.read_text(encoding="utf-8")) for p in RUNNERS if p.exists()
-    )
+    def ejecuta_de(paths: list[pathlib.Path]) -> set[str]:
+        out: set[str] = set()
+        for p in paths:
+            if p.exists():
+                out |= tests_ejecutados(p.read_text(encoding="utf-8"))
+        return out
+
+    release_ejecuta = ejecuta_de(RELEASE_RUNNERS)
+    ci_ejecuta = ejecuta_de(CI_RUNNERS)
 
     tests = sorted(TESTS_DIR.glob("test_*.sh")) + sorted(TESTS_DIR.glob("test_*.py"))
     names = [t.name for t in tests]
@@ -124,22 +248,43 @@ def main() -> int:
     failures: list[str] = []
     notes: list[str] = []
 
-    # Contabilidad explicita: covered / excepted / uncovered son conjuntos
-    # disjuntos. La primera version los derivaba por resta y reportaba
-    # "excepcionados: 0" con seis excepciones vivas — un guard que miente
-    # sobre sus propias cifras no puede usarse para justificar por que el
-    # resto pasa.
-    covered = {n for n in names if n in runner_code}
-    excepted = {n for n in names if n not in runner_code and n in EXCEPTIONS}
-    uncovered = {n for n in names if n not in runner_code and n not in EXCEPTIONS}
+    # Contabilidad explicita y DISJUNTA. La primera version de este fichero
+    # derivaba las cifras por resta y reportaba "excepcionados: 0" con seis
+    # excepciones vivas — un guard que miente sobre sus propias cifras no
+    # puede usarse para justificar por que el resto pasa.
+    #
+    # Todo se cuenta sobre EJECUCION, no sobre mencion. Un test que aparece
+    # en el scope de shellcheck del 1b esta nombrado, no ejecutado, y esa
+    # distincion es la que la Regla 4 mide.
+    release_cubierto = {n for n in names if n in release_ejecuta}
+    ci_cubierto = {n for n in names if n in ci_ejecuta}
+    excepted = {n for n in names if n not in release_cubierto and n in EXCEPTIONS}
+    uncovered = {n for n in names if n not in release_cubierto
+                 and n not in ci_cubierto and n not in EXCEPTIONS}
+    # Regla 4: lo ejecuta CI y no el camino de release. AGENTS.md 2.5 dice que
+    # el CI cloud no bloquea, luego no bloquea nada antes de publicar.
+    ci_only = {n for n in names if n in ci_cubierto
+               and n not in release_cubierto and n not in EXCEPTIONS}
 
     for name in sorted(uncovered):
         failures.append(
-            f"{name}: ningun runner lo ejecuta y no esta en EXCEPTIONS con un motivo"
+            f"{name}: NADIE lo ejecuta y no esta en EXCEPTIONS con un motivo. "
+            f"Estar nombrado en el scope de shellcheck de release.sh o en un "
+            f"comentario NO es ejecucion"
         )
 
+    for name in sorted(ci_only):
+        failures.append(
+            f"{name}: su UNICO runner es .github/workflows/, que no bloquea "
+            "(AGENTS.md 2.5); se ejecuta, en el mejor caso, DESPUES de "
+            "publicar. Cablealo en scripts/release.sh si es hermetico, o "
+            "anadelo a EXCEPTIONS con el motivo escrito"
+        )
+
+    covered = release_cubierto | ci_cubierto
     print(f"  tests en tests/test_*:        {len(names)}")
     print(f"  con runner:                   {len(covered)}")
+    print(f"    de los cuales, solo en CI:   {len(ci_only)}")
     print(f"  excepcionados con motivo:     {len(excepted)}")
     print(f"  SIN runner y SIN motivo:      {len(uncovered)}")
 
@@ -150,12 +295,27 @@ def main() -> int:
             "la excepcion quedo obsoleta y hay que borrarla"
         )
 
-    # Regla 2: excepcion para un test que ya tiene runner.
-    for name in sorted(set(EXCEPTIONS) & covered):
+    # Regla 2: excepcion para un test que ya se ejecuta en el camino de
+    # release.
+    #
+    # MEDIDO: miraba `covered`, que incluye los workflows de CI, y con eso la
+    # regla era indemostrable. Un test se mete en EXCEPTIONS precisamente
+    # porque el 1b NO puede correrlo —necesita red, contenedores, o un
+    # artefacto que no existe todavia— y que ademas lo corra CI es lo
+    # deseado, no la senal de que la razon caducó. Con la regla antigua,
+    # declarar el motivo de un test que CI cubre era un FAIL, o sea que
+    # EXCEPTIONS no tenia salida para casi nada y la Regla 4 de este mismo
+    # gate solo se podia cumplir cableando en el 1b.
+    #
+    # Lo que la regla sigue atrapando es lo que debe atrapar: una excepcion
+    # para un test que ya corre en el 1b es un cajon de sastre, porque la
+    # razon ya no aplica y nadie va a mirar la lista.
+    release_covered = release_cubierto
+    for name in sorted(set(EXCEPTIONS) & release_covered):
         failures.append(
-            f"{name}: figura en EXCEPTIONS pero ya tiene runner; "
-            "la razon caducó y dejarla convertiria EXCEPTIONS en un cajon "
-            "de sastre"
+            f"{name}: figura en EXCEPTIONS pero ya lo ejecuta el camino de "
+            "release; la razon caducó y dejarla convertiria EXCEPTIONS en un "
+            "cajon de sastre"
         )
 
     # Regla 3: enumerado NO es ejecutado. El `for t in` del paso 1b de
@@ -216,21 +376,28 @@ def main() -> int:
             print(f"  [FAIL] {f}")
         print()
         print(
-            "RESULT: FAIL — la superficie de gates es una lista escrita a mano y "
-            "se ha quedado corta, o hay entradas enumeradas que el 1b no ejecuta."
+            "RESULT: FAIL — la superficie de gates del CAMINO DE RELEASE esta "
+            "incompleta: o falta cablear, o el motivo escrito caducó."
         )
         print(
-            "         Cablear el test en scripts/release.sh (o .github/workflows) "
-            "si es hermetico,"
+            "         Cablear el test en scripts/release.sh si es hermetico. "
+            "Estar solo en .github/workflows NO cuenta:"
         )
         print(
-            "         o anadirlo a EXCEPTIONS con un motivo escrito si necesita "
-            "red, contenedores o un artefacto ausente."
+            "         AGENTS.md 2.5 declara que el CI cloud no bloquea, luego un "
+            "runner de CI se ejecuta, en el mejor caso, despues de publicar."
+        )
+        print(
+            "         Anadirlo a EXCEPTIONS con el motivo escrito si necesita red, "
+            "contenedores o un artefacto ausente."
         )
         return 1
 
     print()
-    print("RESULT: PASS — todo test tiene runner, o una excepcion con motivo.")
+    print(
+        "RESULT: PASS — todo test lo ejecuta el camino de release, o tiene un "
+        "motivo escrito para no hacerlo."
+    )
     return 0
 
 

@@ -448,6 +448,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_diagnostics_mutation.sh \
             tests/test_release_exclusion.sh \
             tests/test_release_exclusion_mutation.sh \
+            tests/test_release_state_pointer_mutation.sh \
             || die "shellcheck failed"
         ok "shellcheck clean (scope: release-receipt + release/push admission + 8 cross-crate/M9+ tests)"
     else
@@ -496,7 +497,13 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_build_identity_policy.sh \
              tests/test_kmt_canonical_meaning.sh \
              tests/test_release_build_identity.sh \
-             tests/test_binary_freshness_checker.sh; do
+             tests/test_binary_freshness_checker.sh \
+             tests/test_release_state_pointer_mutation.sh \
+             tests/test_release_final_state_figures.sh \
+             tests/test_release_final_state_figures_mutation.sh \
+             tests/test_lint_gate_scope_severity_mutation.sh \
+             tests/test_release_bump_pointer_sync.sh \
+             tests/test_reconcile_pointer_yaml_safety.sh; do
         # Fail-closed. Session-75: este `if [ -x ]` con `warn` + skip era un
         # agujero silencioso. Cinco de los tests enumerados llevaban 644, se
         # saltaron en v2.5.3, v2.5.4 y v2.5.5, y el paso seguia imprimiendo
@@ -561,6 +568,9 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_contamination_surface_mutation.py \
              tests/test_grep_q_after_pipe.py \
              tests/test_grep_q_after_pipe_mutation.py \
+             tests/test_golden_dataset_contract.py \
+             tests/test_workflow_contract.py \
+             tests/test_gate_coverage_ci_mutation.py \
              tests/test_gate_coverage.py; do
         if [ -f "$p" ]; then
             # Mismo arreglo que en el bucle de shell, y por el mismo motivo: un
