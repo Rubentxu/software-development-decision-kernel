@@ -456,6 +456,16 @@ enum Command {
         /// What this target is responsible for. See `release --role`.
         #[arg(long, default_value = "full_publisher")]
         role: String,
+        /// Ask the build tool what its model says. See `release --evaluate-build`.
+        #[arg(long)]
+        evaluate_build: bool,
+        /// The build tool to ask. See `release --build-tool`.
+        ///
+        /// Sin default, y por el motivo medido que esta en
+        /// `ReleaseArgs::build_tool`: un nombre que SDDK no sepa preguntar es un
+        /// error de la linea de comandos, no un Gradle silencioso.
+        #[arg(long)]
+        build_tool: Option<String>,
         /// Output format.
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -1025,8 +1035,27 @@ pub fn run_with_environment(cli: Cli, environment: &CliEnvironment) -> CommandOu
             cycle,
             naming,
             role,
+            evaluate_build,
+            build_tool,
             format,
-        } => ship::run_ship(tag, cycle, naming, role, format, environment),
+        } => {
+            // La pregunta al build tool se VALIDA aqui, antes de construir nada.
+            // Un nombre que SDDK no sepa preguntar es un error de la linea de
+            // comandos y tiene que salir como tal: si llegara mas adentro se
+            // reportaria como una fuente que no se pudo leer, que es otro hecho
+            // con otra reparacion.
+            let ask = match release_cmd::BuildAsk::of_parts(evaluate_build, build_tool.as_deref()) {
+                Ok(ask) => ask,
+                Err(error) => {
+                    return CommandOutput {
+                        status: 1,
+                        stdout: String::new(),
+                        stderr: format!("{error}"),
+                    };
+                }
+            };
+            ship::run_ship(tag, cycle, naming, role, ask, format, environment)
+        }
         Command::Recover {
             cycle,
             dry_run,

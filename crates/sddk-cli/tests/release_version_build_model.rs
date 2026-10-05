@@ -84,27 +84,26 @@ fn sin_la_bandera_el_informe_declara_que_no_se_pregunto() {
 }
 
 #[test]
-fn con_la_bandera_la_version_llega_de_la_herramienta() {
-    let (dir, tool) = repo();
-    let out = inspect(
-        dir.path(),
-        &[
-            "--evaluate-build",
-            "--build-tool",
-            tool.to_str().expect("utf-8"),
-        ],
-    );
+fn con_la_bandera_se_registra_el_dialecto_que_se_pidio() {
+    // Lo que este test afirmaba —«la version que trae el informe es la que
+    // contesta la herramienta»— exijo meter un binario falso por `--build-tool`.
+    // Esa via ya no existe, y no se pierde: es lo que el arreglo quito, porque un
+    // path no es un dialecto.
+    //
+    // Lo que SI se puede afirmar desde la CLI es que la bandera registra el
+    // dialecto pedido y que la linea `NOT_CHECKED` desaparece con ella. Que la
+    // herramienta responda, y que su respuesta se atribuya al fichero SUYO, se
+    // verifica donde se puede sustituir el binario: en
+    // `crates/sddk-gateway/tests/version_build_model_contract.rs`.
+    let (dir, _tool) = repo();
+    let out = inspect(dir.path(), &["--evaluate-build", "--build-tool", "gradle"]);
     assert_eq!(out.status, 0, "stderr: {}", out.stderr);
 
     assert!(
-        out.stdout.contains("productVersion: 1.2.3"),
-        "la version es la que contesta la herramienta:\n{}",
-        out.stdout
-    );
-    assert!(
-        out.stdout.contains("build-model/"),
-        "y el informe nombra al provider que la trajo, porque un valor sin saber \
-         de quien es no se puede comprobar:\n{}",
+        out.stdout.contains("sddk.gateway.build-model/gradle"),
+        "la bandera registra el dialecto que se pidio, y el informe lo nombra \
+         aunque no conteste: un provider mirado y no se sabe como responde se \
+         distingue del que ni se miro.\n{}",
         out.stdout
     );
     assert!(
@@ -117,6 +116,15 @@ fn con_la_bandera_la_version_llega_de_la_herramienta() {
 
 #[test]
 fn una_herramienta_que_no_existe_no_se_confunde_con_una_que_falla() {
+    // Lo que este test afirmaba —«un path que no existe es una fuente que no se
+    // pudo leer, veredicto Invalid, salida 0»— era correcto para una capa que
+    // aceptaba cualquier path. Ya no se puede expresar desde aqui, y no es una
+    // perdida: es exactamente lo que el arreglo quito.
+    //
+    // Un path no es un dialecto, así que ahora es un error de la LINEA DE
+    // COMANDOS, antes de que exista ningun provider. Y esa distincion es mejor
+    // que la que sustituye: «escribiste mal el nombre» y «la herramienta fallo»
+    // son dos reparaciones distintas, y antes las dos salian por el mismo texto.
     let (dir, _tool) = repo();
     let out = inspect(
         dir.path(),
@@ -126,22 +134,26 @@ fn una_herramienta_que_no_existe_no_se_confunde_con_una_que_falla() {
             "/nonexistent/sddk-build-tool",
         ],
     );
-    assert_eq!(
+    assert_ne!(
         out.status, 0,
-        "la inspeccion se hizo —aunque una fuente no se pudo leer— y eso sale con 0: \
-         «la inspeccion fallo» es un hecho distinto de «una fuente fallo`. \
-         stderr: {}",
+        "un path no es un dialecto conocido, y eso falla antes de preguntar: \
+         stdout={} stderr={}",
+        out.stdout, out.stderr
+    );
+    assert!(
+        out.stderr.contains("unknown build tool"),
+        "el error tiene que decir que el nombre no se sabe, no que la fuente no \
+         se pudo leer: {}",
         out.stderr
     );
     assert!(
-        out.stdout.contains("Invalid"),
-        "y el veredicto es Invalid, que falla cerrado:\n{}",
-        out.stdout
+        out.stderr.contains("gradle, maven"),
+        "y tiene que decir cuales SI se saben preguntar: {}",
+        out.stderr
     );
     assert!(
-        out.stdout.contains("no se pudo ejecutar"),
-        "con NUESTRO motivo —no hay forma de que un programa inexistente diga \
-         que no existe— y distinguido del de una herramienta que fallo:\n{}",
+        !out.stdout.contains("Invalid"),
+        "y no puede haber veredicto: no se llego a inspeccionar nada.\n{}",
         out.stdout
     );
 }

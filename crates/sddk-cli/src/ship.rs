@@ -16,9 +16,14 @@ pub(crate) fn run_ship(
     cycle: Option<String>,
     naming: String,
     role: String,
+    ask: crate::release_cmd::BuildAsk,
     format: OutputFormat,
     environment: &CliEnvironment,
 ) -> CommandOutput {
+    // `ask` es la FUENTE y los flags salen de el. Al reves —pasar los flags y
+    // que la puerta los reinterprete— seria abrir otra puerta al defecto medido:
+    // una capa que dice una cosa y el dialecto otra.
+    let (evaluate_build, build_tool) = ask.into();
     let args = ReleaseArgs {
         runtime: RuntimeArgs {
             root: Some(PathBuf::from(".")),
@@ -34,6 +39,8 @@ pub(crate) fn run_ship(
         target: None,
         naming,
         role,
+        evaluate_build,
+        build_tool,
         title: "SDDK release".into(),
         tag,
         cycle,

@@ -30,10 +30,31 @@ use sddk_domain::version_authority::{
     ProductVersion, ReleaseTarget, VersionProbe, VersionResolverPort,
 };
 use sddk_gateway::version_provider::{
-    BuildModelAnswer, BuildModelInvocation, BuildModelProvider, GRADLE_BUILD_FILES,
-    UNSPECIFIED_WORD, parse_build_model,
+    BuildModelAnswer, BuildModelProvider, BuildToolDialect, GRADLE_BUILD_FILES, UNSPECIFIED_WORD,
+    parse_build_model, parse_maven_model,
 };
 use tempfile::TempDir;
+
+/// Un nombre por herramienta, para que dos tests en paralelo no se pisen.
+///
+/// ## Por que esto existe
+///
+/// MEDIDO, con el fichero ya corregido: 5 de 12 ejecuciones de esta suite
+/// fallaban con `Text file busy (os error 26)` al arrancar el script. La causa no
+/// es el codigo bajo prueba —los tests que pasaban y los que fallaban eran los
+/// mismos— sino que todas las herramientas se llamaban `fake-build-tool` dentro
+/// de un `TempDir`, y `TempDir` recyclea nombres. Dos `execve` sobre el mismo
+/// path dan ETXTBSY.
+///
+/// Un nombre unico lo hace imposible por construccion, que es mejor que
+/// reintentar: un reintento sobre ETXTBSY tambien enmascararia un ETXTBSY real.
+static SECUENCIA_HERRAMIENTA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Un path de herramienta que ningun otro test de esta suite puede estar usando.
+fn herramienta_unica(dir: &std::path::Path) -> PathBuf {
+    let n = SECUENCIA_HERRAMIENTA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    dir.join(format!("fake-build-tool-{n}"))
+}
 
 /// A fake build tool. Three lines, and every law below is testable without a JVM.
 struct FakeTool {
@@ -45,7 +66,7 @@ impl FakeTool {
     /// A tool that answers `stdout` and exits 0.
     fn answering(stdout: &str) -> Self {
         let dir = TempDir::new().expect("tempdir");
-        let program = dir.path().join("fake-build-tool");
+        let program = herramienta_unica(dir.path());
         fs::write(
             &program,
             format!("#!/bin/sh\ncat <<'SDDK_EOF'\n{stdout}\nSDDK_EOF\nexit 0\n"),
@@ -58,7 +79,7 @@ impl FakeTool {
     /// A tool that fails the way Gradle fails: banner first, reason after.
     fn failing(stderr: &str, code: i32) -> Self {
         let dir = TempDir::new().expect("tempdir");
-        let program = dir.path().join("fake-build-tool");
+        let program = herramienta_unica(dir.path());
         fs::write(
             &program,
             format!("#!/bin/sh\ncat <<'SDDK_EOF' >&2\n{stderr}\nSDDK_EOF\nexit {code}\n"),
@@ -68,15 +89,25 @@ impl FakeTool {
         Self { _dir: dir, program }
     }
 
-    fn invocation(&self) -> BuildModelInvocation {
-        BuildModelInvocation {
-            program: self.program.display().to_string(),
-            args: vec!["properties".to_owned(), "--offline".to_owned()],
-        }
+    /// La herramienta falsa sustituye **solo el binario**. Los args, el parser y
+    /// los ficheros de build siguen siendo los del dialecto, que es lo que hace
+    /// que este test mida el dialecto y no una combinacion elegida a mano.
+    fn program(&self) -> &Path {
+        &self.program
     }
 
     fn provider(&self) -> BuildModelProvider {
-        BuildModelProvider::new(self.invocation())
+        // `/bin/sh` como programa y el script como primer argumento.
+        //
+        // MEDIDO: arrancar el script por su shebang dio ETXTBSY en 4 de 15
+        // ejecuciones con 1219 procesos en el host. Arrancar `/bin/sh` —que no
+        // se borra ni se recicla— hace el fallo imposible, y el prefijo solo
+        // cambia COMO se arranca: la pregunta sigue siendo la del dialecto.
+        BuildModelProvider::with_program_and_prefix(
+            BuildToolDialect::GradleProperties,
+            "/bin/sh",
+            &[&self.program.display().to_string()],
+        )
     }
 }
 
@@ -96,6 +127,14 @@ fn make_executable(path: &Path) {
 fn gradle_target(name: &str) -> (TempDir, ReleaseTarget) {
     let dir = TempDir::new().expect("tempdir");
     fs::write(dir.path().join("build.gradle"), "version = '1.2.3'\n").expect("write build");
+    let target = ReleaseTarget::at(name, dir.path().display().to_string());
+    (dir, target)
+}
+
+/// A directory that IS a Maven build, because it has a `pom.xml` of its own.
+fn maven_target(name: &str) -> (TempDir, ReleaseTarget) {
+    let dir = TempDir::new().expect("tempdir");
+    fs::write(dir.path().join("pom.xml"), "<project>\n</project>\n").expect("write pom");
     let target = ReleaseTarget::at(name, dir.path().display().to_string());
     (dir, target)
 }
@@ -272,10 +311,10 @@ fn b3b_una_herramienta_que_no_usa_la_frase_de_gradle_tambien_habla() {
 #[test]
 fn b4_una_herramienta_ausente_dice_que_no_esta() {
     let (_dir, target) = gradle_target("root");
-    let provider = BuildModelProvider::new(BuildModelInvocation {
-        program: "/nonexistent/sddk-build-tool".to_owned(),
-        args: vec!["properties".to_owned()],
-    });
+    let provider = BuildModelProvider::with_program(
+        BuildToolDialect::GradleProperties,
+        "/nonexistent/sddk-build-tool",
+    );
     let reason = provider
         .observe(&target)
         .expect_err("no se pudo ejecutar")
@@ -413,3 +452,232 @@ version: 0.47.0
          en vez de un `==` se llevaria la primera"
     );
 }
+
+// ── D: el dialecto que se pide es el que se ejecuta ───────────────────────
+//
+// MEDIDO antes del arreglo: `--build-tool mvn` sobre un build Gradle hacia que
+// `mvn` corriera `properties --offline` y el informe atribuyera la respuesta a
+// `././build.gradle`. Cada una de esas tres caras era correcta por separado; las
+// tres juntas fabricaron una evidencia.
+//
+// Los tests siguientes son el falsador de ese defecto. Cada uno muta UNA cara y
+// exige que el veredicto cambie. Una mutación que no llega a aplicarse es un
+// fallo de este fichero, no un PASS: por eso todos ejecutan código de verdad.
+
+#[test]
+fn d1_un_nombre_desconocido_es_un_error_y_no_un_gradle() {
+    let error = BuildToolDialect::parse("mvn").expect_err("mvn no es dialecto");
+    assert_eq!(error.0, "mvn");
+    assert!(
+        error.to_string().contains("gradle, maven"),
+        "el error tiene que decir cuales SI se saben preguntar: {error}"
+    );
+    for sospechoso in ["", "GRADLE", "gradle ", "gradlew", "mvnw", "ant"] {
+        assert!(
+            BuildToolDialect::parse(sospechoso).is_err(),
+            "`{sospechoso}` no es un dialecto y no puede convertirse en uno por \
+             normalizarlo en silencio"
+        );
+    }
+}
+
+#[test]
+fn d2_maven_se_pregunta_con_los_args_de_maven() {
+    let invocacion = BuildToolDialect::MavenHelpEvaluate.invocation();
+    let argumentos = invocacion.args().join(" ");
+
+    assert_eq!(invocacion.program(), "mvn");
+    assert!(
+        argumentos.contains("help:evaluate"),
+        "Maven contesta a `help:evaluate`, no a `properties`: {argumentos}"
+    );
+    assert!(
+        !argumentos.contains("properties"),
+        "`properties` es un goal de Gradle. Pedirselo a Maven devuelve un error \
+         cuyo motivo no explica nada: {argumentos}"
+    );
+}
+
+#[test]
+fn d3_gradle_y_maven_no_comparten_fichero_de_build() {
+    let gradle = BuildToolDialect::GradleProperties.build_files();
+    let maven = BuildToolDialect::MavenHelpEvaluate.build_files();
+
+    assert!(
+        gradle.contains(&"build.gradle"),
+        "Gradle se identifica por su fichero: {gradle:?}"
+    );
+    assert_eq!(
+        maven,
+        &["pom.xml"][..],
+        "Maven se identifica por el suyo, y no por los de Gradle: {maven:?}"
+    );
+    assert!(
+        !maven.contains(&"build.gradle"),
+        "si Maven aceptara `build.gradle` como suyo, atribuiria su respuesta a un \
+         fichero que Maven no abre — el defecto medido, por otra puerta"
+    );
+}
+
+#[test]
+fn d4_el_parser_gradle_no_entiende_a_maven() {
+    // `help:evaluate -DforceStdout` imprime la version sola, sin `clave: valor`.
+    // Un parser que leyera eso como Gradle o inventaria un valor o no veria nada;
+    // lo que exige este test es que no lo vea.
+    assert_eq!(
+        parse_build_model("1.2.3\n"),
+        BuildModelAnswer::Silent,
+        "la salida de Maven no es un informe de Gradle, y un parser que la \
+         entendiera estaria leyendo una pregunta que nadie hizo"
+    );
+}
+
+#[test]
+fn d5_el_parser_maven_no_entiende_a_gradle() {
+    // Y en la otra direccion: el informe `clave: valor` de Gradle no es una
+    // respuesta de Maven.
+    let respuesta = parse_maven_model("Root project 'multi'\nversion: 1.2.3\n");
+    assert!(
+        matches!(
+            respuesta,
+            BuildModelAnswer::Silent | BuildModelAnswer::Unspecified { .. }
+        ),
+        "una linea `clave: valor` de Gradle no puede ser la version de un \
+         proyecto Maven: {respuesta:?}"
+    );
+}
+
+#[test]
+fn d6_maven_distingue_no_resuelto_de_respuesta() {
+    // `${project.version}` es Maven diciendo que no sabe. No es un valor, y un
+    // parser que lo tomara por uno fabricaria una version llamada
+    // `${project.version}`.
+    assert_eq!(
+        parse_maven_model("${project.version}\n"),
+        BuildModelAnswer::Unspecified { project: None },
+        "una expresion sin resolver es una AUSENCIA declarada, no un valor"
+    );
+    assert_eq!(
+        parse_maven_model("[WARNING] some noise\n1.2.3\n"),
+        BuildModelAnswer::Declared {
+            version: ProductVersion::new("1.2.3").expect("version valida"),
+            project: None,
+        },
+        "el ruido de Maven no es la respuesta, y la respuesta esta tras el ruido"
+    );
+}
+
+#[test]
+fn d7_la_respuesta_de_maven_no_se_atribuye_a_un_fichero_de_gradle() {
+    // El falsador del defecto, entero y con proceso de por medio.
+    let (dir, _target) = maven_target("root");
+    let tool = FakeTool::answering("1.2.3\n");
+    let provider = BuildModelProvider::with_program_and_prefix(
+        BuildToolDialect::MavenHelpEvaluate,
+        "/bin/sh",
+        &[&tool.program().display().to_string()],
+    );
+
+    let probe = provider
+        .observe(&sddk_domain::version_authority::ReleaseTarget::at(
+            "root",
+            dir.path().display().to_string(),
+        ))
+        .expect("maven contesto");
+
+    let sddk_domain::version_authority::VersionProbe::Declared { evidence, .. } = &probe else {
+        panic!("una herramienta que contesto una version tiene que declararla: {probe:?}");
+    };
+    assert_eq!(
+        evidence.location.as_deref(),
+        Some(dir.path().join("pom.xml").display().to_string().as_str()),
+        "la atribucion tiene que ser del fichero que ABRE la herramienta del \
+         dialecto, no de otro: {:?}",
+        evidence.location
+    );
+    assert!(
+        !evidence
+            .location
+            .as_deref()
+            .unwrap_or_default()
+            .contains("build.gradle"),
+        "atribuir a `build.gradle` es exactamente el defecto medido"
+    );
+}
+
+/// El hueco que el falsador encontro en si mismo.
+///
+/// MEDIDO, durante la construccion de este fichero: con `MavenHelpEvaluate` usando
+/// el parser de Gradle, `d5` y `d6` siguieron en verde. Explicito lo es todo
+/// —llaman a `parse_maven_model` directamente— y la ley pura se ejercita bien, lo
+/// que no dice nada de que **el dialecto la use**.
+///
+/// Son dos cosas distintas y una suite que solo cubre la primera acepta un
+/// mutante que rompe la segunda. Esta es la que cierra el hueco.
+#[test]
+fn d8_cada_dialecto_usa_su_parser_y_no_el_del_otro() {
+    let informe_gradle = "Root project 'multi'\nversion: 1.2.3\n";
+    let expression_maven = "1.2.3\n";
+
+    assert_eq!(
+        BuildToolDialect::GradleProperties.parse_answer(informe_gradle),
+        parse_build_model(informe_gradle),
+        "el dialecto de Gradle tiene que preguntar con la ley de Gradle"
+    );
+    assert_eq!(
+        BuildToolDialect::MavenHelpEvaluate.parse_answer(expression_maven),
+        parse_maven_model(expression_maven),
+        "el dialecto de Maven tiene que preguntar con la ley de Maven, no con la de \
+         Gradle: un `properties` de Gradle no tiene nada que ver con un \
+         `help:evaluate` de Maven"
+    );
+
+    // Y el cruce, que es donde el defecto vivia.
+    assert_ne!(
+        BuildToolDialect::MavenHelpEvaluate.parse_answer(informe_gradle),
+        BuildToolDialect::GradleProperties.parse_answer(informe_gradle),
+        "el mismo texto no puede significar lo mismo bajo dos dialectos: si asi \
+         fuera, el dialecto no determinaria la lectura y volveriamos al defecto"
+    );
+}
+
+/// Un binario ocupado NO es una herramienta ausente.
+///
+/// MEDIDO, construyendo este fichero: un `ETXTBSY` se reportaba con el texto de
+/// un `ENOENT`. La herramienta existia y era ejecutable; otro proceso la tenia
+/// ocupada. Decir «no la tengo» manda al operador a instalar algo que ya tiene.
+///
+/// Y el motivo del fallo de `b4` es justo este: dos textos, dos reparaciones.
+#[test]
+fn d9_un_binario_ocupado_no_se_reporta_como_herramienta_ausente() {
+    use sddk_gateway::version_provider::motivo_de_ejecucion;
+
+    let error_ausente = std::io::Error::from_raw_os_error(ENOENT_TEST);
+    let ausente = motivo_de_ejecucion("gradle", "/x", &error_ausente);
+    assert!(
+        ausente.contains("no esta instalado"),
+        "ENOENT si es una herramienta ausente: {ausente}"
+    );
+
+    let error_ocupado = std::io::Error::from_raw_os_error(26);
+    let ocupado = motivo_de_ejecucion("gradle", "/x", &error_ocupado);
+    assert!(
+        !ocupado.contains("no esta instalado"),
+        "un binario ocupado no se arregla instalando nada, y este texto manda a \
+         hacerlo: {ocupado}"
+    );
+    assert!(
+        ocupado.contains("ocupado") || ocupado.contains("carrera del entorno"),
+        "y tiene que decir que es una carrera del entorno, que es lo medido: {ocupado}"
+    );
+
+    assert_ne!(
+        ausente, ocupado,
+        "los dos textos tienen que ser distintos: son dos reparaciones opuestas"
+    );
+}
+
+#[cfg(unix)]
+const ENOENT_TEST: i32 = 2;
+#[cfg(not(unix))]
+const ENOENT_TEST: i32 = -1;

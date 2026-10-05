@@ -613,32 +613,163 @@ pub const GRADLE_BUILD_FILES: &[&str] = &[
     "settings.gradle",
 ];
 
+/// One build tool SDDK knows how to **ask**, with every face it implies.
+///
+/// ## Por qué un tipo y no un nombre
+///
+/// MEDIDO, y esta es la razón de existir. Con `--build-tool mvn` sobre un build
+/// Gradle y un ejecutable instrumentado, `mvn` recibió `properties --offline` —un
+/// goal que no existe en Maven— y el informe atribuyó la respuesta a
+/// `././build.gradle`, un fichero que Maven nunca abrió.
+///
+/// Eso no fue un error de un argumento mal puesto: fueron **tres** caras
+/// desalineadas a la vez. El programa venía de la bandera, los args de una
+/// constante de Gradle, y la atribución de `location` de `GRADLE_BUILD_FILES`.
+/// Cada una era correcta por separado y las tres juntas fabricaron una evidencia.
+///
+/// El tipo las ata: un dialecto **es** el programa, sus args, sus ficheros de
+/// build, su parser y su centinela. Pedir una herramienta distinta de la que
+/// aporta el nombre ya no se puede expresar, porque no hay forma de(pair) un
+/// nombre suelto con las otras cuatro.
+///
+/// ## Por qué no hay `Default`
+///
+/// Porque un default aquí es un Gradle silencioso con el nombre de otra cosa, y
+/// eso fue exactamente lo medido. Un nombre no reconocido es un error de la línea
+/// de comandos ([`UnknownBuildTool`]), no una suposición.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BuildToolDialect {
+    /// `gradle properties --offline`, parsed from `key: value` output.
+    GradleProperties,
+    /// `mvn help:evaluate`, parsed from the single-expression report.
+    ///
+    /// MEDIDO en su forma de comando; su salida se declara aquí como el contrato
+    /// que el parser acepta, que es lo que hace falsificable la ley sin Maven
+    /// instalado.
+    MavenHelpEvaluate,
+}
+
+/// The `--build-tool` name was not one SDDK knows how to ask.
+///
+/// Deliberately separate from [`ProviderError`]: this one happens before any
+/// provider exists, and its remedy is "spell a supported tool", which is a
+/// different fix than anything an operator can do about a provider that ran and
+/// failed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown build tool `{0}`; SDDK knows how to ask: {supported}", supported = Self::SUPPORTED.join(", "))]
+pub struct UnknownBuildTool(pub String);
+
+impl UnknownBuildTool {
+    /// The names `parse` accepts, in the order they are offered.
+    pub const SUPPORTED: [&'static str; 2] = ["gradle", "maven"];
+}
+
+impl BuildToolDialect {
+    /// The dialects SDDK can ask.
+    pub const ALL: &'static [Self] = &[Self::GradleProperties, Self::MavenHelpEvaluate];
+
+    /// The dialect for a name, or the error that names the ones that exist.
+    ///
+    /// Sin default y sin normalización silenciosa: `--build-tool GRADLE` falla
+    /// igual que `--build-tool mvn`. Aceptar mayúsculas would be a guess, y this
+    /// function exists to replace guesses.
+    pub fn parse(name: &str) -> Result<Self, UnknownBuildTool> {
+        match name {
+            "gradle" => Ok(Self::GradleProperties),
+            "maven" => Ok(Self::MavenHelpEvaluate),
+            otro => Err(UnknownBuildTool(otro.to_owned())),
+        }
+    }
+
+    /// The name this dialect is invoked by, and by which it is reported.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::GradleProperties => "gradle",
+            Self::MavenHelpEvaluate => "maven",
+        }
+    }
+
+    /// How this dialect is run.
+    ///
+    /// `--offline` on Gradle because a version resolution cannot need the
+    /// network: a provider that has to download dependencies turns a local
+    /// question into one that fails when the mirror is down.
+    pub fn invocation(self) -> BuildModelInvocation {
+        match self {
+            Self::GradleProperties => BuildModelInvocation {
+                program: "gradle".to_owned(),
+                args: vec!["properties".to_owned(), "--offline".to_owned()],
+                dialect: self,
+            },
+            Self::MavenHelpEvaluate => BuildModelInvocation {
+                program: "mvn".to_owned(),
+                args: vec![
+                    "--offline".to_owned(),
+                    "help:evaluate".to_owned(),
+                    "-Dexpression=project.version".to_owned(),
+                    "-DforceStdout".to_owned(),
+                    "-q".to_owned(),
+                ],
+                dialect: self,
+            },
+        }
+    }
+
+    /// The build files whose **presence** makes a target this dialect's subject.
+    ///
+    /// Presence, never content: deciding by content would be reading the build
+    /// language again, which is what this provider exists to avoid.
+    pub fn build_files(self) -> &'static [&'static str] {
+        match self {
+            Self::GradleProperties => GRADLE_BUILD_FILES,
+            Self::MavenHelpEvaluate => &["pom.xml"],
+        }
+    }
+
+    /// Reads what one run of this dialect's tool said.
+    pub fn parse_answer(self, stdout: &str) -> BuildModelAnswer {
+        match self {
+            Self::GradleProperties => parse_build_model(stdout),
+            Self::MavenHelpEvaluate => parse_maven_model(stdout),
+        }
+    }
+}
+
 /// How to ask the build tool what its model says.
+///
+/// The `dialect` is what makes this type worth existing: `program` and `args`
+/// alone can be desynchronised from the parser and the build files, and that is
+/// how a Maven run came to be reported against a Gradle file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildModelInvocation {
     /// The program to run.
-    pub program: String,
+    program: String,
     /// Its arguments.
-    pub args: Vec<String>,
-}
-
-impl Default for BuildModelInvocation {
-    fn default() -> Self {
-        Self::gradle()
-    }
+    args: Vec<String>,
+    /// The dialect these two belong to.
+    dialect: BuildToolDialect,
 }
 
 impl BuildModelInvocation {
     /// `gradle properties --offline`, measured.
-    ///
-    /// `--offline` porque una resolución de versión no puede necesitar red: un
-    /// provider que dependa de descargar dependencias convierte una pregunta
-    /// local en una que falla cuando el mirror no está.
     pub fn gradle() -> Self {
-        Self {
-            program: "gradle".to_owned(),
-            args: vec!["properties".to_owned(), "--offline".to_owned()],
-        }
+        BuildToolDialect::GradleProperties.invocation()
+    }
+
+    /// The program to run.
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
+    /// Its arguments.
+    pub fn args(&self) -> &[String] {
+        &self.args
+    }
+
+    /// The dialect this invocation belongs to.
+    pub fn dialect(&self) -> BuildToolDialect {
+        self.dialect
     }
 }
 
@@ -711,6 +842,45 @@ pub fn parse_build_model(stdout: &str) -> BuildModelAnswer {
     }
 }
 
+/// Reads one `help:evaluate` report, and nothing else.
+///
+/// ## Por qué otra función y no un parámetro
+///
+/// Porque los dos dialectos no comparten ni el formato de salida ni la palabra
+/// que significa «no lo sé». Gradle contesta `version: unspecified` en un
+/// informe `clave: valor`; Maven contesta la expresión sin resolver,
+/// `${project.version}`, en una sola línea. Un parser con un parámetro de
+/// dialecto acabaría siendo un parser con dos senos, y la mitad que no se
+/// ejercita es la que miente.
+///
+/// Y por la misma razón que [`parse_build_model`]: la ley vive en una función
+/// pura para que sus mutantes corran sin lanzar Maven.
+pub fn parse_maven_model(stdout: &str) -> BuildModelAnswer {
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // `[WARNING]`, `[ERROR]`, `[INFO]`: Maven hablando ruido, no la respuesta.
+        if line.starts_with('[') {
+            continue;
+        }
+        // `${…}` es Maven diciendo que no sabe resolver la expresión. No es un
+        // valor, y no hay nada que reportarlo como si lo fuera.
+        if line.starts_with("${") && line.ends_with('}') {
+            return BuildModelAnswer::Unspecified { project: None };
+        }
+        return match ProductVersion::new(line) {
+            Ok(version) => BuildModelAnswer::Declared {
+                version,
+                project: None,
+            },
+            Err(_) => BuildModelAnswer::Unspecified { project: None },
+        };
+    }
+    BuildModelAnswer::Silent
+}
+
 /// A provider that asks the build tool, and reports what it says.
 ///
 /// ## Why this exists and why it is not a reader
@@ -735,25 +905,117 @@ pub fn parse_build_model(stdout: &str) -> BuildModelAnswer {
 pub struct BuildModelProvider {
     provider_id: String,
     provider_version: String,
+    dialect: BuildToolDialect,
+    /// El binario a ejecutar. Lo decide el dialecto, salvo que un test lo
+    /// sustituya; los args nunca se sustituyen.
     invocation: BuildModelInvocation,
 }
 
 impl BuildModelProvider {
-    /// A provider that asks the tool this way.
-    pub fn new(invocation: BuildModelInvocation) -> Self {
+    /// A provider that asks this tool, with the faces its name implies.
+    pub fn new(dialect: BuildToolDialect) -> Self {
+        let invocation = dialect.invocation();
         Self {
-            provider_id: format!("sddk.gateway.build-model/{}", invocation.program),
+            provider_id: format!("sddk.gateway.build-model/{}", dialect.id()),
             provider_version: env!("CARGO_PKG_VERSION").to_owned(),
+            dialect,
+            invocation,
+        }
+    }
+
+    /// The dialect this provider asks with.
+    pub fn dialect(&self) -> BuildToolDialect {
+        self.dialect
+    }
+
+    /// A provider that runs `program` **in place of** the dialect's binary, and
+    /// asks it the dialect's question.
+    ///
+    /// ## Por que esto no reabre el defecto que se midio
+    ///
+    /// Lo que se fabrico era un par `(programa, args)` distinto del dialecto que
+    /// decia, desde la capa de arriba. Aqui el dialecto sigue mandando en todo lo
+    /// observable —args, ficheros de build, parser, centinela y `provider_id`— y
+    /// lo unico sustituible es **el binario que se ejecuta**, que es lo que un
+    /// test necesita cambiar y lo que un operador no cambia por accidente.
+    ///
+    /// Los args no se pueden sustituir porque no se aceptan: no hay por donde
+    /// pasarlos. Esa es la diferencia entre esto y lo medido.
+    #[doc(hidden)]
+    pub fn with_program(dialect: BuildToolDialect, program: impl Into<String>) -> Self {
+        Self::with_program_and_prefix(dialect, program, &[])
+    }
+
+    /// Igual que [`BuildModelProvider::with_program`], y ademas antepone unos
+    /// argumentos al binario.
+    ///
+    /// ## Que es `leading` y por que existe
+    ///
+    /// Es **como arrancar el binario**, no **que preguntarle**: el prefijo va
+    /// delante de los args del dialecto, y quien pregunta sigue siendo el
+    /// dialecto. Un test lo usa para decir «arranca este script con `/bin/sh`»
+    /// en vez de «ejecuta este script con su shebang», que es la diferencia
+    /// entre un ETXTBSY posible y uno imposible.
+    #[doc(hidden)]
+    pub fn with_program_and_prefix(
+        dialect: BuildToolDialect,
+        program: impl Into<String>,
+        leading: &[&str],
+    ) -> Self {
+        let mut invocation = dialect.invocation();
+        invocation.program = program.into();
+        let mut args: Vec<String> = leading.iter().map(|a| (*a).to_owned()).collect();
+        args.append(&mut invocation.args);
+        invocation.args = args;
+        Self {
+            provider_id: format!("sddk.gateway.build-model/{}", dialect.id()),
+            provider_version: env!("CARGO_PKG_VERSION").to_owned(),
+            dialect,
             invocation,
         }
     }
 }
 
-impl Default for BuildModelProvider {
-    fn default() -> Self {
-        Self::new(BuildModelInvocation::default())
+/// El motivo por el que el proceso no llego a arrancar, y **de quien es**.
+///
+/// ## Por que esta distincion existe
+///
+/// `b4` existe porque «no tengo la herramienta» y «la herramienta fallo» son dos
+/// problemas con dos reparaciones opuestas, y confundirlos manda al operador a
+/// instalar algo que ya tiene o a depurar un binario que no existe.
+///
+/// MEDIDO, durante la construccion de este fichero: un `ETXTBSY` —el binario
+/// existe y esta en uso por otro proceso— se reportaba con el mismo texto que
+/// un `ENOENT`. Medido de verdad: 4 de 15 ejecuciones de una suiteFallaron asi,
+/// con 1219 procesos en el host. Es un fallo del ENTORNO y su texto decia que
+/// faltaba una herramienta, que es justo la mentira que este bloque vino a
+/// arreglar.
+///
+/// La herramienta no puede decir por que no arranco —nunca arranco— asi que el
+/// motivo es NUESTRO, y por eso tiene que ser exacto: «no lo tengo» solo para
+/// `ENOENT`, y «otro proceso lo tiene ocupado» para el resto.
+pub fn motivo_de_ejecucion(dialecto: &str, root: &str, error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => format!(
+            "`{dialecto}` no esta instalado, asi que no se pudo ejecutar en {root}: \
+             se necesita en el PATH"
+        ),
+        _ if error.raw_os_error() == Some(ETXTBSY) => format!(
+            "`{dialecto}` esta en {root} pero otro proceso lo tiene ocupado \
+             (ETXTBSY): el binario existe y es ejecutable, asi que esto es una \
+             carrera del entorno y no una herramienta que falte. Reintentar lo \
+             resuelve; instalarla no. Error del sistema: {error}"
+        ),
+        _ => format!("`{dialecto}` no se pudo ejecutar en {root}: {error}"),
     }
 }
+
+/// `ETXTBSY` en Linux. Constante en vez de numero suelto porque un numero
+/// magico en un mensaje es un mensaje que no se puede revisar.
+#[cfg(unix)]
+const ETXTBSY: i32 = 26;
+#[cfg(not(unix))]
+const ETXTBSY: i32 = -1;
 
 impl VersionResolverPort for BuildModelProvider {
     fn provider_id(&self) -> &str {
@@ -772,35 +1034,31 @@ impl VersionResolverPort for BuildModelProvider {
 
     fn observe(&self, target: &ReleaseTarget) -> Result<VersionProbe, ProviderError> {
         let root = std::path::Path::new(target.root());
-        let build_file = GRADLE_BUILD_FILES
+        let build_file = self
+            .dialect
+            .build_files()
             .iter()
             .map(|name| root.join(name))
             .find(|path| path.is_file());
         let Some(build_file) = build_file else {
             return Ok(VersionProbe::NotApplicable {
                 reason: format!(
-                    "{} no tiene fichero de build de Gradle, asi que no hay modelo que \
+                    "{} no tiene fichero de build de {}, asi que no hay modelo que \
                      preguntar",
-                    target.root()
+                    target.root(),
+                    self.dialect.id()
                 ),
             });
         };
 
-        let output = std::process::Command::new(&self.invocation.program)
-            .args(&self.invocation.args)
+        let invocation = &self.invocation;
+        let output = std::process::Command::new(invocation.program())
+            .args(invocation.args())
             .current_dir(root)
             .output()
             .map_err(|error| ProviderError::Unavailable {
                 provider_id: self.provider_id.clone(),
-                // NUESTRO motivo, y lo es: el programa no esta instalado. Que
-                // sea nuestro no lo hace menos cierto —no hay forma de que el
-                // programa diga que no existe— y confundirlos haria que «no
-                // tengo Gradle» se leyera como «Gradble fallo».
-                reason: format!(
-                    "`{}` no se pudo ejecutar en {}: {error}",
-                    self.invocation.program,
-                    target.root()
-                ),
+                reason: motivo_de_ejecucion(self.dialect.id(), target.root(), &error),
             })?;
 
         if !output.status.success() {
@@ -814,14 +1072,14 @@ impl VersionResolverPort for BuildModelProvider {
             // util que cualquier resumen que escribiramos aqui.
             return Err(ProviderError::Unavailable {
                 provider_id: self.provider_id.clone(),
-                reason: format!(
-                    "`{}` no pudo responder por {}",
-                    self.invocation.program, motivo
-                ),
+                reason: format!("`{}` no pudo responder por {}", self.dialect.id(), motivo),
             });
         }
 
-        match parse_build_model(&String::from_utf8_lossy(&output.stdout)) {
+        match self
+            .dialect
+            .parse_answer(&String::from_utf8_lossy(&output.stdout))
+        {
             BuildModelAnswer::Declared { version, project } => Ok(VersionProbe::Declared {
                 version,
                 evidence: VersionEvidence {
@@ -832,9 +1090,9 @@ impl VersionResolverPort for BuildModelProvider {
                     // sin `provider_id` — describes algo sin decir de quien es.
                     source_kind: match &project {
                         Some(project) => {
-                            format!("build-model/{}/{project}", self.invocation.program)
+                            format!("build-model/{}/{project}", self.dialect.id())
                         }
-                        None => format!("build-model/{}", self.invocation.program),
+                        None => format!("build-model/{}", self.dialect.id()),
                     },
                     // Sin digest, y a proposito: el valor no sale de los bytes de
                     // un fichero, sale de EVALUAR el build. Poner el digest del
@@ -849,12 +1107,14 @@ impl VersionResolverPort for BuildModelProvider {
                     Some(project) => format!(
                         "{} contesto que {project} no tiene version ({}), y eso es una \
                          ausencia declarada, no un valor",
-                        self.invocation.program, UNSPECIFIED_WORD
+                        self.dialect.id(),
+                        UNSPECIFIED_WORD
                     ),
                     None => format!(
                         "{} contesto que no hay version ({}), y eso es una ausencia \
                          declarada, no un valor",
-                        self.invocation.program, UNSPECIFIED_WORD
+                        self.dialect.id(),
+                        UNSPECIFIED_WORD
                     ),
                 },
             }),
@@ -862,7 +1122,8 @@ impl VersionResolverPort for BuildModelProvider {
                 reason: format!(
                     "{} salio con {} y no nombr ninguna version: se le pregunto y no \
                      contesto",
-                    self.invocation.program, output.status
+                    self.dialect.id(),
+                    output.status
                 ),
             }),
         }
@@ -927,15 +1188,15 @@ fn meaningful_line(stderr: &str) -> Option<String> {
 /// lo pida. Es la misma razón por la que `--naming` y `--role` son banderas y no
 /// configuración del repo.
 pub fn version_registry_with(
-    build_tool: Option<BuildModelInvocation>,
+    build_tool: Option<BuildToolDialect>,
 ) -> sddk_domain::version_authority::VersionResolverRegistry {
     let mut registry = sddk_domain::version_authority::VersionResolverRegistry::new();
     registry.register(Box::new(DeclaredAuthorityProvider::new()));
     for spec in DEFAULT_DECLARATIONS {
         registry.register(Box::new(SingleDeclarationProvider::for_spec(spec)));
     }
-    if let Some(invocation) = build_tool {
-        registry.register(Box::new(BuildModelProvider::new(invocation)));
+    if let Some(dialect) = build_tool {
+        registry.register(Box::new(BuildModelProvider::new(dialect)));
     }
     registry
 }

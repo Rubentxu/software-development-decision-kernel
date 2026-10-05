@@ -211,8 +211,14 @@ pub(crate) struct VersionInspectArgs {
     /// is set for command gradle` y sale 126—. Suponer cual de los dos es
     /// suponer, y es la misma palabra que usa el resto de este bloque para lo
     /// que se declara en vez de deducirse.
-    #[arg(long, default_value = "gradle")]
-    pub(crate) build_tool: String,
+    ///
+    /// Sin default. MEDIDO, con un ejecutable instrumentado: `--build-tool mvn`
+    /// hacia que `mvn` corriera `properties --offline` —un goal que no existe en
+    /// Maven— y el informe atribuyera la respuesta a `build.gradle`, un fichero
+    /// que Maven nunca abrio. El default era la causa: sin nombre, la bandera
+    /// aceptaba cualquier palabra y respondia siempre en Gradle.
+    #[arg(long)]
+    pub(crate) build_tool: Option<String>,
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub(crate) format: OutputFormat,
@@ -317,6 +323,35 @@ pub(crate) struct ReleaseArgs {
     /// release records the convention it was authorised under.
     #[arg(long, default_value = "v_prefixed")]
     pub(crate) naming: String,
+    /// Ask the build tool what its model says, instead of only reading files.
+    ///
+    /// ## Por qué esto pertenece a la puerta y no solo al diagnóstico
+    ///
+    /// MEDIDO sobre un build Gradle que declara `1.2.3`, con un tag `v9.9.9`:
+    /// `release version matches` decia «no hay nada contra que comparar», y
+    /// `ensure_release_ref_lockstep` devolvia **`Ok`** — porque sin version no hay
+    /// lockstep que incumplir. O sea: la puerta **aceptaba** el tag que el
+    /// proyecto contradecia, y no por decision sino porque no veia.
+    ///
+    /// Un default que no mira no puede rechazar nada, luego no puede autorizar
+    /// nada. Esta bandera es lo que hace que mirar sea una decision del
+    /// operador y no un accidente del provider.
+    #[arg(long)]
+    pub(crate) evaluate_build: bool,
+    /// The build tool to ask, when `--evaluate-build` is given.
+    ///
+    /// ## Por que esto no tiene un default
+    ///
+    /// MEDIDO, con un ejecutable instrumentado: `--build-tool mvn` sobre un build
+    /// Gradle hacia que `mvn` corriera `properties --offline` —un goal que no
+    /// existe en Maven— y el informe atribuyera la respuesta a `build.gradle`, un
+    /// fichero que Maven nunca abrio. Ese default era la causa: sin nombre, la
+    /// bandera aceptaba cualquier palabra y respondia siempre en Gradle.
+    ///
+    /// Un nombre que SDDK no sepa preguntar es un error de la linea de comandos,
+    /// no una suposicion.
+    #[arg(long)]
+    pub(crate) build_tool: Option<String>,
     /// What this target is responsible for in the release.
     ///
     /// `full_publisher` (the default) publishes. `candidate_producer` stops at
@@ -478,12 +513,12 @@ fn run_release_version_inspect(args: VersionInspectArgs) -> CommandOutput {
         // La MISMA seleccion que usa `release plan`, porque un diagnostico que
         // mira un target distinto del que se publico no explica el rechazo que
         // se quiere explicar.
-        let selected = resolve_release_target(&root, args.target.as_deref())?;
-        let mut inspection = version_registry_asking(args.evaluate_build, &args.build_tool)
-            .resolve_inspecting(
-                sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
-                &selected.target,
-            );
+        let ask = BuildAsk::of_inspect(&args)?;
+        let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
+        let mut inspection = ask.registry().resolve_inspecting(
+            sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
+            &selected.target,
+        );
         // Lo que NO se evaluó, y que el informe tiene que decir aunque el
         // veredicto sea rojo: no preguntar al build tool es una decisión —la
         // paga quien la pide con `--evaluate-build`— y una decisión que el
@@ -663,8 +698,12 @@ fn run_release_version_matches(args: VersionMatchesArgs) -> CommandOutput {
     let result = (|| -> anyhow::Result<VersionMatchOutput> {
         let root = resolve_inspection_root(&args.runtime)?;
         let naming = resolve_naming(&args.naming)?;
-        let selected = resolve_release_target(&root, args.target.as_deref())?;
-        let version = version_registry().resolve(
+        // `release version matches` NO tiene `--evaluate-build`: MEDIDO, sus Args
+        // no declaran la bandera. Asi que aqui no hay pregunta que hacer, y se
+        // dice con el valor en vez de dejar que se deduzca de un default.
+        let ask = BuildAsk::never();
+        let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
+        let version = ask.registry().resolve(
             sddk_domain::version_authority::PRODUCT_VERSION_OBSERVATION,
             &selected.target,
         );
@@ -785,7 +824,12 @@ fn run_release_handoff(args: HandoffArgs) -> CommandOutput {
             ));
         }
 
-        let selected = resolve_release_target(&root, args.target.as_deref())?;
+        // Igual que `matches`: `HandoffArgs` no declara `--evaluate-build`, asi
+        // que un handoff sobre un build Gradle se resuelve sin preguntar al build
+        // tool. Es una limitacion DECLARADA de este comando, no un olvido, y por
+        // eso el valor va escrito aqui y no sale de un default.
+        let ask = BuildAsk::never();
+        let selected = resolve_release_target(&root, args.target.as_deref(), &ask)?;
 
         // La MISMA resolución que usa `release plan`. Una segunda llamada al
         // registry sería una segunda autoridad, y la que acaba dentro del sobre
@@ -1527,14 +1571,11 @@ fn run_release_plan(args: ReleaseArgs, environment: &CliEnvironment) -> CommandO
         // La variante `detailed` y no la que aplana: el plan declara de dónde
         // salió la versión, y `map(|_| ())` tiraría exactamente lo que hay
         // que reportar. Sigue fallando cerrado ante un desajuste.
-        let selected = resolve_release_target(git.root(), args.target.as_deref())?;
-        let authority = ensure_version_lockstep_detailed(
-            &version_registry(),
-            &selected.target,
-            &args.tag,
-            &naming,
-        )
-        .map_err(|error| lockstep_rejection(&error, &naming))?;
+        let ask = BuildAsk::of(&args)?;
+        let selected = resolve_release_target(git.root(), args.target.as_deref(), &ask)?;
+        let authority =
+            ensure_version_lockstep_detailed(&ask.registry(), &selected.target, &args.tag, &naming)
+                .map_err(|error| lockstep_rejection(&error, &naming))?;
         let head = git.inspect()?.head;
 
         // REQ-RDI-002 / REQ-RDI-003: gather manifest + receipt fields.
@@ -1654,19 +1695,27 @@ fn run_release_apply(args: ReleaseArgs, environment: &CliEnvironment) -> Command
         let permissions = PermissionPolicy::from_file(root.join("permissions.yaml"))?;
         authorize_release(&permissions, route)?;
         let naming = resolve_naming(&args.naming)?;
+        // Antes del cierre, porque el cierre devuelve una `CommandOutput` y no
+        // un `Result`: dentro no hay donde propagar un fallo. Y es tambien donde
+        // tiene que estar: una pregunta que se valida despues de decidir es una
+        // pregunta que a veces no se valida.
+        let ask = BuildAsk::of(&args)?;
         let local_preconditions = matches!(route, ReleaseRoute::Local)
             .then(|| {
                 local_release_preconditions(
                     &context,
                     &project_id,
-                    args.cycle.as_deref(),
-                    args.previous_tag.as_deref(),
-                    args.release_type.map(|r| r.into()),
                     &NamedReference {
                         name: args.tag.clone(),
                         naming,
                     },
                     environment,
+                    &LocalReleaseQuestion {
+                        cycle_id: args.cycle.as_deref(),
+                        previous_tag: args.previous_tag.as_deref(),
+                        release_type: args.release_type.map(|r| r.into()),
+                        ask: &ask,
+                    },
                 )
             })
             .transpose()?;
@@ -1777,12 +1826,17 @@ fn apply_release_forge(
     // informaba un lockstep comprobado en proyectos donde no se
     // comprobó nada, porque no hay manifiesto contra el que
     // comparar. Sigue fallando cerrado ante un desajuste.
-    let version_authority = version_authority_or_fail(root, &args.tag, &naming)?;
+    // UNA pregunta para las dos preguntas. La puerta y la identidad del producto
+    // se resuelven con el mismo registro a proposito: si cada una construyera el
+    // suyo, la autoridad seria de una pregunta y el target de otra, y un outcome
+    // asi no se puede auditar.
+    let ask = BuildAsk::of(args)?;
+    let version_authority = version_authority_or_fail(root, &args.tag, &naming, &ask)?;
     // La identidad del producto, de la MISMA seleccion que produjo la
     // autoridad. Volver a resolverla aqui podria dar otra respuesta si el arbol
     // cambiase entre medias, y un outcome que dice una cosa y el plan otra es
     // un registro que no se puede auditar.
-    let release_target_id = resolve_release_target(root, args.target.as_deref())?
+    let release_target_id = resolve_release_target(root, args.target.as_deref(), &ask)?
         .report
         .id
         .clone();
@@ -1883,6 +1937,7 @@ fn version_authority_or_fail(
     root: &std::path::Path,
     tag: &str,
     naming: &VersionNaming,
+    ask: &BuildAsk,
 ) -> anyhow::Result<VersionAuthority> {
     // El mensaje del motor se pasa tal cual. Una version anterior de esta
     // capa anadia encima «si tu proyecto no declara su version, puede
@@ -1891,8 +1946,8 @@ fn version_authority_or_fail(
     // y desvia la atencion de lo que hay que mirar. En el unico caso en que
     // si aplica, el mensaje ya trae el nombre: lo dice el provider de la
     // declaracion al responder que este target no declara nada.
-    let selected = resolve_release_target(root, None)?;
-    ensure_version_lockstep_detailed(&version_registry(), &selected.target, tag, naming)
+    let selected = resolve_release_target(root, None, ask)?;
+    ensure_version_lockstep_detailed(&ask.registry(), &selected.target, tag, naming)
         .map_err(|error| lockstep_rejection(&error, naming))
 }
 
@@ -2015,6 +2070,108 @@ fn version_registry() -> sddk_domain::version_authority::VersionResolverRegistry
     sddk_gateway::version_provider::default_version_registry()
 }
 
+/// El dialecto que piden las banderas, o el error que dice que no hay.
+///
+/// ## Por que vive aqui y no en el gateway
+///
+/// Porque la pregunta es de la LINEA DE COMANDOS, no del dominio: `--evaluate-build`
+/// sin `--build-tool` no es una pregunta a nadie, y eso lo sabe quien lee las
+/// banderas. El gateway solo sabe preguntar; no sabe que le hayan pedido.
+///
+/// El default que este helper **no** tiene es el arreglo entero del defecto
+/// medido: un nombre que no se reconoce es un error visible, no un Gradle en
+/// disguise.
+fn dialect_asked(
+    evaluate: bool,
+    tool: Option<&str>,
+) -> anyhow::Result<Option<sddk_gateway::version_provider::BuildToolDialect>> {
+    let Some(nombre) = tool else {
+        if evaluate {
+            anyhow::bail!(
+                "--evaluate-build necesita --build-tool: SDDK no tiene un build tool por \
+                 defecto, porque un default aqui seria responder en Gradle cuando se \
+                 pidio otra cosa. Herramientas que SDDK sabe preguntar: {}",
+                sddk_gateway::version_provider::UnknownBuildTool::SUPPORTED.join(", ")
+            );
+        }
+        return Ok(None);
+    };
+    Ok(Some(
+        sddk_gateway::version_provider::BuildToolDialect::parse(nombre)?,
+    ))
+}
+
+/// Lo que el operador ha pedido **sobre el build tool**, en un valor.
+///
+/// Viaja como una cosa y no como dos parámetros porque es una cosa: o se evalúa
+/// con una herramienta, o no se evalúa. Pasarlas sueltas invitaría a que una
+/// llamada pase `evaluate_build` y olvide `build_tool`, que es un provider que
+/// lanza un proceso con el nombre equivocado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BuildAsk {
+    evaluate: bool,
+    dialect: Option<sddk_gateway::version_provider::BuildToolDialect>,
+}
+
+impl From<BuildAsk> for (bool, Option<String>) {
+    /// El dialecto vuelve a su NOMBRE porque `ReleaseArgs` los recibe de la
+    /// linea de comandos. El viaje de ida —nombre a dialecto— ya ocurrio y ya
+    /// fallo cerrado; este no vuelve a interpretar nada.
+    fn from(ask: BuildAsk) -> Self {
+        (ask.evaluate, ask.dialect.map(|d| d.id().to_owned()))
+    }
+}
+
+impl BuildAsk {
+    /// Lo que dice la línea de comandos.
+    pub(crate) fn of(args: &ReleaseArgs) -> anyhow::Result<Self> {
+        Ok(Self {
+            evaluate: args.evaluate_build,
+            dialect: dialect_asked(args.evaluate_build, args.build_tool.as_deref())?,
+        })
+    }
+
+    /// La misma pregunta, leida de `VersionInspectArgs`.
+    ///
+    /// No un `From` porque las dos banderas viven en dos `Args` distintos y
+    /// un `From` que aceptara cualquiera dejaria abierta la pregunta de «de
+    /// donde salio esto» — que es justo la que este bloque vino a cerrar.
+    pub(crate) fn of_inspect(args: &VersionInspectArgs) -> anyhow::Result<Self> {
+        Ok(Self {
+            evaluate: args.evaluate_build,
+            dialect: dialect_asked(args.evaluate_build, args.build_tool.as_deref())?,
+        })
+    }
+
+    /// La misma pregunta, desde banderas sueltas.
+    ///
+    /// Existe para `ship`, que recibe su `ReleaseArgs` ya construido y no tiene
+    /// uno desde el que derivar. La ley es la misma en las dos entradas, que es
+    /// lo que importa: que una ruta pueda responder en Gradle cuando se pidio
+    /// otra cosa seria el defecto medido por la otra puerta.
+    pub(crate) fn of_parts(evaluate: bool, tool: Option<&str>) -> anyhow::Result<Self> {
+        Ok(Self {
+            evaluate,
+            dialect: dialect_asked(evaluate, tool)?,
+        })
+    }
+
+    /// Lo que se responde cuando nadie ha pedido nada.
+    ///
+    /// Con nombre propio porque es el caso que **cambia la conducta** de la
+    /// puerta, y un `Default` implícito no dice cuál de los dos es.
+    fn never() -> Self {
+        Self {
+            evaluate: false,
+            dialect: None,
+        }
+    }
+
+    fn registry(&self) -> sddk_domain::version_authority::VersionResolverRegistry {
+        version_registry_asking(self.evaluate, self.dialect)
+    }
+}
+
 /// El mismo registro, y además el provider que **pregunta** a la herramienta
 /// de build — si alguien lo ha pedido.
 ///
@@ -2024,17 +2181,14 @@ fn version_registry() -> sddk_domain::version_authority::VersionResolverRegistry
 /// revisa.
 fn version_registry_asking(
     evaluate_build: bool,
-    build_tool: &str,
+    dialect: Option<sddk_gateway::version_provider::BuildToolDialect>,
 ) -> sddk_domain::version_authority::VersionResolverRegistry {
     if !evaluate_build {
         return version_registry();
     }
-    sddk_gateway::version_provider::version_registry_with(Some(
-        sddk_gateway::version_provider::BuildModelInvocation {
-            program: build_tool.to_owned(),
-            args: vec!["properties".to_owned(), "--offline".to_owned()],
-        },
-    ))
+    // El dialecto trae programa, args, ficheros y parser. Esta capa ya no sabe
+    // como se pregunta a nadie, que es lo que hacia posible el defecto medido.
+    sddk_gateway::version_provider::version_registry_with(dialect)
 }
 
 /// Elige el target, o explica por que no puede, y deja constancia de como.
@@ -2044,13 +2198,26 @@ fn version_registry_asking(
 /// responde una vez y se registra, porque un plan que no dice que producto es
 /// su no es revisable: un numero de version sin producto es la ambiguedad que
 /// este bloque quita, movida un nivel mas arriba.
+/// ## Por que recibe la `ask` y no construye su propio registry
+///
+/// MEDIDO, al cerrar este bloque: un repo Maven con solo `pom.xml` no era un
+/// release target, y el provider de build tool **nunca se ejecutaba**. El motivo
+/// es un deadlock: `release_targets` decide que es un target preguntando quien
+/// declara version, y el unico que podria declararla —el build tool— se consultaba
+/// despues de esa decision.
+///
+/// Un registro sin dialecto no puede digitalizar un proyecto Maven, y ese es el
+/// caso que la capacidad existe para resolver. Por eso la pregunta viaja con la
+/// funcion en vez de construirse dentro: una funcion que decide con un registro
+/// distinto del que luego informa, es una que puede mirar dos cosas distintas.
 fn resolve_release_target(
     root: &std::path::Path,
     requested: Option<&str>,
+    ask: &BuildAsk,
 ) -> anyhow::Result<SelectedTarget> {
     use sddk_domain::version_authority::{TargetSelector, select_target};
 
-    let set = sddk_gateway::version_provider::release_targets(root, &version_registry());
+    let set = sddk_gateway::version_provider::release_targets(root, &ask.registry());
     let selector = match requested {
         Some(id) => TargetSelector::named(id),
         None => TargetSelector::unsolicited(),
@@ -2124,11 +2291,26 @@ struct SelectedTarget {
 /// target distinto del que el plan autorizo, la puerta estaria comprobando una
 /// cosa y el release publicando otra, y un desajuste ahi es invisible porque
 /// los dos exits son cero.
-fn version_lockstep_satisfied(root: &std::path::Path, tag: &str, naming: &VersionNaming) -> bool {
-    let Ok(selected) = resolve_release_target(root, None) else {
+/// La regla de lockstep, con el registry que el operador ha pedido.
+///
+/// ## Por que lleva `ask` y no un default
+///
+/// Porque **no mirar cambia la conducta de la puerta**, y eso no puede
+/// esconderse en un parametro opcional. MEDIDO: sin esta capacidad, un build
+/// Gradle que declara `1.2.3` acepta un tag `v9.9.9`, porque sin version no hay
+/// lockstep que incumplir. Quien no mira tiene que **decirlo** —
+/// `BuildAsk::never()` —, no omitirlo: un default silencioso en una puerta es un
+/// default que nadie revisa.
+fn version_lockstep_satisfied_asking(
+    root: &std::path::Path,
+    tag: &str,
+    naming: &VersionNaming,
+    ask: &BuildAsk,
+) -> bool {
+    let Ok(selected) = resolve_release_target(root, None, ask) else {
         return false;
     };
-    ensure_version_lockstep(&version_registry(), &selected.target, tag, naming).is_ok()
+    ensure_version_lockstep(&ask.registry(), &selected.target, tag, naming).is_ok()
 }
 
 /// El release tal como lo nombra quien publica: su nombre y la convención con
@@ -2143,20 +2325,44 @@ struct NamedReference {
     naming: VersionNaming,
 }
 
+/// Lo que el operador **declaró** para este release.
+///
+/// ## Por que un param object y no ocho parametros
+///
+/// MEDIDO, al anadir `ask`: la funcion estaba en siete —el umbral de clippy— y
+/// la octava bandera la paso. La respuesta facil es un
+/// `#[allow(clippy::too_many_arguments)]`, y eso es lo que hace una lista de
+/// entradas que nadie vuelve a leer.
+///
+/// Lo agrupado aqui es una sola cosa: lo que el operador dijo. `cycle_id`,
+/// `previous_tag`, `release_type` y `ask` son cuatro frases de la misma
+/// declaracion, y separarlas en la firma era lo que hacia que añadir una
+/// Pareciera un parametro nuevo en vez de una frase mas.
+struct LocalReleaseQuestion<'a> {
+    cycle_id: Option<&'a str>,
+    previous_tag: Option<&'a str>,
+    release_type: Option<sddk_domain::ReleaseType>,
+    ask: &'a BuildAsk,
+}
+
 fn local_release_preconditions(
     context: &RuntimeContext,
     project_id: &str,
-    cycle_id: Option<&str>,
-    previous_tag: Option<&str>,
-    release_type_arg: Option<sddk_domain::ReleaseType>,
     reference: &NamedReference,
     environment: &CliEnvironment,
+    question: &LocalReleaseQuestion<'_>,
 ) -> anyhow::Result<LocalReleasePreconditions> {
+    let LocalReleaseQuestion {
+        cycle_id,
+        previous_tag,
+        release_type: release_type_arg,
+        ask,
+    } = question;
     // L1 lockstep: la puerta local. `true` significa que la regla no se incumplio,
     // no que la version se comprobara: un proyecto sin version declarada no
     // tiene contra que compararse y no se bloquea por ello.
     let version_lockstep_passed =
-        version_lockstep_satisfied(&context.root, &reference.name, &reference.naming);
+        version_lockstep_satisfied_asking(&context.root, &reference.name, &reference.naming, ask);
     let cycle_id = cycle_id.ok_or_else(|| {
         anyhow::anyhow!("--cycle is required for --route local to verify local release evidence")
     })?;
@@ -3430,9 +3636,13 @@ mod tests {
     #[test]
     fn a_rust_project_resolves_its_version_without_claiming_a_check() {
         let dir = rust_project();
-        let authority =
-            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
-                .unwrap();
+        let authority = super::version_authority_or_fail(
+            dir.path(),
+            "v1.0.0",
+            &VersionNaming::v_prefixed(),
+            &super::BuildAsk::never(),
+        )
+        .unwrap();
         assert!(
             matches!(authority, VersionAuthority::Resolved { .. }),
             "{authority:?}"
@@ -3463,9 +3673,13 @@ mod tests {
             r#"{"name":"x","version":"1.0.0"}"#,
         )
         .unwrap();
-        let authority =
-            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
-                .unwrap();
+        let authority = super::version_authority_or_fail(
+            dir.path(),
+            "v1.0.0",
+            &VersionNaming::v_prefixed(),
+            &super::BuildAsk::never(),
+        )
+        .unwrap();
         assert!(
             authority.was_cross_validated(),
             "dos fuentes independientes que coinciden se han cruzado: {authority:?}"
@@ -3482,9 +3696,13 @@ mod tests {
     #[test]
     fn a_go_project_declares_that_the_release_ref_carries_its_version() {
         let dir = go_project();
-        let authority =
-            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
-                .unwrap();
+        let authority = super::version_authority_or_fail(
+            dir.path(),
+            "v1.0.0",
+            &VersionNaming::v_prefixed(),
+            &super::BuildAsk::never(),
+        )
+        .unwrap();
         assert!(
             matches!(authority, VersionAuthority::ReleaseRefIsAuthority { .. }),
             "un go.mod presente DECLARA que su version no esta en un manifiesto, \
@@ -3516,9 +3734,13 @@ mod tests {
             r#"{"name":"x","version":"1.0.0"}"#,
         )
         .unwrap();
-        let authority =
-            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
-                .unwrap();
+        let authority = super::version_authority_or_fail(
+            dir.path(),
+            "v1.0.0",
+            &VersionNaming::v_prefixed(),
+            &super::BuildAsk::never(),
+        )
+        .unwrap();
         assert_eq!(
             authority.version().map(|v| v.to_string()),
             Some("1.0.0".into()),
@@ -3534,8 +3756,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("README.md"), "nada que declarar\n").unwrap();
         assert!(
-            super::version_authority_or_fail(dir.path(), "v1.0.0", &VersionNaming::v_prefixed())
-                .is_err(),
+            super::version_authority_or_fail(
+                dir.path(),
+                "v1.0.0",
+                &VersionNaming::v_prefixed(),
+                &super::BuildAsk::never(),
+            )
+            .is_err(),
             "silencio no es una declaracion de convencion"
         );
     }
@@ -3549,7 +3776,12 @@ mod tests {
     fn the_local_gate_lets_a_go_project_through() {
         let dir = go_project();
         assert!(
-            super::version_lockstep_satisfied(dir.path(), "v1.0.0", &VersionNaming::v_prefixed()),
+            super::version_lockstep_satisfied_asking(
+                dir.path(),
+                "v1.0.0",
+                &VersionNaming::v_prefixed(),
+                &super::BuildAsk::never(),
+            ),
             "un proyecto sin version declarada no tiene contra que comparar, y eso no es una infraccion"
         );
     }
@@ -3559,18 +3791,29 @@ mod tests {
     #[test]
     fn the_local_gate_still_refuses_a_mismatch() {
         let dir = rust_project();
-        assert!(super::version_lockstep_satisfied(
+        assert!(super::version_lockstep_satisfied_asking(
             dir.path(),
             "v1.0.0",
-            &VersionNaming::v_prefixed()
+            &VersionNaming::v_prefixed(),
+            &super::BuildAsk::never(),
         ));
         assert!(
-            !super::version_lockstep_satisfied(dir.path(), "v9.9.9", &VersionNaming::v_prefixed()),
+            !super::version_lockstep_satisfied_asking(
+                dir.path(),
+                "v9.9.9",
+                &VersionNaming::v_prefixed(),
+                &super::BuildAsk::never(),
+            ),
             "un tag que no coincide con la version declarada tiene que cerrar la puerta"
         );
         assert!(
-            super::version_authority_or_fail(dir.path(), "v9.9.9", &VersionNaming::v_prefixed())
-                .is_err()
+            super::version_authority_or_fail(
+                dir.path(),
+                "v9.9.9",
+                &VersionNaming::v_prefixed(),
+                &super::BuildAsk::never(),
+            )
+            .is_err()
         );
     }
 
@@ -3895,6 +4138,8 @@ mod tests {
             tag: "v1.0.0".into(),
             target: None,
             naming: "v_prefixed".into(),
+            evaluate_build: false,
+            build_tool: None,
             role: "full_publisher".into(),
             notes: String::new(),
             approve: true,
