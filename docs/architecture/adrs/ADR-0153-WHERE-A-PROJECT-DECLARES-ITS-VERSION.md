@@ -1,13 +1,14 @@
 ---
 id: ADR-0153-WHERE-A-PROJECT-DECLARES-ITS-VERSION
 title: Resolve a project's declared version through a declarative source contract, because two of the eight ecosystems have no manifest to declare it in
-status: accepted
+status: superseded
 proposed_at: 2026-10-02
 accepted_at: 2026-10-02
+superseded_at: 2026-10-05
 cycle: p-63676b11dc0ef88f/version-source
 accepted_by_cycle: p-63676b11dc0ef88f/version-source
 supersedes: null
-superseded_by: null
+superseded_by: ADR-0157
 component: release
 surface: crates/sddk-engine/src/version_source.rs
 closes: [INC-DEBT-051]
@@ -15,7 +16,28 @@ closes: [INC-DEBT-051]
 
 # ADR-0153 — Dónde declara su versión un proyecto: un contrato declarativo con dos clases de fuente
 
-**Status:** accepted (2026-10-02)
+> **SUPERSEDED por [ADR-0157](ADR-0157-VERSION-AUTHORITY-IS-A-QUESTION-NOT-A-REGISTRY.md)
+> (2026-10-05). Este documento se conserva íntegro y no es autoridad de nada.**
+>
+> La decisión de este ADR era correcta y su criterio de aceptación estaba
+> medido y falsificado. Lo que ADR-0157 muestra es que el criterio dibujaba una
+> frontera que el código no trazaba: el *lector* no nominaba manifiestos, pero
+> el `REGISTRY` —doscientas líneas más arriba, en el mismo fichero, en el crate
+> que **decide**— sí. Y una entrada unía tres ficheros de formatos distintos
+> bajo un solo parser, que es una afirmación falsa sobre su formato.
+>
+> Lo que se conserva de aquí: la observación de que **Go y Bazel no declaran
+> versión en ningún manifiesto**, que es la razón de existir del quinto
+> veredicto en el modelo actual, y el criterio de que la declaración explícita
+> del proyecto es un rescate acotado. Lo que no se conserva es el registro.
+>
+> El gate de sus siete criterios era `tests/test_adr_0153_criteria.sh`, y se ha
+> sustituido por
+> `tests/test_adr_0157_criteria.sh`, que además corrige un defecto del
+> instrumento: el gate anterior decidía con un `grep` sobre `test result: ok`, y
+> un criterio cuyos tests ya no existían reportaba **PASS** sin ejecutar nada.
+
+**Status:** superseded (aceptado 2026-10-02)
 **Date:** 2026-10-02
 **Cycle:** `p-63676b11dc0ef88f/version-source`
 **Closes:** INC-DEBT-051 (high/P1)

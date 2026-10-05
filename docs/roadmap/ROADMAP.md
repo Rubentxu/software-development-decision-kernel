@@ -139,6 +139,46 @@ Evaluar [CERTIFICATIONS.md](CERTIFICATIONS.md), ejecutar perfil completo local s
 
 **Salida:** `CERTIFICATION-RECEIPT` reproducible para cada perfil válido, cero bloqueadores sin disposición, riesgos aceptados explícitos con caducidad/revisit trigger y versión pública exactamente correlacionada con recibos. UAT T28–T33.
 
+#### C4.1 — Autoridad de versión: preguntar a providers, no leer un registro
+
+**Cerrado en el bloque VA1–VA3 (ADR-0157, `accepted` 2026-10-05).** La
+responsabilidad de resolver la versión de un producto pasó de «leer un registro
+que nombra ocho ecosistemas» a «preguntar a los providers qué observan y
+reducirlo con una ley que no sabe nada de tecnología». Reparto: el modelo puro
+y el reducer en `sddk-domain`, los nombres de fichero y la declaración del
+proyecto en `sddk-gateway`, la regla del lockstep —«¿la release ref nombra la
+versión observada?»— en `sddk-engine`, y la composición en la CLI.
+
+**Lo que este bloque cambió a propósito, y no es cosmético:** `release plan`
+dejó de llamar `cross_checked` a una lectura única. Dice `resolved` y añade
+`nothing was cross-checked`; `cross_validated` queda para cuando dos fuentes
+independientes coinciden. Y un target que declara que su versión la lleva la
+release ref —Go, Bazel, o un proyecto que lo escribe— sale como
+`release_ref_is_authority`, que es distinto de `unresolved`, que es el silencio.
+Los tres son hechos distintos y antes se confundían dos de ellos.
+
+**ADR-0153 queda `superseded` y no es autoridad de nada.** Su observación de
+que Go y Bazel no declaran versión sobrevive como el quinto veredicto del
+modelo; su registro, no. El gate de sus siete criterios se sustituyó por
+`tests/test_adr_0157_criteria.sh`, que además corrige un defecto del
+instrumento: el anterior reportaba PASS para un criterio cuyos tests ya no
+existían.
+
+**Continuación declarada, no empezada: VA4–VA7.** En orden y con su alcance:
+`ReleaseTarget` y monorepos con varios productos y versiones distintas;
+separar `ProductVersion` de `ReleaseRef` y `ReleaseChannel` —la convención del
+prefijo `v` es el sitio a reemplazar, y está escrita como tal—; roles
+productor/certificador/promotor para que un repo que solo produce candidatas no
+intente publicar; y `sddk release version inspect` con salida humana y `--json`
+para que un agente vea providers, observaciones, evidencia y conflictos sin
+inspeccionar internals. Cada uno es un bloque con su puerta completa.
+
+**Fuera de alcance y declarado:** `crates/sddk-engine/src/rules/baseline.rs`
+sigue leyendo el manifiesto del workspace y sus `members` para la línea base de
+verificación de cambio. No es resolución de versión y no lo cubre ADR-0157, pero
+es el acoplamiento a una tecnología concreta que queda en el motor, y consta
+aquí por nombre para que no se lea como ausente.
+
 ### C5 — Evolución condicionada a pruebas de valor (P2/P3, no bloquea C4-Base)
 
 **X08:** Jev benchmark solo con corpus etiquetado, baseline y métrica definidos. **J7:** MCP pull solo si un consumidor demuestra necesidad que push/SDK no resuelve. **J8:** operaciones host avanzadas tras negociación de capabilities y UAT propios. **J9:** segundo host real antes de declarar `AGENTIC_API_STABLE/1.0`. **R11:** split de crates solo con métricas sostenidas de dependencia, frecuencia de cambios y compilación; conservar puertos/ownership, no hacer un split cosmético. Future async Parallel es **nueva feature**, no reapertura de R12 ya cerrado.

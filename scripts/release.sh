@@ -474,7 +474,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/falsify-ci-anchor-real.sh \
              tests/test_vault_mirror_auto.sh \
              tests/test_debt_index_coherence.sh \
-             tests/test_adr_0153_criteria.sh \
+             tests/test_adr_0157_criteria.sh \
              tests/test_dev_install_source_guard.sh \
              tests/test_release_bundle_layout.sh \
              tests/test_release_bundle_step5.sh \
