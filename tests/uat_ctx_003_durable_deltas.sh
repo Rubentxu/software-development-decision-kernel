@@ -131,6 +131,25 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     print(json.load(handle)[sys.argv[2]][int(sys.argv[3])])' "$1" "$2" "$3"
 }
 
+# MEDIDO (session-84 bis 7): `sddk context bootstrap` sale con codigo 4 y
+# `status: no_capsule_source` cuando no hay capsule que reconstruir — la
+# degradacion honesta de INC-DEBT-042. Exigir 0 aqui, como hacia el guion antes
+# de que el runtime la adoptara, hacia fallar por un motivo que ya no existe.
+# El binding durable (lo que este fichero mide) se escribe igual en ese camino.
+bootstrap_ok() { # bootstrap_ok <session> <out-json> <err-log>
+    local session="$1" out="$2" errlog="$3" rc
+    set +e
+    "$BIN" context bootstrap --root "$WORKTREE" --session "$session" \
+        --format json >"$out" 2>>"$errlog"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ] && [ "$rc" -ne 4 ]; then
+        fail "bootstrap de $session exited $rc (esperado 0 o 4): $(cat "$errlog")"
+        return 1
+    fi
+    return 0
+}
+
 SESSION="uat-ctx-003-session"
 
 # ── 0. La superficie del comando existe y expone sus flags ────────────────
@@ -159,13 +178,23 @@ else
 fi
 
 # ── 2. bootstrap + publish persiste el delta en disco ─────────────────────
+#
+# MEDIDO (session-84 bis 7, `sddk 2.11.3`): este paso fallaba con
+# `FAIL: bootstrap exited non-zero: ` y stderr VACIO. La causa no era un fallo
+# del bootstrap: sin capsule que reconstruir sale con codigo **4** y
+# `status: no_capsule_source`, que es la degradacion honesta que introdujo
+# INC-DEBT-042 (session-46) — reclamar `complete` sin capsule seria mentir.
+# El guion seguia exigiendo 0, se quedo stale el dia que el runtime adopto la
+# degradacion, y lleva desde entonces fallando por un motivo que ya no existe.
+#
+# Lo que este paso necesita es el BINDING durable, y el binding se escribe
+# igual en el camino `no_capsule_source` (medido en `uat_ctx_002` paso 1:
+# "binding persistido" con exit 4). Por eso el contrato verificado aqui es
+# "0 o 4 + binding presente", no "0".
 step "2. publish persiste el delta con seq monotónica"
 OUT1="$SANDBOX/pub1.json"
-if ! "$BIN" context bootstrap --root "$WORKTREE" --session "$SESSION" --format json \
-    >"$SANDBOX/boot.json" 2>"$SANDBOX/errb.txt"; then
-    fail "bootstrap exited non-zero: $(cat "$SANDBOX/errb.txt")"
-    exit 1
-fi
+bootstrap_ok "$SESSION" "$SANDBOX/boot.json" "$SANDBOX/errb.txt" || exit 1
+ok "bootstrap con codigo tipado: $(field "$SANDBOX/boot.json" status)"
 PROJECT="$(field "$SANDBOX/boot.json" project_id)"
 
 if ! "$BIN" context delta --root "$WORKTREE" --session "$SESSION" --publish \
@@ -217,8 +246,7 @@ assert_eq "base estable tras replay completo" "r2" "$(field "$OUT4" basis_revisi
 assert_eq "replay completo" "2" "$(field "$OUT4" applied)"
 
 EMPTY_SESSION="uat-ctx-003-empty"
-"$BIN" context bootstrap --root "$WORKTREE" --session "$EMPTY_SESSION" --format json \
-    >"$SANDBOX/boot-empty.json" 2>>"$SANDBOX/err4.txt" || fail "bootstrap empty session falló"
+bootstrap_ok "$EMPTY_SESSION" "$SANDBOX/boot-empty.json" "$SANDBOX/err4.txt" || exit 1
 EMPTY_BASIS="$(field "$SANDBOX/boot-empty.json" basis_revision)"
 "$BIN" context delta --root "$WORKTREE" --session "$EMPTY_SESSION" --format json \
     >"$SANDBOX/drain-empty.json" 2>>"$SANDBOX/err4.txt" || fail "drain empty session falló"
@@ -230,8 +258,7 @@ assert_eq "drain vacío no aplica nada" "0" \
 # ── 5. Delta stale: se RECHAZA y se REPORTA, no se entrega ─────────────────
 step "5. delta stale rechazado y reportado"
 STALE_SESSION="uat-ctx-003-stale"
-"$BIN" context bootstrap --root "$WORKTREE" --session "$STALE_SESSION" --format json \
-    >"$SANDBOX/boot-stale.json" 2>"$SANDBOX/err5.txt" || fail "bootstrap stale session falló"
+bootstrap_ok "$STALE_SESSION" "$SANDBOX/boot-stale.json" "$SANDBOX/err5.txt" || exit 1
 "$BIN" context delta --root "$WORKTREE" --session "$STALE_SESSION" --publish \
     --add "primer cambio" --to-revision s1 --format json \
     >"$SANDBOX/pub-stale.json" 2>>"$SANDBOX/err5.txt" || fail "publish stale session falló"
@@ -274,8 +301,7 @@ esac
 # ── 6. Corrupción: se SALTA y se REPORTA, no se convierte en contexto ─────
 step "6. delta corrupto se salta y se reporta"
 CORRUPT_SESSION="uat-ctx-003-corrupt"
-"$BIN" context bootstrap --root "$WORKTREE" --session "$CORRUPT_SESSION" --format json \
-    >"$SANDBOX/boot-corrupt.json" 2>"$SANDBOX/err6.txt" || fail "bootstrap corrupt session falló"
+bootstrap_ok "$CORRUPT_SESSION" "$SANDBOX/boot-corrupt.json" "$SANDBOX/err6.txt" || exit 1
 "$BIN" context delta --root "$WORKTREE" --session "$CORRUPT_SESSION" --publish \
     --add "contenido bueno" --to-revision c1 --format json \
     >"$SANDBOX/pub-corrupt.json" 2>>"$SANDBOX/err6.txt" || fail "publish corrupt session falló"
