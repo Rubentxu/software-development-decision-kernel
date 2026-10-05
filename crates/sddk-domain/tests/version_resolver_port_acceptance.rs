@@ -22,8 +22,9 @@
 //! to notice, because every name in it would look legitimate.
 
 use sddk_domain::version_authority::{
-    reduce, ProductVersion, ProviderError, ReleaseTarget, VersionAuthority, VersionEvidence, VersionObservation,
-    VersionProbe, VersionResolverPort, VersionResolverRegistry, PRODUCT_VERSION_OBSERVATION,
+    PRODUCT_VERSION_OBSERVATION, ProductVersion, ProviderError, ReleaseTarget, VersionAuthority,
+    VersionEvidence, VersionObservation, VersionProbe, VersionResolverPort,
+    VersionResolverRegistry, reduce,
 };
 
 fn v(value: &str) -> ProductVersion {
@@ -38,12 +39,15 @@ fn evidence(source_kind: &str) -> VersionEvidence {
     }
 }
 
+/// What a programmable provider answers when asked about a target.
+type Answer = Box<dyn Fn(&ReleaseTarget) -> Result<VersionProbe, ProviderError> + Send + Sync>;
+
 /// A provider that answers whatever it is told to. It has no idea what it is
 /// observing, which is the point: the port carries no technology.
 struct Programmable {
     id: String,
     capabilities: Vec<String>,
-    answer: Box<dyn Fn(&ReleaseTarget) -> Result<VersionProbe, ProviderError> + Send + Sync>,
+    answer: Answer,
 }
 
 impl Programmable {
@@ -113,7 +117,10 @@ fn puede_responder_not_applicable() {
         })
     })));
     let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, &target());
-    assert!(matches!(authority, VersionAuthority::Unresolved { .. }), "{authority:?}");
+    assert!(
+        matches!(authority, VersionAuthority::Unresolved { .. }),
+        "{authority:?}"
+    );
 }
 
 #[test]
@@ -125,7 +132,10 @@ fn puede_responder_invalid_y_eso_falla_cerrado() {
         })
     })));
     let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, &target());
-    assert!(matches!(authority, VersionAuthority::Invalid { .. }), "{authority:?}");
+    assert!(
+        matches!(authority, VersionAuthority::Invalid { .. }),
+        "{authority:?}"
+    );
 }
 
 #[test]
@@ -141,7 +151,10 @@ fn un_provider_que_falla_al_ejecutarse_tambien_falla_cerrado() {
         })
     })));
     let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, &target());
-    assert!(matches!(authority, VersionAuthority::Invalid { .. }), "{authority:?}");
+    assert!(
+        matches!(authority, VersionAuthority::Invalid { .. }),
+        "{authority:?}"
+    );
     assert_eq!(authority.version(), None);
 }
 
@@ -180,7 +193,10 @@ fn dos_providers_que_difieren_no_se_elige_uno() {
         })
     })));
     let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, &target());
-    assert!(matches!(authority, VersionAuthority::Ambiguous { .. }), "{authority:?}");
+    assert!(
+        matches!(authority, VersionAuthority::Ambiguous { .. }),
+        "{authority:?}"
+    );
     assert_eq!(authority.version(), None);
 }
 
@@ -196,7 +212,10 @@ fn un_provider_que_no_habla_la_capability_no_se_pregunta() {
         .without_capability(),
     ));
     let authority = registry.resolve(PRODUCT_VERSION_OBSERVATION, &target());
-    assert!(matches!(authority, VersionAuthority::Unresolved { .. }), "{authority:?}");
+    assert!(
+        matches!(authority, VersionAuthority::Unresolved { .. }),
+        "{authority:?}"
+    );
 }
 
 #[test]

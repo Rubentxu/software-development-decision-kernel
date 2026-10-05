@@ -157,7 +157,7 @@ impl ReleaseTarget {
 
 /// What one provider found when asked about one target.
 ///
-/// The four cases are not four flavours of the same thing, and collapsing
+/// The five cases are not five flavours of the same thing, and collapsing
 /// any pair of them is a defect with a name:
 ///
 /// - [`NotApplicable`](Self::NotApplicable) and
@@ -169,9 +169,14 @@ impl ReleaseTarget {
 ///   [`Declared`](Self::Declared) differ because only one of them carries a
 ///   value, and inventing one for the first is how a tool ends up
 ///   confidently reporting a version nobody declared.
-/// - [`Invalid`](Self::Invalid) is separated from all three because it is the
-///   only one that means *the source exists and could not be read*. That is
-///   not an absence of information; it is information, and it fails closed.
+/// - [`ReleaseRefIsAuthority`](Self::ReleaseRefIsAuthority) differs from
+///   [`Undeclared`](Self::Undeclared) because silence is not a declaration:
+///   the first is a statement about where the version lives, the second is
+///   the absence of one.
+/// - [`Invalid`](Self::Invalid) is separated from all of them because it is
+///   the only one that means *the source exists and could not be read*. That
+///   is not an absence of information; it is information, and it fails
+///   closed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "result")]
 pub enum VersionProbe {
@@ -193,6 +198,28 @@ pub enum VersionProbe {
         /// Evidence that this value was really observed, not inferred.
         evidence: VersionEvidence,
     },
+    /// The provider reports that this target publishes **no product version**,
+    /// and that its release reference is the authority instead.
+    ///
+    /// This is not [`Undeclared`](Self::Undeclared), and the difference is the
+    /// whole reason it exists. `Undeclared` is silence: the provider looked
+    /// and the file had no version key, which is a question for the operator
+    /// ("which of these is the real one?"). This is a **declaration of
+    /// absence**: the target was found and it states, by its own convention,
+    /// that the version lives on the release reference and nowhere else. Two
+    /// ecosystems that behave that way ship every day; treating them as silent
+    /// would make a legitimate release indistinguishable from a project that
+    /// forgot to declare anything.
+    ///
+    /// It says nothing about the release reference's *value*, which is not
+    /// known at observation time and is not this type's business. It asserts a
+    /// relation ("there is no product version; the reference carries it"), not
+    /// an identity.
+    ReleaseRefIsAuthority {
+        /// The provider's own statement of what it observed, in its own
+        /// words. Provenance, and the only thing that says *why*.
+        declared_by: String,
+    },
     /// The provider found a source it could not read. **Fails closed.**
     Invalid {
         /// What could not be read, and why.
@@ -211,6 +238,12 @@ impl VersionProbe {
     /// from a genuine cross-check.
     pub fn declares_version(&self, version: &ProductVersion) -> bool {
         matches!(self, Self::Declared { version: v, .. } if v == version)
+    }
+
+    /// Whether this answer declares that the release reference, rather than a
+    /// manifest, carries the version.
+    pub fn declares_release_ref_authority(&self) -> bool {
+        matches!(self, Self::ReleaseRefIsAuthority { .. })
     }
 
     /// Whether this answer must stop the whole resolution.
@@ -260,12 +293,13 @@ pub struct VersionObservation {
 }
 
 impl VersionObservation {
-    /// A short label for diagnostics: provider id plus the result.
+    /// The result as a short word, for diagnostics.
     pub fn summary(&self) -> String {
         let result = match &self.probe {
             VersionProbe::NotApplicable { .. } => "not_applicable",
             VersionProbe::Undeclared { .. } => "undeclared",
             VersionProbe::Declared { .. } => "declared",
+            VersionProbe::ReleaseRefIsAuthority { .. } => "release_ref_is_authority",
             VersionProbe::Invalid { .. } => "invalid",
         };
         format!("{result} ({})", self.provider_id)
@@ -307,6 +341,22 @@ pub enum VersionAuthority {
         /// Every observation considered.
         observations: Vec<VersionObservation>,
     },
+    /// Nobody declared a version, and at least one provider declared that the
+    /// release reference carries it.
+    ///
+    /// A success, not a failure: there is nothing to cross-check *because* the
+    /// target states that its version is not in a manifest. Reporting it
+    /// alongside [`Unresolved`](Self::Unresolved) — which is the same absence
+    /// of a version with a completely different cause — is what would make a
+    /// legitimate release look like a project that forgot to say anything.
+    ReleaseRefIsAuthority {
+        /// Each provider's own statement of why, in the order it declared.
+        /// Kept so a consumer can name the sources instead of asserting a
+        /// convention it never read.
+        declarations: Vec<String>,
+        /// Every observation considered.
+        observations: Vec<VersionObservation>,
+    },
     /// At least one provider found a source it could not read.
     Invalid {
         /// Which providers failed, and why.
@@ -325,10 +375,11 @@ impl VersionAuthority {
     /// The version, when there is exactly one and nothing contradicts it.
     pub fn version(&self) -> Option<&ProductVersion> {
         match self {
-            Self::Resolved { version, .. } | Self::CrossValidated { version, .. } => {
-                Some(version)
-            }
-            Self::Ambiguous { .. } | Self::Invalid { .. } | Self::Unresolved { .. } => None,
+            Self::Resolved { version, .. } | Self::CrossValidated { version, .. } => Some(version),
+            Self::Ambiguous { .. }
+            | Self::Invalid { .. }
+            | Self::Unresolved { .. }
+            | Self::ReleaseRefIsAuthority { .. } => None,
         }
     }
 
@@ -340,11 +391,25 @@ impl VersionAuthority {
     }
 
     /// Whether the target could not be resolved, for any reason.
+    ///
+    /// [`ReleaseRefIsAuthority`](Self::ReleaseRefIsAuthority) is **not** a
+    /// failure. It means the target resolved as far as it can and says which
+    /// kind of authority it has; folding it in here would block exactly the
+    /// projects that declared themselves honestly.
     pub fn is_failure(&self) -> bool {
         matches!(
             self,
             Self::Ambiguous { .. } | Self::Invalid { .. } | Self::Unresolved { .. }
         )
+    }
+
+    /// The reasons providers gave for declaring the release reference
+    /// authoritative, if that is what happened.
+    pub fn release_ref_declarations(&self) -> &[String] {
+        match self {
+            Self::ReleaseRefIsAuthority { declarations, .. } => declarations,
+            _ => &[],
+        }
     }
 }
 
@@ -363,10 +428,17 @@ impl VersionAuthority {
 ///    outvoted by a `Declared` that happens to arrive later in the list.
 /// 2. **`NotApplicable` and `Undeclared` are not answers.** They carry no
 ///    version and never invent one.
-/// 3. **Two declarations that agree cross-validate; two that differ are
+/// 3. **A declared version outranks a declared absence.** If any provider
+///    published a product version, the fact that some *other* provider said
+///    this target keeps its version on the release reference is not a
+///    contradiction — it is a convention that did not apply. The opposite
+///    order would let a repository's own declaration silence a version that
+///    was found and read, which is the same class of failure as picking one
+///    side of a conflict.
+/// 4. **Two declarations that agree cross-validate; two that differ are
 ///    `Ambiguous`.** There is no tie-break, and there is no first-wins: the
 ///    reducer is a function of the *set*.
-/// 4. **Provider identity is never an input.** Sorting the observations by
+/// 5. **Provider identity is never an input.** Sorting the observations by
 ///    provider id before reducing would be a priority rule wearing a
 ///    disguise, and the permutation test is what keeps that honest.
 pub fn reduce(observations: Vec<VersionObservation>) -> VersionAuthority {
@@ -385,6 +457,7 @@ pub fn reduce(observations: Vec<VersionObservation>) -> VersionAuthority {
 
     let mut failures: Vec<(String, String)> = Vec::new();
     let mut declared: Vec<(String, ProductVersion)> = Vec::new();
+    let mut release_ref_declarations: Vec<String> = Vec::new();
 
     for observation in &observations {
         match &observation.probe {
@@ -393,6 +466,9 @@ pub fn reduce(observations: Vec<VersionObservation>) -> VersionAuthority {
             }
             VersionProbe::Declared { version, .. } => {
                 declared.push((observation.provider_id.clone(), version.clone()));
+            }
+            VersionProbe::ReleaseRefIsAuthority { declared_by } => {
+                release_ref_declarations.push(declared_by.clone());
             }
             VersionProbe::NotApplicable { .. } | VersionProbe::Undeclared { .. } => {}
         }
@@ -406,8 +482,16 @@ pub fn reduce(observations: Vec<VersionObservation>) -> VersionAuthority {
         };
     }
 
+    // Law 3 — an absence declared next to a presence is not a conflict.
     if declared.is_empty() {
-        return VersionAuthority::Unresolved { observations };
+        return if release_ref_declarations.is_empty() {
+            VersionAuthority::Unresolved { observations }
+        } else {
+            VersionAuthority::ReleaseRefIsAuthority {
+                declarations: release_ref_declarations,
+                observations,
+            }
+        };
     }
 
     // Law 3 — distinct values, not distinct providers. Two providers saying
@@ -563,6 +647,12 @@ impl VersionResolverRegistry {
     /// observation carrying the provider's own reason. That mapping is a
     /// decision, and it is the conservative one: a provider that did not
     /// answer has not established that the target declares nothing.
+    ///
+    /// The reason is kept verbatim rather than replaced with a generic string.
+    /// A fail-closed message whose cause is "the provider did not answer" is
+    /// indistinguishable from a hundred different causes, and the operator
+    /// holding it is left with no way to act — which is the state this whole
+    /// design exists to avoid.
     pub fn resolve(&self, capability: &str, target: &ReleaseTarget) -> VersionAuthority {
         let mut observations: Vec<VersionObservation> = Vec::new();
         for provider in &self.providers {
@@ -571,8 +661,8 @@ impl VersionResolverRegistry {
             }
             let probe = match provider.observe(target) {
                 Ok(probe) => probe,
-                Err(_) => VersionProbe::Invalid {
-                    reason: "el provider no pudo responder".to_owned(),
+                Err(e) => VersionProbe::Invalid {
+                    reason: e.to_string(),
                 },
             };
             observations.push(VersionObservation {

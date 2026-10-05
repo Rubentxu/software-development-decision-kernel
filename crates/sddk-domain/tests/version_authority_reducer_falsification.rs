@@ -9,6 +9,11 @@
 //! 3. `Undeclared -> fake default`
 //! 4. dos versiones distintas aceptadas como una sola
 //!
+//! A las que se suman las dos que la quinta ley del reducer introduce —«una
+//! version declarada gana a una ausencia declarada»—, porque una ley que no
+//! tiene mutante que la mate es una frase en un doc: M7 la invierte y M8 la
+//! degrada a silencio, y las dos errarían sin que la tabla las distinguiese.
+//!
 //! ## Por qué esto es DIFERENCIAL y no una mutación de fuente
 //!
 //! La técnica habitual —copiar el módulo, cambiar una línea, recompilar—
@@ -30,7 +35,7 @@
 //! este fichero no evita: lo hace visible.
 
 use sddk_domain::version_authority::{
-    reduce, ProductVersion, VersionAuthority, VersionEvidence, VersionObservation, VersionProbe,
+    ProductVersion, VersionAuthority, VersionEvidence, VersionObservation, VersionProbe, reduce,
 };
 
 // ---------------------------------------------------------------------------
@@ -95,6 +100,15 @@ fn bad(provider: &str) -> VersionObservation {
     )
 }
 
+fn refauth(provider: &str) -> VersionObservation {
+    obs(
+        provider,
+        VersionProbe::ReleaseRefIsAuthority {
+            declared_by: "este target no declara version de producto".to_owned(),
+        },
+    )
+}
+
 /// Un caso: nombre, observaciones, y si el reducer real lo distingue del
 /// mutante.
 struct Case {
@@ -136,6 +150,18 @@ fn table() -> Vec<Case> {
         Case {
             name: "el mismo provider dos veces",
             observations: vec![decl("alpha", "1.0.0"), decl("alpha", "1.0.0")],
+        },
+        // Las dos filas que separan la ley 3 (una version declarada gana a una
+        // ausencia declarada) de sus dos errores simetricos. Sin ellas, un
+        // reducer que eligiera cualquiera de los dos lados por costumbre
+        // pasaria la tabla entera.
+        Case {
+            name: "uno declara version y otro declara la referencia",
+            observations: vec![refauth("alpha"), decl("bravo", "1.0.0")],
+        },
+        Case {
+            name: "solo se declara la referencia",
+            observations: vec![na("alpha"), refauth("bravo")],
         },
     ]
 }
@@ -182,7 +208,11 @@ fn first_wins(mut observations: Vec<VersionObservation>) -> VersionAuthority {
     let winner = observations
         .iter()
         .find(|o| o.probe.declares())
-        .or_else(|| observations.iter().find(|o| matches!(o.probe, VersionProbe::Invalid { .. })))
+        .or_else(|| {
+            observations
+                .iter()
+                .find(|o| matches!(o.probe, VersionProbe::Invalid { .. }))
+        })
         .or_else(|| {
             observations
                 .iter()
@@ -353,4 +383,63 @@ fn self_corroborates(observations: Vec<VersionObservation>) -> VersionAuthority 
 #[test]
 fn m6_self_corroboration_murió() {
     assert_kills("self-corroborates", self_corroborates);
+}
+
+// ---------------------------------------------------------------------------
+// M7 — la ausencia declarada tapa a la version que se leyo
+// ---------------------------------------------------------------------------
+
+/// El defecto espejo de la ley 3. Un provider que dice «aquí la version la
+/// lleva la referencia» gana, y se pierde la version que OTRO provider leyo y
+/// se leyó bien. Es el mismo fallo que elegir un lado de un conflicto, vestido
+/// de convención.
+fn absence_outranks_presence(observations: Vec<VersionObservation>) -> VersionAuthority {
+    let declarations: Vec<String> = observations
+        .iter()
+        .filter_map(|o| match &o.probe {
+            VersionProbe::ReleaseRefIsAuthority { declared_by } => Some(declared_by.clone()),
+            _ => None,
+        })
+        .collect();
+    if declarations.is_empty() {
+        return reduce(observations);
+    }
+    VersionAuthority::ReleaseRefIsAuthority {
+        declarations,
+        observations,
+    }
+}
+
+#[test]
+fn m7_absence_outranks_presence_murió() {
+    assert_kills("absence-outranks-presence", absence_outranks_presence);
+}
+
+// ---------------------------------------------------------------------------
+// M8 — la ausencia declarada se degrada a silencio
+// ---------------------------------------------------------------------------
+
+/// El otro error simetrico: tratar la declaracion de ausencia como si fuera
+/// «no dice nada». El veredicto sigue siendo correcto en cuanto a que no hay
+/// version, y por eso es el que se cuela: el proyecto que declaro su
+/// convencion y el que no declaro nada salen con el mismo veredicto.
+fn absence_is_silence(observations: Vec<VersionObservation>) -> VersionAuthority {
+    let flattened: Vec<VersionObservation> = observations
+        .into_iter()
+        .map(|o| match o.probe {
+            VersionProbe::ReleaseRefIsAuthority { declared_by } => VersionObservation {
+                probe: VersionProbe::Undeclared {
+                    reason: declared_by,
+                },
+                ..o
+            },
+            other => VersionObservation { probe: other, ..o },
+        })
+        .collect();
+    reduce(flattened)
+}
+
+#[test]
+fn m8_absence_is_silence_murió() {
+    assert_kills("absence-is-silence", absence_is_silence);
 }
