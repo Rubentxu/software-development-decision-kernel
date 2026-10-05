@@ -1323,6 +1323,99 @@ else
          Log: $RELEASE_DIAG_MUT_LOG"
 fi
 
+# --- 3n: los siete `uat_ctx_*`, que son guards de verdad y nadie ejecutaba ---
+#
+# Este paso cierra la decision que el propio censo dejo escrita
+# (`tests/test_gate_coverage.py`, excepcion de `uat_ctx_007`): "Su sitio natural
+# es un paso posterior al 3, y cablearlos ahi es la decision pendiente". Aqui
+# esta. El binario ya existe (lo construye el paso 3) y los siete aceptan
+# `--bin <ruta>` de forma uniforme, luego no hace falta un segundo build.
+#
+# MEDIDO antes de cablear, y por que el paso era urgente y no una mejora de
+# cobertura: la familia estaba 4/7 verde, y de los tres rojos dos NO eran
+# fallos de la suite sino guiones obsoletos. `uat_ctx_002` pedia un ciclo con un
+# id que el runtime no puede nombrar y que el guion nunca creaba; `uat_ctx_003`
+# exigia exit 0 donde el runtime degrada a 4 desde INC-DEBT-042; `uat_ctx_006`
+# ataba `context_source` a un `candidates[0]` cuyo orden no controla, y daba
+# verde 1 de 6. Los tres corregidos con su propia falsacion, la familia da
+# 7/7 en dos rondas seguidas.
+#
+# Y el motivo de fondo, que es el que hace esto un gate y no una formalidad:
+# esta familia es la que ejecutaba el binario PUBLICADO de verdad. Los tres
+# guiones rotos callaron justo lo que un release entero no habria visto -- que
+# `cycle start`
+# fallaba en frio, que el ciclo no se podia nombrar, y que la reconstruccion de
+# contexto se enteraba de la eleccion por un valor que el runtime no decide.
+step "3n/15 — los siete uat_ctx_* contra el binario que se va a publicar"
+UAT_CTX_LOG_DIR="$RELEASE_SCRATCH/uat-ctx"
+mkdir -p "$UAT_CTX_LOG_DIR"
+UAT_CTX_FAILURES=""
+UAT_CTX_RUN=0
+# Lista EXPLICITA en el bucle, no un glob `tests/uat_ctx_*.sh`. MEDIDO, y por
+# dos razones que son la misma:
+#
+# 1. El censo decide que un test esta EJECUTADO por la SINTAXIS, y su forma de
+#    reconocer un bucle es un `for <var> in tests/<nombre>.sh` LITERAL. Con el
+#    glob, `test_gate_coverage.py` seguia diciendo "NADIE lo ejecuta" para los
+#    siete: su `_TEST_PATH_RE` no acepta `*`, y el cuerpo usaba
+#    `bash "$uat_ctx_guard"`. Un gate que el gate no ve es un gate que el
+#    proximo borra sin enterarse de que hacia falta. Misma clase que
+#    INC-DEBT-076: la cobertura se mide por la SINTAXIS que ejecuta, no por lo
+#    que el nombre sugiere.
+#
+# 1b. Y la sintaxis que el censo reconoce para un bucle es
+#    `for <UNA LETRA> in tests/<nombre>.sh`. MEDIDO con su propio extractor:
+#    `re.match(r"for\s+[a-z]\s+in\b", ...)` no casa con una variable larga. Con
+#    `for uat_ctx_guard in ...` el censo seguia reportando "NADIE lo ejecuta"
+#    para los siete, y el release los ejecutaba igual — el peor de los dos
+#    mundos: coverage real que el gate no ve. Por eso la variable se llama `c`
+#    y no algo mas legible. El instrumento decide, y un instrumento que hay que
+#    negociar para poder usarlo no es un instrumento.
+#
+# 2. Un glob deja pasar en silencio lo que la lista hace visible. Si un octavo
+#    guard apareciese, el bucle lo ejecutaria sin que nadie lo pidiera; si uno
+#    se borrase, ejecutaria seis y el `ok` de abajo contaria seis sin avisar.
+#    La reconciliacion de recuento que sigue convierte las dos cosas en un rojo
+#    que nombra el fichero.
+for c in tests/uat_ctx_001_adoption_convergence.sh \
+                     tests/uat_ctx_002_context_bootstrap.sh \
+                     tests/uat_ctx_003_durable_deltas.sh \
+                     tests/uat_ctx_004_cycle_inference.sh \
+                     tests/uat_ctx_005_explicit_cycle_migration.sh \
+                     tests/uat_ctx_006_skill_runtime_alignment.sh \
+                     tests/uat_ctx_007_context_expand.sh; do
+    UAT_CTX_NAME="$(basename "$c" .sh)"
+    UAT_CTX_RUN=$((UAT_CTX_RUN + 1))
+    if [ ! -f "$c" ]; then
+        die "el guard declarado en el paso 3n no existe: $c"
+    fi
+    # `set -e` esta activo en este script: un rojo aqui tiene que PARAR, no
+    # acumularse en una variable. Por eso se aísla en el `if`, que es la unica
+    # forma de que un comando con codigo de fallo no se lleve el release.
+    if ! bash "$c" --bin "$BIN" >"$UAT_CTX_LOG_DIR/$UAT_CTX_NAME.log" 2>&1; then
+        UAT_CTX_FAILURES="$UAT_CTX_FAILURES $UAT_CTX_NAME"
+        tail -20 "$UAT_CTX_LOG_DIR/$UAT_CTX_NAME.log" >&2
+    fi
+done
+# Lo que se ejecuto contra lo que hay. Un guard nuevo o uno borrado se ven
+# AQUI, con su nombre, en vez de dentro del bucle.
+UAT_CTX_EN_DISCO="$(find tests -maxdepth 1 -name 'uat_ctx_*.sh' -type f | wc -l | tr -d ' ')"
+if [ "$UAT_CTX_EN_DISCO" -ne "$UAT_CTX_RUN" ]; then
+    die "la familia uat_ctx_* y la lista de este paso no coinciden: $UAT_CTX_EN_DISCO en
+         disco, $UAT_CTX_RUN ejecutados. Un guard nuevo tiene que entrar en el bucle
+         del 3n y uno borrado tiene que salir. Lo que no puede es que este paso mida
+         un conjunto distinto del que la familia contiene.
+         En disco:  $(find tests -maxdepth 1 -name 'uat_ctx_*.sh' -type f | sort | tr '\n' ' ')"
+fi
+if [ -n "$UAT_CTX_FAILURES" ]; then
+    die "los uat_ctx_* fallan contra el binario que se va a publicar:$UAT_CTX_FAILURES
+         Son la unica capa que ejercita el binario de verdad, de extremo a
+         extremo. Un rojo aqui puede ser un binario roto o un guion obsoleto —
+         en los dos casos la release no describe lo que se esta publicando.
+         Logs: $UAT_CTX_LOG_DIR"
+fi
+ok "los $UAT_CTX_RUN uat_ctx_* pasan contra el binario publicado"
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"

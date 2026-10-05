@@ -244,62 +244,45 @@ EXCEPTIONS: dict[str, str] = {
         "PASS=1 FAIL=0. Cablearlo devolveria un verde vacio (misma forma que "
         "INC-DEBT-054). Requiere `cargo build --release -p sddk-engine` antes."
     ),
-    # Los cinco `uat_ctx_*`: integracion end-to-end que exige el BINARIO
-    # release construido. Misma condicion que `test_h05_isolation.sh` de
-    # arriba, y el motivo se escribe una vez y aqui se referencia.
+    # Los siete `uat_ctx_*` YA NO estan aqui: MEDIDO, los ejecuta el paso **3n**
+    # de `release.sh`, que se anadio en session-84 bis 7 con el binario del paso
+    # 3 ya construido y `--bin <ruta>` en los siete.
     #
-    # MEDIDO, y el motivo NO es "no son hermeticos" —que serian: 0 red, 0
-    # contenedores—, sino ORDEN. Los cinco salen 2 hoy con
-    # `sddk binary not found or not executable`, y el binario lo construye el
-    # release en el paso **3**, mientras el 1b corre en el **1b**: no puede
-    # estar en el 1b por una razon de secuencia, no por una limitacion de la
-    # maquina. Con `--bin <ruta>` si accepts, luego no estan rotos: no se
-    # ejecutaban, y su unica razon para no estar en el censo era no llevar el
-    # glifo `test_` en el nombre.
-    "uat_ctx_001_adoption_convergence.sh": (
-        "integracion E2E: exige el binario release construido, que el release "
-        "construye en el paso 3 y el 1b corre antes. Ver `uat_ctx_007` para el "
-        "motivo comun a los cinco."
-    ),
-    "uat_ctx_003_durable_deltas.sh": (
-        "integracion E2E: exige el binario release construido (paso 3, "
-        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
-    ),
-    "uat_ctx_005_explicit_cycle_migration.sh": (
-        "integracion E2E: exige el binario release construido (paso 3, "
-        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
-    ),
-    "uat_ctx_006_skill_runtime_alignment.sh": (
-        "integracion E2E: exige el binario release construido (paso 3, "
-        "posterior al 1b). Ver `uat_ctx_007` para el motivo comun."
-    ),
-    "uat_ctx_007_context_expand.sh": (
-        "integracion E2E: exige el binario release construido, que el release "
-        "construye en el paso 3 y el 1b corre antes. No es una limitacion de la "
-        "maquina: los cinco aceptan `--bin <ruta>` y con un binario presente "
-        "ejercitan de verdad. Lo que NO puede ser es un gate del 1b, porque "
-        "aun no existe el binario que necesitan. Su sitio natural es un paso "
-        "posterior al 3, y cablearlos ahi es la decision pendiente, no un "
-        "detalle de este commit."
-    ),
+    # La razon de que vivieran aqui durante tanto tiempo sigue siendo la que
+    # escribio `uat_ctx_007` y que ahora se cumple: "Su sitio natural es un paso
+    # posterior al 3, y cablearlos ahi es la decision pendiente". No era una
+    # limitacion de la maquina —los siete son hermeticos, 0 red, 0 contenedores—
+    # era de SECUENCIA: el 1b corre antes de que el binario exista.
+    #
+    # No se han retirado por limpieza. Dos de los tres guiones que estaban rotos
+    # callaban defectos de PRODUCTO, y por eso la familia era el unico sitio
+    # donde se podian ver:
+    #
+    #   - `uat_ctx_002` pedia `--cycle uat-cycle-1`, un id que el runtime no
+    #     puede nombrar (los ids reales llevan prefijo de proyecto) y que el
+    #     guion nunca creaba. Fallaba 1/1.
+    #   - `uat_ctx_003` exigia `bootstrap` con exit 0 donde el runtime degrada a
+    #     4 y `status: no_capsule_source` desde INC-DEBT-042. Fallaba 1/1.
+    #   - `uat_ctx_006` ataba `context_source` al valor que devolvia
+    #     `candidates[0]`, cuyo ORDEN no es estable entre corridas: verde 1 de 6.
+    #
+    # Ademas, la primera vez que se ejecuto la familia aparecio el defecto de
+    # `sddk cycle start`: en un state home nuevo salia 3/3 con `FOREIGN KEY
+    # constraint failed` y una linea de recovery que mandaba a depurar SQLite
+    # cuando el arreglo es `sddk adopt apply`. Eso estaba en el commit
+    # `0ec339d5`. Un gate que nadie ejecuta no encuentra nada, ni aunque lo
+    # buscara de forma explicita.
+    #
+    # La regla que obliga a esto a mantenerse honesta ya existe en este fichero:
+    # un nombre en EXCEPTIONS que el camino de release ya ejecuta es un fallo
+    # ("la razon caducó"). Cablear los siete sin retirarlos de aqui habria
+    # puesto el censo en rojo con el nombre de los siete.
     "clean_machine_uat.sh": (
         "levantador de una maquina limpia: 39 llamadas a `docker`/`podman` y "
         "4 de red. Monta contenedores de verdad, luego no es reproducible en "
         "el 1b local. Lo ejecuta `.github/workflows/clean-machine-uat.yml`, "
         "que ademas lo gatilla por tag; AGENTS.md 2.5 dice que el CI no "
         "bloquea, luego es evidencia asincrona por diseno, no un hueco."
-    ),
-    "uat_ctx_002_context_bootstrap.sh": (
-        "integracion E2E: exige el binario release construido, igual que los "
-        "otros cuatro `uat_ctx_*`. Ver `uat_ctx_007` para el motivo comun. Lo "
-        "Ejecuta `ci.yml`, que segun AGENTS.md 2.5 no bloquea."
-    ),
-    "uat_ctx_004_cycle_inference.sh": (
-        "integracion E2E: exige el binario release construido, igual que los "
-        "cinco anteriores. Ver `uat_ctx_007` para el motivo comun. MEDIDO: sale "
-        "2 con `sddk binary not found`, acepta `--bin <ruta>`, y es el sexto de "
-        "la familia — se habria colado porque `ci.yml` lo nombra, que es "
-        "justamente el patron que este cambio viene a cerrar."
     ),
     "test_release_routes_parity.sh": (
         "necesita `act` + `podman` y monta contenedores; la ruta cloud no se "
