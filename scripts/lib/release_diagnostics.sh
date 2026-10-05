@@ -314,9 +314,24 @@ _cargo_effective_target() {
 _cargo_uses_target() {
     local pid="$1" target="$2" env_target subject_cwd effective
 
+    # MEDIDO (session-84 bis 6): leer `/proc/$pid/...` de un proceso que ya
+    # termino escribia el error del shell a stderr, y ese error se colaba como
+    # SALIDA de la funcion. MEDIDO el mecanismo, que no es obvio: en
+    # `tr ... < "$f" 2>/dev/null`, bash aplica las redirecciones EN EL ORDEN
+    # ESCRITO, luego la de entrada se intenta antes de que exista la de error y
+    # su mensaje escapa. MEDIDO con las dos formas:
+    #   `tr '\0' ' ' < /proc/999999/cmdline 2>/dev/null`  -> imprime el error
+    #   `tr '\0' ' ' 2>/dev/null < /proc/999999/cmdline`  -> no imprime nada
+    # El preflight es un aviso: un error de shell mezclado con el aviso es peor
+    # que no avisar, porque quien lo lee no puede distinguir «lo que medi» de
+    # «lo que se rompio». MEDIDO como se manifestaba: el 1b de la 2.11.3 paro
+    # en `test_cargo_target_attribution.sh` con E2 en rojo y la salida
+    # `.../release_diagnostics.sh: linea 330: /proc/<pid>/cmdline: No existe`.
+    # No era el defecto que ese guard mide: era un proceso que murio entre que
+    # `ps` lo listo y que se leyera su cmdline.
     if [ -r "/proc/$pid/environ" ]; then
-        env_target="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null \
-            | awk -F= '/^CARGO_TARGET_DIR=/ {print $2; exit}')"
+        env_target="$(tr '\0' '\n' 2>/dev/null < "/proc/$pid/environ" \
+            | awk -F= '/^CARGO_TARGET_DIR=/ {print $2; exit}')" || env_target=""
         if [ -n "$env_target" ]; then
             if [ "$(readlink -f "$env_target" 2>/dev/null || echo "$env_target")" = "$target" ]; then
                 return 0
@@ -327,7 +342,7 @@ _cargo_uses_target() {
         fi
     fi
 
-    case "$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" in
+    case "$(tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline")" in
         *"--target-dir $target"*|*"--target-dir=$target"*) return 0 ;;
     esac
 
