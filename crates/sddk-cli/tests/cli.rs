@@ -13060,7 +13060,11 @@ fn release_bump_prepends_changelog_and_resets_manifest_version() {
     let script_dir = root.join("scripts");
     fs::create_dir_all(&script_dir).unwrap();
     let scripts_src = std::path::Path::new(std::env!("CARGO_MANIFEST_DIR")).join("../../scripts");
-    fs::copy(scripts_src.join("release-bump.sh"), script_dir.join("release-bump.sh")).unwrap();
+    fs::copy(
+        scripts_src.join("release-bump.sh"),
+        script_dir.join("release-bump.sh"),
+    )
+    .unwrap();
     // `release-bump.sh` sourcea `scripts/lib/changelog_merge.sh`, asi que el
     // sandbox necesita la libreria tambien. MEDIDO (session-82): sin esta
     // copia, el release 2.11.0 MURIO en el paso 1 con
