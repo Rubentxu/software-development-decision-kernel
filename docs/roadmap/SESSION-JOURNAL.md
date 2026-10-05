@@ -14532,3 +14532,168 @@ no el log ni el codigo de salida.
 | `99d5859c` | chore(release): bump 2.9.1 -> 2.10.0 + recorte del duplicado |
 | `314ac51c` | docs(debt): INC-DEBT-074 |
 | `4b9e191f` | docs(state): puntero reconciliado **despues** del bump (= tag) |
+
+---
+
+## session-82 — 2026-10-05T06:20Z — INC-DEBT-074 resuelta: el merge del changelog deduplica y su test ejecuta el codigo que vigila
+
+Actor: miniMax Code (mvs_fac515d56e784fc081d64fefb38323aa)
+WorkItem: cierre de INC-DEBT-074
+Rango: `ef03b0bf..44cd38b0`
+Base: `cfcbac61` (= `origin/main` al empezar, cierre de session-81b)
+
+### El defecto, medido al publicar 2.10.0
+
+`release-bump.sh` hacia `tail -n +2 "$ENTRY_FILE"` al final de la seccion
+`## [$NEXT]` **sin comparar** con lo que la seccion ya declaraba. Y el
+orden del flujo lo hace inevitable: el preflight pide HEAD =
+`chore(release): bump version`, luego la seccion del artefacto que se
+publica tiene que existir ANTES del bump. **Escribirla antes es la norma,
+no el error.**
+
+MEDIDO: la seccion 2.10.0 quedo con sus 6 entradas escritas DOS veces —las
+de la prosa escrita a mano y el bloque autogenerado con el subject
+pelado— y hubo que recortarlas a mano, que no es repetible.
+
+### Las tres salidas, en el orden que la deuda fijaba
+
+**1. Una implementacion, ejecutada por los dos lados.** El bloque vive
+ahora en `scripts/lib/changelog_merge.sh`, sourceada por
+`release-bump.sh` Y por `tests/test_changelog_merge.sh`. El test ya no
+pega el codigo que vigila: lo llama.
+
+MEDIDO por que esta salida tenía que ir primera y no era negociable: el
+test lo copiaba literalmente («copied verbatim from release-bump.sh»),
+luego cambiar el merge **no lo movia** y el unico guard de ese bloque
+daba verde contra la copia antigua. Es la clase «una copia del codigo no
+vigila el codigo», y aqui era peor que en los casos anteriores porque **el
+objeto exclusivo del guard es justamente ese bloque**.
+
+No hizo falta ningun seam en produccion para poder falsarlo: el guard
+saca su codigo de `$ROOT/scripts/lib/changelog_merge.sh`, luego basta con
+montar un repo en miniatura con la libreria mutada y el guard intacto y
+correr el guard ahi.
+
+**2. Dedup con la MISMA regla conceptual que el gate 2b.** La huella es
+`<type(scope)>|<4 primeras palabras del payload>`. Los items ya
+representados se omiten **anunciando su huella por stderr**: un descarte
+silencioso en un artefacto publicado es indistinguible de que no hubiera
+pasado. Y las entradas nuevas entran en el grupo `### X` que YA existe,
+en vez de crear un segundo grupo con el mismo nombre.
+
+**Lo que NO se unifico, y por que**: la funcion del gate 2b. El gate mide
+PRESENCIA sobre el rango de commits y el merge decide que items anadir;
+moverla habria movido un guard que hoy pasa y cuyo fallo es el mas caro
+del camino. Lo que si se unifico es el CONCEPTO «¿es el mismo commit?»,
+que tenia dos definiciones y solo una podia quedar.
+
+**La direccion del fallo, escrita en el codigo**: un item que no se puede
+clasificar se **CONSERVA** y se declara. Un item duplicado es ruido; un
+item perdido es un artefacto que no describe lo que publica — que es la
+propiedad que el gate 2b existe para cazar (INC-DEBT-047). Ante la duda,
+el dedup no descarta.
+
+**3. Asercion de no-duplicado, falsada quitando el dedup.**
+`tests/test_changelog_merge.sh` `PASS=34 FAIL=0`;
+`tests/test_changelog_merge_mutation.sh` `PASS=9 FAIL=0 SKIP=0`.
+
+Siete mutaciones, cada una corrompiendo UNA sola cosa y cada una exigida
+por SU comprobacion. Al final se comprueba que la libreria REAL conserva
+su sha: un falsificador que se lleva el codigo por delante no ha medido
+nada.
+
+### Cuatro defectos que aparecieron al construirlo, ninguno hipotetico
+
+**El merge no hacia NADA cuando la seccion destino era la ultima del
+changelog.** El ensamblado terminaba en
+`[ "$after_line" -le "$total" ] && tail ...`; sin seccion siguiente la
+condicion es falsa, el grupo entero sale con estado 1, y el
+`|| { return 1; }` de al lado **abortaba ANTES de escribir**. Sin
+disposicion declarada, luego indistinguible de un acierto. Salio al
+escribir el caso C4, que es el unico que tiene esa forma.
+
+**Una rama del `case` era codigo muerto.** El primer `case` de
+`release-bump.sh` uso `"*disposition: merged"*`, que tambien casa con
+`merged_nothing` — lo dijo el linter, SC2221. Ahora la comparacion es
+EXACTA, y el fallo va en la direccion buena: si algo escribiera en
+stdout, el `case` cae en el error en vez de tomar la rama equivocada.
+
+**La huella quotaba la vineta antes que los espacios**, luego
+`${line#- }` no casaba con `  - fix(cli): ...` y la clave salia
+`- fix(cli)` con la vineta pegada. **El dedup seguia funcionando**, porque
+los dos lados del merge son los dos con vineta — invisible desde dentro
+—, pero la huella ya no era la misma que la del gate 2b, luego la promesa
+de «una sola regla» era falsa. Solo aparecio al anadir el caso que
+compara un item de changelog con un subject de commit, que es justo la
+comparacion que las dos herramientas tienen que hacer.
+
+**«Sin grupos vacios» tenia DOS autores** —el filtro y el awk emisor— y
+por eso **no se podia falsar**: la mutacion que quita la comprobacion de
+uno dejaba el guard en VERDE. Eso no es una guarda fuerte, es
+redundancia: una propiedad que no se puede falsar no esta vigilada. Se
+dejo un solo autor, el que **emite** (AGENTS.md 2.7), que es ademas donde
+la decision se toma bien. Cuarta vez que esta sesion encuentra la misma
+clase, y las cuatro en codigo mio.
+
+### Y un hallazgo sobre el propio falsificador
+
+**Cinco de las siete mutaciones estaban rotas DE ORIGEN, no mal
+aplicadas.** Les pasaba el par `viejo<TAB>` sin texto de reemplazo, luego
+**BORRABAN** la linea entera, rompian la libreria, y el guard caia por
+todo en vez de por su comprobacion. Una mutacion que cae «por algo» no
+mide nada, y durante un rato eso hizo parecer que cinco comprobaciones
+eran la misma. Ademas el par de M5 mia `$'\n'`, que **CIERRA** la cadena
+de comillas simples que lo contiene. Se reescribio con heredocs de
+comillas y separador `%%` en vez de un TAB escrito a mano, que es
+invisible y se pierde en cuanto alguien reformatea el fichero.
+
+### MEDIDO al cerrar
+
+| gate | resultado |
+|---|---|
+| `test_changelog_merge.sh` | PASS=34 FAIL=0 |
+| `test_changelog_merge_mutation.sh` | PASS=9 FAIL=0 SKIP=0 |
+| `test_changelog_coverage.sh` | PASS=3 FAIL=0 |
+| `test_changelog_coverage_baseline.sh` | PASS=18 FAIL=0 |
+| `test_changelog_coverage_baseline_mutation.sh` | PASS=5 FAIL=0 SKIP=0 |
+| `test_release_bump_derivation.sh` | PASS=10 FAIL=0 |
+| `test_release_bump_bundle_sync.sh` | PASS=5 FAIL=0 SKIP=0 |
+| `test_build_identity_policy.sh` | PASS=8 FAIL=0 |
+| `test_gate_coverage.py` | 74 tests / 70 runner / **0 sin motivo** |
+| `check_debt_index_coherence.sh` | 56 entradas / 56 estados / PASS |
+| `shellcheck` SIN filtro sobre los 4 `.sh` tocados | **CERO avisos** |
+
+Ademas: las cuatro disposiciones que emite la libreria coinciden
+**exactamente** con las cuatro que espera `release-bump.sh`, y cada una
+esta fijada por una comprobacion del guard. Y el `rm` de este entorno es
+un shim que imprime por stdout, lo que corrompia el stdout de una funcion
+cuyo stdout es un contrato legible por maquina: toda limpieza va con
+`>/dev/null`, con el motivo escrito en el codigo.
+
+### Commits del bloque
+
+| SHA | Que |
+|---|---|
+| `ef03b0bf` | feat(release): la libreria del merge, deduplicada, y el release la usa |
+| `3d5c2955` | test(release): el guard que ejecuta el codigo real, y su autofalsador |
+| `44cd38b0` | docs(debt): INC-DEBT-074 a `resolved`, con la evidencia medida |
+
+### Lo que sigue vivo, sin adornos
+
+- **INC-DEBT-050** (critical/P1) e **INC-DEBT-061** (high/P1): decision
+  del operador / producto. No tocar.
+- **INC-DEBT-073** (medium/P2): el gate de shellcheck sin filtro de
+  severidad y que solo mira el rango. **Le esta dando de lleno en este
+  bloque**: por el idiom `[ ... ] && ok || bad` el guard nuevo habria
+  muerto en el 1b con ~30 avisos SC2015, y lo que habria que arreglar es
+  el codigo nuevo, no el gate. Sigue sin tocarse el gate.
+- **INC-DEBT-072** (low/P3): el paso 15 imprime `bundle: None` con el
+  bundle instalado. Confirmado en 2.10.0.
+- El residuo declarado de INC-DEBT-064: el juez de frescura no esta
+  cableado en ningun runner. MEDIDO en este bloque: da `behind` con la
+  razon exacta («el checkout tiene cambios sin commitear»), o sea que
+  funciona y explica. Si se cablea, es en el camino que **certifica** una
+  medicion, **nunca en el 1b**.
+- El preflight de la release avisa de que HEAD no es
+  `chore(release): bump version` cuando el ultimo commit es el del
+  puntero: es un `warn` (`release.sh:316-318`), no un `die`.

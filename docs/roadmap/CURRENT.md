@@ -36,6 +36,14 @@ proceso; estos ficheros son el rastro, no la fuente.
   elimina; se cierra el dano de medir sin saberlo.
 - **INC-DEBT-071** -> `resolved` en session-81a. 21 sitios de
   `grep -q` con pipefail convertidos a `grep -c`, con guard y falsador.
+- **INC-DEBT-074** -> `resolved` en session-82. El merge del changelog
+  deduplica por huella `type(scope)` + 4 primeras palabras, las entradas
+  nuevas entran en el grupo que ya existe, y lo no clasificable se
+  conserva y se declara. El bloque vive en
+  `scripts/lib/changelog_merge.sh`, que **ejecutan** tanto
+  `release-bump.sh` como su test: el guard ya no copia el codigo que
+  vigila, lo llama. Guard `PASS=34 FAIL=0`, autofalsador
+  `PASS=9 FAIL=0 SKIP=0` con siete mutaciones.
 
 ## Que sigue abierto, y por whom
 
@@ -44,30 +52,32 @@ proceso; estos ficheros son el rastro, no la fuente.
 | INC-DEBT-050 | critical/P1 | **operador** | alias que aparta 12 ciclos con historia partida |
 | INC-DEBT-061 | high/P1 | **operador** | 6/15 alias con historia partida; 53 ciclos apartados |
 | INC-DEBT-073 | medium/P2 | codigo | el gate de shellcheck sin filtro de severidad y que solo mira el rango |
-| INC-DEBT-074 | medium/P2 | codigo | el merge del changelog no deduplica; su test COPIA el bloque |
 | INC-DEBT-072 | low/P3 | codigo | el paso 15 imprime `bundle: None` con el bundle instalado (confirmado en 2.10.0) |
 
 **No tocar 050 ni 061**: son decision del operador/producto.
 
 ## Siguiente bloque, por valor medido
 
-1. **INC-DEBT-074** — el orden de las tres salidas esta escrito: (1)
-   extraer el merge a una funcion que **ejecuten** tanto
-   `release-bump.sh` como el test, porque sin eso el punto 2 no es
-   verificable; (2) deduplicar por la **misma** regla del gate 2b;
-   (3) asercion de no-duplicado, falsada quitando el dedup. Es deuda que
-   ya ha costado un recorte manual no repetible.
-2. **INC-DEBT-073** — decidir la severidad minima que cobra el gate de
-   shellcheck y correr **una vez** el censo de deuda de lint del repo,
-   para que "cero avisos" sea alcanzable y no una sorpresa por fichero.
-3. **Residuo declarado de 064** — cablear el juez de frescura en el camino
-   que **certifica** una medicion (verify de ciclo o UAT), **nunca en el
-   1b**: ahi el binario del PATH es viejo por construccion durante un
-   release y el gate seria rojo siempre sin medir nada.
-4. **C5 del roadmap** — conformar el repo al gate de arquitectura
+1. **INC-DEBT-073** — la unica deuda de codigo que queda con coste
+   medido en el camino de release. Dos salidas, en este orden: (1)
+   **declarar que severidad minima cobra el gate**, porque hoy un `info`
+   cuenta igual que un `error`; (2) correr **una vez** el censo de deuda
+   de lint del repo, para que "cero avisos" sea alcanzable y no una
+   sorpresa cada vez que alguien toca un fichero. MEDIDO en session-82:
+   el idiom `[ ... ] && ok || bad` en el guard nuevo habria muerto en el
+   1b con ~30 avisos SC2015, y lo que habria que arreglar es el codigo
+   nuevo, no el gate. **Esa es exactamente la clase que la deuda
+   describe**, y sigue sin tocarse el gate.
+2. **INC-DEBT-072** — el paso 15 imprime `bundle: None` con el bundle
+   instalado y verificado a mano. Cosmético, pero es la ultima linea de
+   la salida del release, que es la que se lee cuando algo va mal.
+3. **C5 del roadmap** — conformar el repo al gate de arquitectura
    (eliminar ARCH003/ARCH008, implementar los 10 evaluadores), segun la
    nota de C3l.7 en `ROADMAP.md`.
-
+4. **Residuo declarado de 064** — cablear el juez de frescura en el
+   camino que **certifica** una medicion (verify de ciclo o UAT),
+   **nunca en el 1b**: ahi el binario del PATH es viejo por construccion
+   durante un release y el gate seria rojo siempre sin medir nada.
 ## Dos reglas que este bloque cobro por el camino
 
 - **bump primero, puntero despues.** El 1b exige que
