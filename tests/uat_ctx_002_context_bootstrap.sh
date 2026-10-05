@@ -191,10 +191,36 @@ assert_eq "project_id estable" "$PROJECT1" "$(jqf "$OUT2" "['project_id']")"
 assert_eq "workspace_id estable" "$WORKSPACE1" "$(jqf "$OUT2" "['workspace_id']")"
 
 # ── 3. Ciclo explícito → estado explicit + binding Run (CTX-004) ───────────
+#
+# MEDIDO (session-84 bis 7, `sddk 2.11.3`): este paso fallaba 1/1 con
+# `error: cycle not found: uat-cycle-1`. El guion pedia un ciclo que NUNCA
+# creo, y ademas usaba un id que el runtime no puede producir: los ids reales
+# los impone el runtime con prefijo de proyecto (`p-<hash>/uat-cycle-1`), de
+# modo que `--cycle uat-cycle-1` a pelo no puede existir. El mismo patron que
+# lo resuelve ya esta escrito en `uat_ctx_005` (que si pasa): crear el ciclo y
+# LEER el id de la salida, nunca componerlo a mano.
 step "3. ciclo explícito (CTX-003 paso 3 + CTX-004 explícito)"
+CYCLE_NAME="uat-cycle-1"
+set +e
+"$BIN" cycle start --root "$WORKTREE" --name "$CYCLE_NAME" \
+    --lease-owner "owner-$CYCLE_NAME" --format json \
+    >"$SANDBOX/cycle-start.json" 2>"$SANDBOX/cycle-start.err"
+RC_START=$?
+set -e
+if [ "$RC_START" -ne 0 ]; then
+    fail "cycle start exited $RC_START: $(cat "$SANDBOX/cycle-start.err")"
+    exit 1
+fi
+CYCLE_ID="$(jqf "$SANDBOX/cycle-start.json" "['cycle_id']")"
+if [ -z "$CYCLE_ID" ] || [ "$CYCLE_ID" = "None" ]; then
+    fail "cycle start no devolvio cycle_id"
+    exit 1
+fi
+ok "ciclo creado con el id que impone el runtime: $CYCLE_ID"
+
 OUT3="$SANDBOX/out3.json"
 set +e
-"$BIN" context bootstrap --root "$WORKTREE" --session uat-s2 --cycle uat-cycle-1 --format json >"$OUT3" 2>"$SANDBOX/err3.txt"
+"$BIN" context bootstrap --root "$WORKTREE" --session uat-s2 --cycle "$CYCLE_ID" --format json >"$OUT3" 2>"$SANDBOX/err3.txt"
 RC3=$?
 set -e
 if [ "$RC3" -ne 0 ] && [ "$RC3" -ne 4 ]; then
@@ -204,26 +230,26 @@ fi
 STATE3="$(jqf "$OUT3" "['cycle']['state']")"
 CYCLE3="$(jqf "$OUT3" "['cycle']['cycle_id']")"
 assert_eq "estado explícito" "explicit" "$STATE3"
-assert_eq "ciclo explícito" "uat-cycle-1" "$CYCLE3"
+assert_eq "ciclo explícito" "$CYCLE_ID" "$CYCLE3"
 
 BINDING2="$(find "$XDG_DATA_HOME/sddk/projects/$PROJECT1" -path '*context/bindings/uat-s2.json' -type f | head -1)"
 [ -n "$BINDING2" ] || fail "no explicit-cycle binding under project data"
 [ -f "$BINDING2" ] || fail "explicit-cycle binding missing at $BINDING2"
-if python3 -c '
-import json, sys
+if CYCLE_ID="$CYCLE_ID" python3 -c '
+import json, os, sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     binding = json.load(handle)
 target = binding.get("target", {})
 sys.exit(0 if target.get("kind") == "run"
-         and target.get("run_ref", {}).get("RunRef") == "uat-cycle-1" else 1)
+         and target.get("run_ref", {}).get("RunRef") == os.environ["CYCLE_ID"] else 1)
 ' "$BINDING2" 2>/dev/null; then
-    ok "binding con target = run:uat-cycle-1"
+    ok "binding con target = run:$CYCLE_ID"
 else
     # El nombre de la variante serde puede variar; comprobamos el contenido.
-    if grep -q 'uat-cycle-1' "$BINDING2" && grep -q '"kind": *"run"' "$BINDING2"; then
-        ok "binding con target run:uat-cycle-1"
+    if grep -q "$CYCLE_ID" "$BINDING2" && grep -q '"kind": *"run"' "$BINDING2"; then
+        ok "binding con target run:$CYCLE_ID"
     else
-        fail "binding target is not run:uat-cycle-1"
+        fail "binding target is not run:$CYCLE_ID"
     fi
 fi
 
