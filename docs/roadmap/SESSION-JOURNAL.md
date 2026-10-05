@@ -15252,3 +15252,151 @@ comparte— y las tres veces la leccion es la misma: **lo que no esta commiteado
 no existe**, ni durante veinte minutos. La respuesta no es «trabajar mas
 rápido»: es commitear cada unidad verificada antes de seguir, y cuando el
 entorno es compartido, antes de que la otra sesion pueda tocar nada.
+
+## session-84 — 2026-10-05T12:15Z — REL-2.11.1 verificada contra API y CDN, e INC-DEBT-076: ocho tests que el 1b no ejecutaba, cinco de ellos publicados como gates
+
+### LO QUE SE EMPIEZO SIN SABER
+
+La sesion arranca con un release ajeno vivo y un `--dry-run` que resulto ser
+**hijo suyo**: el 1b de `bash scripts/release.sh` corre
+`test_release_diagnostics_wiring.sh`, y ese test lanza su propio
+`release.sh --dry-run --skip-tests` para medir que el preflight de recursos es
+un umbral y no una puerta trasera. El dry-run anidado aviso del candado sin
+tomarlo —`--dry-run` no publica— y recorrio **23 pasos** con un build release
+completo dentro del 1b. Coste, no correccion; queda declarado y no se abre ese
+frente con un release vivo.
+
+Lo util de esa coincidencia: **la exclusion mutua de session-83 se autogestiono
+en produccion**. El candado existia con el pid ajeno, el dry-run lo detecto, no
+lo solto al salir —`lo tiene pid 1464792, no este 1542734; no se suelta`— y el
+arbol quedo limpio. Tres afirmaciones del guard de session-83, medidas en vivo.
+
+### EL QUINTO INTENTO DE 2.11.1, y por que murio
+
+El release ajeno anterior (pid 1464792) **no publico**. Murio en el 1b:
+
+    [FAIL] test_cargo_target_attribution.sh: ningun runner lo ejecuta y no
+           esta en EXCEPTIONS con un motivo
+
+O sea, un test que **yo** anadi en session-83 y no cablee. El todo de aquella
+sesion decia «cableados en el 1b» y era falso para uno de los tres. No lo dice
+el fallo: lo dice el hecho de que el gate —que existe exactamente para esto—
+lo cazara solo. La sesion paralela lo cableo dos minutos despues (`9abec31b`),
+y ahi sigue la cuenta de releases perdidos por una lista escrita a mano.
+
+### EL HALLAZGO, y crecio al medirlo
+
+La pregunta era: **¿la cobertura del 1b cuenta runners de CI como si fueran
+del 1b?** Si. Escribi un extractor y dio tres tests con unico runner en
+`ci.yml`, hermeticos, que pasaban, y que no ejecutaba nadie antes de publicar.
+
+Uno de ellos es el **autofalsador** de `test_release_state_pointer.sh`, el guard
+que `af98f9af` cita como causa de 41 commits de deriva en `STATE.yaml`. La
+release verificaba el puntero y no verificaba que su verificacion tuviera
+dientes.
+
+**Eso no era lo importante.** Al falsar la regla nueva, M3 no caia: al quitar
+un test del bucle, el gate lo seguia viendo cubierto —porque su nombre seguia
+en `release.sh`, en el **scope de shellcheck**, que es una lista de ficheros
+que shellcheck revisa y no de ejecucion. Medi la segunda vez con un
+instrumento distinto y aparecieron **cinco** guards ahi y en ningun otro sitio:
+cero en `ci.yml`, cero en cualquier otro script, y **cero apariciones en el log
+del 1b de un release que lo paso entero**.
+
+Y lo mas incomodo: **estan publicados en `CHANGELOG.md` como gates de la
+release con su PASS** —«Guard `test_release_final_state_figures.sh`
+`PASS=12 FAIL=0`», y cuatro mas. No es que faltara cobertura. Es que un
+artefacto publicado **afirma como evidencia cinco pruebas que la release no
+ejecuta**. Eso subio la deuda de `medium/P2` a `high/P1` y cambio el titulo.
+
+CAUSA RAIZ, una sola: **mencionar no es ejecutar**. Y es el mismo punto ciego
+que la Regla 3 ya tuvo **en ese mismo fichero**, con el remedio escrito en su
+comentario desde `af98f9af`: *«el alcance es el bucle gateado, NO todo el
+fichero»*. La leccion se aplico a la Regla 3 y no a la regla siguiente. Es la
+**cuarta vez** que la misma clase vuelve en este bloque, y las cuatro estan
+enlazadas con su commit: session-65j creo el gate; `af98f9af` creo la Regla 3;
+`9abec31b` cableo el que faltaba; esta es la que mira fuera del bucle.
+
+Arreglo: `tests_ejecutados()` separa EJECUTAR de NOMBRAR por **sintaxis** —
+bucles `for t in` / `for p in` e invocaciones `test_gate` / `bash` /
+`python3`—, con los globs de shellcheck deliberadamente sin efecto porque un
+glob no es un nombre. Nace la **Regla 4**. Los ocho entran en el 1b.
+
+### LO QUE DESTAPO EL FALSADOR Y NO LA INSPECCION
+
+La **Regla 2** preguntaba por el conjunto que incluye CI, luego declarar el
+motivo de un test que CI cubre era un FAIL. Y declararlo es **lo correcto**:
+se excepciona del 1b justo porque necesita red, y que CI lo corra es lo
+deseado. Con la regla como estaba, la Regla 4 **no tenia salida legitima** — y
+una regla sin salida obliga a la unica accion que no siempre es correcta. Lo
+vio el caso M4, no la lectura del codigo.
+
+### TRES INSTRUMENTOS QUE SE ROMPIERON A SI MISMOS
+
+Es la parte que mas cuesta, y la que hace que el resto sea mas rigido de lo
+que parece.
+
+1. **El falsador mutaba `release.sh` EN SITIO.** Al anadir el fichero a
+   `tests/`, el gate lo ve como test nuevo sin runner y el **control falla**:
+   el falsador se delata como cobertura ausente. Y peor: mutar el sujeto desde
+   un falsador que corre dentro del 1b es la bomba de reloj que `5edcef00`
+   acababa de arreglar en el otro falsador del repo, con el arbol real como
+   banco de pruebas. Rehecho con mini-repo y `copy2`.
+2. **Su cierre comparaba `... == rel_bak or True`.** Un `or True` pasa aunque
+   el falsador hubiera dejado el arbol mutado — justo lo que el fichero existe
+   para probar que no hace. Ahora son sha256 de los tres sujetos.
+3. **El extractor tuvo el mismo bug TRES veces**, y las tres las encontro el
+   dato: `continue` en la linea que abre el bucle pierde el PRIMER elemento;
+   cerrar el bucle antes de recolectar pierde el ULTIMO, que es el unico sin
+   continuacion; y olvidar `en_bucle = True` deja los bucles casi vacios.
+   Con la v1 defectuosa, M3 daba `SKIP` con el sujeto sano en verde: un
+   falsador con un tercio de sus mutaciones sin aplicar no mide nada.
+   **Se valido contra el log de un release real**: 56 tests previstos, 56
+   ejecutados, cero falsos negativos.
+
+Y una correccion de algo que tenia heredado: dije que `rm` con una variable no
+borra nada en esta maquina. **Es falso**, y lo medi cuando el falsador del
+puntero limpio su `$TMPROOT` sin problema. La regla era correcta para el caso
+que la produjo y la generalize de mas.
+
+### LA 2.11.1, VERIFICADA CONTRA API Y CDN
+
+El release ajeno llego al paso 15. Verificacion, que es lo unico que cuenta:
+
+    tag anclado (git ls-remote)   v2.11.1 -> c5606df5
+    draft / prerelease            false / false
+    assets por la API             9
+    CDN                           9/9 HTTP 200, tamano IDENTICO a la API
+    sha256 del bundle             declarado == servido (b4f367a1...)
+    instalado                     sddk 2.11.1, framework/current -> 2.11.1
+    candados                      vacios: la exclusion solto el suyo
+
+Un 404 que **no era del release**: mi campana pidio
+`sddk-v2.11.1-linux-x86_64-musl.tar.gz` y el asset real se llama
+`sddk-v2.11.1-**sddk-**linux-x86_64-musl.tar.gz`. Verificado con el nombre
+correcto: 200, 12612638 bytes, identico a la API. Un instrumento que se
+equivoca en el nombre delata al que lo escribe antes que al sujeto.
+
+### GATES
+
+    test_gate_coverage.py                    PASS  (0 solo-CI, 0 sin runner)
+    test_gate_coverage_ci_mutation.py        PASS=23 FAIL=0 SKIP=0
+    test_debt_index_coherence.sh             PASS=12 FAIL=0
+    test_changelog_coverage.sh               PASS=5  FAIL=0
+    reconcile_state_pointer.sh --check       PASS
+    shellcheck SIN filtro, 2 ficheros        0 avisos
+    los 8 tests cableados                    8/8 pasan, 23,5 s en total
+
+### LO QUE NO SE CIERRA, y se declara
+
+- **La superficie de gates del 1b sigue siendo una lista escrita a mano.** La
+  Regla 4 convierte un olvido en un rojo de 23 s en vez de una release
+  entera — `9abec31b` costo el quinto intento de la 2.11.1 — pero no lo
+  elimina. Enumerar por convencion es la decision que falta.
+- **La linea del `CHANGELOG.md` que declara los cinco gates no se corrige:**
+  esta publicada y pertenece a un tag. Se corrige el mecanismo que la produce.
+- **Flake de C9**: sigue sin causa establecida (1/20 con el arreglo, 2/20 sin
+  el). No se toco su codigo.
+- **Firma**: `SDDK_SKIP_SIGNING=1`; el ancla y
+  `SDDK_RELEASE_VERIFY_KEY_BODY` son placeholder. `UNSIGNED` declarado. No se
+  fabrica clave ni ancla.
