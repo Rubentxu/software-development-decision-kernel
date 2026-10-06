@@ -1442,6 +1442,106 @@ if [ -n "$UAT_CTX_FAILURES" ]; then
 fi
 ok "los $UAT_CTX_RUN uat_ctx_* pasan contra el binario publicado"
 
+# --- 3o: el canario de aislamiento por worktree ---
+#
+# MEDIDO (session-86) lo que este paso cerraba. El censo llevaba tiempo
+# marcando este guard como "SIN runner y SIN motivo", y mientras tanto el
+# canario no era neutral: era CODIGO INERTE, y ademas escribia en el estado
+# real de la maquina. `paths.rs:173` resuelve el ledger por `state_home`, que
+# tiene precedencia propia (SDDK_STATE_HOME, XDG_STATE_HOME, $HOME/.local/
+# state), y el canario solo aislaba SDDK_DATA_DIR — luego cada corrida
+# escribia un `~/.local/state/sddk/projects/<pid>/ledger.sqlite` de verdad.
+# Medido: 362 proyectos reales y un proyecto mas con mtime fresco.
+#
+# Al construir el paso aparecio lo que el guard llevaba midiendo mal:
+#
+#   - W5 afirmaba lo CONTRARIO del contrato. Exigia que un binding sin
+#     `workspace_id` se adoptara en silencio (rc 0 o 4), cuando el producto
+#     lo rechaza con `carries no workspace` y un recovery que nombra
+#     `--rebind`. Un guard que exige lo contrario del contrato obliga a que el
+#     defecto se elimine para que el guard pase. Fallaba en la BASE por
+#     funcionar bien el producto.
+#   - M1 era una FALSACION MUERTA. Al deshacer el aislamiento, B rechaza y no
+#     imprime identidad; el canario lo leia como "fixture no medible" (SKIP).
+#     La unica mutacion que podia mover el veredicto se media como decoracion.
+#   - M2 era MUERTA por partida doble: quitar el `#[serde(default)]` no cambia
+#     nada, porque serde_derive ya trata `Option<T>` ausente como `None` sin
+#     atributo (fijado en crates/sddk-engine/tests/va17_legacy_binding_serde.rs).
+#
+# Corregido todo, la corrida es PASS=4 FAIL=0 SKIP=0 con la base en 0
+# violaciones, M1 0->1, M2 (Unknown tratado como Same) 0->1 y M3 neutra.
+#
+# El paso va aqui, y no en el 1b, porque el canario COMPILA su propio binario
+# (target persistente fuera del temporal, para que las recompilaciones sean
+# incrementales): hacerlo antes de construir el binario de release seria tirar
+# la compilacion dos veces.
+step "3o/15 — canario de aislamiento por worktree, con su autofalsacion"
+WT_CANARY_LOG="$RELEASE_SCRATCH/worktree_isolation_canary.log"
+if test_gate "test_worktree_isolation_canary.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_worktree_isolation_canary.sh >"$WT_CANARY_LOG" 2>&1; then
+    ok "aislamiento por worktree: $(grep -m1 '^RESULT: PASS' "$WT_CANARY_LOG" || echo 'PASS')"
+else
+    tail -30 "$WT_CANARY_LOG" >&2
+    die "el canario de aislamiento por worktree no pasa. Su base afirma que dos
+         checkouts del mismo proyecto no comparten sesion, y sus tres
+         mutaciones tienen que ECHARLO ABAJO: si no las ve, o el aislamiento
+         se perdio o el canario dejo de medir. Un rojo aqui puede ser una de
+         las dos cosas, y por eso el log imprime el reparto por comprobacion.
+         Log: $WT_CANARY_LOG"
+fi
+
+# --- 3p: los tres guards que el censo llevaba tiempo marcando sin runner ---
+#
+# Los tres son HERMETICOS (0 red, 0 contenedores) y los tres PASAN; lo que les
+# faltaba era un runner. MEDIDO uno a uno antes de cablearlos, porque la regla
+# del censo es explicita: "estar nombrado en un comentario NO es ejecucion", y
+# un guard que se cablea sin haberse ejecutado es una excepcion disfrazada.
+#
+#   - `test_cross_project_isolation_canary.sh`: al ejecutarlo canto REPRODUCIDO,
+#     y era FALSO. El canario localizaba sus bindings con `find` y despues
+#     comprobaba contra un path escrito a mano del layout viejo; con el layout
+#     por worktree decia "el binding no esta" y reportaba el incidente que
+#     declara medir. Era el instrumento roto, no el producto — septima vez de
+#     "un FAIL del instrumento es indistinguible de un FAIL real si no se
+#     distingue de quien lo pide", y la mas peligrosa: un canario de
+#     REPRODUCCION en falso invita a "arreglar" un producto sano.
+#   - `test_kernel_purity_fitness_mutation.sh`: 11 comprobaciones, todas con
+#     dientes, SKIP=0. Era el unico que se autoprotegia (sale con 1 si hay un
+#     solo SKIP), o sea que su redness era solo la falta de runner.
+#
+# Los dos van juntos porque comparten el mismo defecto de aislamiento que se
+# encontro al arreglar el hermano de worktree: ninguno aislaba el ESTADO, y los
+# dos escribian su `ledger.sqlite` en la maquina del operador.
+step "3p/15 — canario cross-project y autofalsacion de la pureza del nucleo"
+CROSS_LOG="$RELEASE_SCRATCH/cross_project_canary.log"
+PURITY_LOG="$RELEASE_SCRATCH/kernel_purity_mutation.log"
+if test_gate "test_cross_project_isolation_canary.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_cross_project_isolation_canary.sh >"$CROSS_LOG" 2>&1; then
+    ok "aislamiento entre proyectos: $(grep -m1 '^RESULT: PASS' "$CROSS_LOG" || echo 'PASS')"
+else
+    tail -30 "$CROSS_LOG" >&2
+    die "el canario de aislamiento entre proyectos no pasa. Su base afirma que una
+         sesion del proyecto A no recibe contexto del B, y sus mutaciones tienen
+         que ECHARLO ABAJO. Si esto cae por 'REPRODUCIDO', comprobar ANTES que el
+         fallo no es del propio canario: localizo sus bindings con find y luego
+         los comparo contra una ruta escrita a mano, que es como se canto un
+         incidente que no ocurria. Log: $CROSS_LOG"
+fi
+if test_gate "test_kernel_purity_fitness_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_kernel_purity_fitness_mutation.sh >"$PURITY_LOG" 2>&1; then
+    ok "pureza del nucleo: $(grep -m1 '^RESULT: PASS' "$PURITY_LOG" || echo 'PASS')"
+else
+    tail -30 "$PURITY_LOG" >&2
+    die "la autofalsacion de la pureza del nucleo no pasa. Sus 11 mutaciones tienen
+         que tirar un control cada una; si el rojo viene de SKIP>0, el guard lo
+         declara como no concluyente y sale con 1 a proposito — un SKIP aqui es
+         una mutacion que no se aplico, nunca una deteccion.
+         Log: $PURITY_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"

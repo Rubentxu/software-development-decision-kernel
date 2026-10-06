@@ -239,10 +239,34 @@ def tests_ejecutados(text: str) -> set[str]:
 # Añadir aquí una entrada es una decisión, no un descuido: por eso el motivo es
 # parte de la entrada y las reglas 1 y 2 la mantienen honesta.
 EXCEPTIONS: dict[str, str] = {
+    "test_receipt_cycle_id_authority_mutation.sh": (
+        "MEDIDO (session-86): la autofalsacion del guard anterior, y con el "
+        "MISMO motivo, no con uno propio. Este script no abre ningun ledger: "
+        "invoca `test_receipt_cycle_id_authority.sh` cuatro veces (lineas 73, "
+        "104, 118 y 135) y juzga si cada comprobacion cae por su propia causa. "
+        "Como el guard que exercise lee "
+        "`$STATE_BASE/sddk/projects/<pid>/ledger.sqlite`, hereda su dependencia "
+        "de la maquina: en una release limpia no hay ledger que leer y no hay "
+        "veredicto que falsar. Excepcionar el guard y no su autofalsacion "
+        "dejaria al segundo dizendo 'cada comprobacion cae por su propia causa' "
+        "sin que nadie lo haya comprobado jamas."
+    ),
     "test_h05_isolation.sh": (
         "pasa sin medir: sin el rlib release imprime `skip:` y aun asi reporta "
         "PASS=1 FAIL=0. Cablearlo devolveria un verde vacio (misma forma que "
         "INC-DEBT-054). Requiere `cargo build --release -p sddk-engine` antes."
+    ),
+    "test_receipt_cycle_id_authority.sh": (
+        "MEDIDO (session-86): pasa 13/13 sobre el estado de esta maquina, y "
+        "aun asi no es cableable al release. Su objeto es la COHERENCIA entre "
+        "los recibos de `docs/roadmap/receipts/` y el ledger de la maquina que "
+        "los produjo: lee `$STATE_BASE/sddk/projects/<pid>/ledger.sqlite` en "
+        "solo lectura (linea 52 y el probe de la 142). En una maquina limpia de "
+        "release ese ledger no existe, y el guard sale por `no se pudo abrir` "
+        "— un rojo que no describe el producto sino la ausencia del artefacto. "
+        "Es por definicion un gate de ESTADO LOCAL, no de camino de release: su "
+        "casa es el cierre de ciclo, que es cuando se escribe un recibo. "
+        "Declarado, no olvidado: corre a mano y su rojo hay que mirarlo."
     ),
     # Los siete `uat_ctx_*` YA NO estan aqui: MEDIDO, los ejecuta el paso **3n**
     # de `release.sh`, que se anadio en session-84 bis 7 con el binario del paso

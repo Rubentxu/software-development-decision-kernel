@@ -28,6 +28,15 @@ cd "$ROOT" || exit 1
 
 WORK="$(mktemp -d)"
 export SDDK_DATA_DIR="$WORK/data"
+# MEDIDO (session-86, al arreglar el hermano de worktree): faltaba aislar el
+# ESTADO, y sin el el canario escribia en la maquina. `paths.rs:173` resuelve
+# el ledger por `state_home`, cuya precedencia es SDDK_STATE_HOME, luego
+# XDG_STATE_HOME, luego $HOME/.local/state — independiente de SDDK_DATA_DIR.
+# Este canario creaba un `~/.local/state/sddk/projects/<pid>/ledger.sqlite`
+# de verdad en cada corrida. Mismo defecto, misma causa, dos ficheros: lo que
+# faltaba no era un override, era la LISTA de overrides.
+export SDDK_STATE_HOME="$WORK/state"
+export XDG_STATE_HOME="$WORK/state"
 TARGET="$WORK/target"
 export CARGO_TARGET_DIR="$TARGET"
 
@@ -92,6 +101,39 @@ fixtures() {
 pid() { "$BIN" project resolve --root "$1" --scope . 2>/dev/null \
         | awk -F': ' '/^project_id:/ {print $2}' | tr -d ' '; }
 
+# Localiza el binding de una sesion por el project_id que DECLARA, no por el
+# directorio en el que cae.
+#
+# MEDIDO (session-86): la primera version lo busco por la ruta
+# (`find -path "*$A*"`), y eso es exactamente la propiedad que la mutacion M2
+# deshace — con las cuatro raices en un temporal compartido el path ya no
+# contiene el project_id y el `find` no encontraba nada. Un localizador que
+# depende del layout midio bien la base y dejo muda a la unica mutacion que
+# quita ese layout. Por eso aqui se mira el CONTENIDO: el project_id escrito
+# dentro del fichero es la ley, y sobrevive a que el directorio cambie.
+#
+# MEDIDO (session-86, tercera vuelta): con M2 el canario seguia en SKIP, y ya
+# no por la ruta sino por el ALCANCE — la mutacion cuelga las cuatro raices de
+# `/tmp/sddk-bindings-compartidos`, que queda FUERA de `$DATA`, luego el `find`
+# no lo veia. Un localizador que solo busca donde se SUPO que escribir no puede
+# detectar que el producto escribe donde no deberia, que es justo la propiedad
+# que se quiere medir. Por eso se mira tambien `BIND_SEARCH_EXTRA`: el canario
+# busca donde el producto ha escrito de verdad, no solo donde el fixture
+# esperaba que escribiera.
+BIND_SEARCH_EXTRA=/tmp/sddk-bindings-compartidos
+export BIND_SEARCH_EXTRA
+bind_por_proyecto() { # $1=project_id  $2=session
+    local p
+    for p in $(find "$DATA" -name "$2.json" -type f 2>/dev/null | sort) \
+             $(find "${BIND_SEARCH_EXTRA:-/nonexistent}" -name "$2.json" -type f 2>/dev/null | sort); do
+        if grep -q "\"project_id\": *\"$1\"" "$p" 2>/dev/null; then
+            printf '%s\n' "$p"
+            return 0
+        fi
+    done
+    return 0
+}
+
 # --- el canario -------------------------------------------------------------
 # Devuelve 0 si NO hay aislamiento roto. Todo lo que encuentra va al log.
 
@@ -114,6 +156,15 @@ canary() {
     RUN=$((RUN + 1))
     local DATA="$WORK/data/run-$RUN"
     export SDDK_DATA_DIR="$DATA"
+    # El temporal COMPARTIDO de M2 sobrevive entre corridas —esta fuera del
+    # directorio por corrida— y con el el mismo estado compartido que esta
+    # cabecera describe, pero por otra via: un binding de la corrida anterior
+    # seguiria ahi y `bind_por_proyecto` lo encontraria. Por eso se limpia
+    # aqui, no al terminar la mutacion: limpiar despues deja que la medicion
+    # de la siguiente vea el rastro de la anterior.
+    if [ -d "$BIND_SEARCH_EXTRA" ]; then
+        unlink "$BIND_SEARCH_EXTRA/canary-s1.json" 2>/dev/null || true
+    fi
 
     local c="$WORK/canario"
     local A B A2 B2 N1 N2
@@ -142,28 +193,75 @@ canary() {
 
     # Donde han CAIDO los bindings de verdad, que es el hecho que hay que mirar y
     # no donde uno supone que deberian estar.
+    #
+    # MEDIDO (session-86, con VA17): este bloque IMPRIMIA la localization con
+    # `find` y despues comprobaba contra una ruta escrita a mano —
+    # `$DATA/sddk/projects/$A/context/bindings/`. Con el layout por worktree el
+    # binding cae en `projects/<p>/workspaces/<w>/context/bindings/`, luego el
+    # `find` de tres lineas mas arriba lo veia y las dos comprobaciones de
+    # abajo decian "no esta". El canario cantaba REPRODUCIDO por un path
+    # viejo: el incidente que declara medir no ocurria, lo que no ocurria era
+    # la suposicion del instrumento. Septima vez de esta clase en el bloque, y
+    # la mas cara hasta ahora porque el falso positivo de un canario de
+    # REPRODUCCION invita a "reparar" un producto que no esta roto.
+    #
+    # Por eso los bindings se LOCALIZAN por el project_id que el canario ya
+    # resolvio, y se afirma la PROPIEDAD (cada binding declara SU project_id),
+    # no la ruta. La forma del directorio es del producto; el nombre del
+    # proyecto dentro del binding es la ley.
     log "bindings escritos bajo: $DATA"
     find "$DATA" -path "*bindings*" -name "$S.json" 2>/dev/null | sed 's/^/    /'
 
     local fa fb
-    fa="$DATA/sddk/projects/$A/context/bindings/$S.json"
-    fb="$DATA/sddk/projects/$B/context/bindings/$S.json"
-    [ -f "$fa" ] || { log "V2 el binding de A no esta en el directorio de A"; violaciones=$((violaciones+1)); }
-    [ -f "$fb" ] || { log "V2 el binding de B no esta en el directorio de B"; violaciones=$((violaciones+1)); }
-    if [ -f "$fa" ]; then
-        grep -q "\"project_id\": \"$B\"" "$fa" && {
-            log "V2 FUGA: el binding de A declara el project_id de B"; violaciones=$((violaciones+1)); }
-        grep -q "\"project_id\": \"$A\"" "$fa" || {
-            log "V2 el binding de A no declara su propio project_id"; violaciones=$((violaciones+1)); }
+    # MEDIDO (session-86, segunda vuelta): localizo por `*$A*` en la RUTA, y
+    # eso es la misma suposicion que M2 quita — con las raices en un temporal
+    # compartido, el path ya no contiene el project_id, el `find` no encuentra
+    # nada, y la mutacion quedaba en SKIP. O sea que el arreglo del falso
+    # REPRODUCIDO habia dejado la mutacion muda, que es el mismo fallo
+    # cubierto por el otro lado: un instrumento que supone donde esta lo que
+    # busca.
+    #
+    # Se localiza por CONTENIDO —el binding que declara ESE project_id— y no
+    # por la ruta. El project_id es la ley; el directorio es del producto.
+    fa="$(bind_por_proyecto "$A" "$S")"
+    fb="$(bind_por_proyecto "$B" "$S")"
+    [ -n "$fa" ] || log "V- A no deja binding que declare su project_id: lo que hay ahi es de otro"
+    [ -n "$fb" ] || log "V- B no deja binding que declare su project_id: lo que hay ahi es de otro"
+    # MEDIBLE solo cuando NO se escribio nada. Si uno de los dos falta, el
+    # otro project's binding fue pisado — que es la fuga, no una falta de
+    # medicion. MEDIDO (session-86): con M2 los dos proyectos escriben el
+    # MISMO fichero, y el segundo borra el project_id del primero; tratar eso
+    # como "no medible" convertia la mutacion en un SKIP mudo, cuando es
+    # precisamente el defecto que la mutacion introduce.
+    if [ -z "$fa" ] && [ -z "$fb" ]; then
+        MEDIBLE=0
+        return 1
     fi
-    if [ -f "$fb" ]; then
-        grep -q "\"project_id\": \"$A\"" "$fb" && {
-            log "V2 FUGA: el binding de B declara el project_id de A"; violaciones=$((violaciones+1)); }
+    if [ -z "$fa" ] || [ -z "$fb" ]; then
+        log "V2 FUGA: los dos proyectos comparten fichero y uno piso al otro (A='${fa:-ninguno}' B='${fb:-ninguno}')"
+        violaciones=$((violaciones+1))
+        if [ -n "$fa" ] || [ -n "$fb" ]; then
+            return 1
+        fi
+        MEDIBLE=0
+        return 1
     fi
+    [ "$fa" = "$fb" ] && { log "V2 ambos proyectos resuelven al MISMO binding: hay fuga"; violaciones=$((violaciones+1)); }
+    log "V2 binding de A: ${fa#"$DATA"/}"
+    log "V2 binding de B: ${fb#"$DATA"/}"
+    if grep -q "\"project_id\": *\"$B\"" "$fa"; then
+        log "V2 FUGA: el binding de A declara el project_id de B"; violaciones=$((violaciones+1))
+    fi
+    grep -q "\"project_id\": *\"$A\"" "$fa" || {
+        log "V2 el binding de A no declara su propio project_id"; violaciones=$((violaciones+1)); }
+    if grep -q "\"project_id\": *\"$A\"" "$fb"; then
+        log "V2 FUGA: el binding de B declara el project_id de A"; violaciones=$((violaciones+1))
+    fi
+    grep -q "\"project_id\": *\"$B\"" "$fb" || {
+        log "V2 el binding de B no declara su propio project_id"; violaciones=$((violaciones+1)); }
     # V3: el directorio de bindings debe depender del project_id. Si todos los
     #     proyectos comparten directorio, la separacion es de fachada.
-    if [ -n "$A" ] && [ -n "$B" ] && [ "$A" != "$B" ] \
-       && [ "$(dirname "$fa")" = "$(dirname "$fb")" ]; then
+    if [ "$(dirname "$fa")" = "$(dirname "$fb")" ]; then
         log "V3 el directorio de bindings NO depende del project_id"; violaciones=$((violaciones+1))
     fi
 
@@ -178,8 +276,19 @@ build || exit 1
 log "binario: $BIN"
 log "datos aislados en: $SDDK_DATA_DIR"
 
+# MEDIBLE va por canal aparte, y no por el codigo de retorno: `canary` devuelve
+# 0/1 (pasa/falla) y un 2 se confundiria con "reproducido", que es justo la
+# lectura que este canario no quiere que se tome cuando no midio nada.
+MEDIBLE=1
+
 printf '\n--- BASE ---\n'
-if canary; then
+canary
+canary_rc=$?
+if [ "$MEDIBLE" -eq 0 ]; then
+    printf '\nRESULT: NO SE PUEDE MEDIR — el fixture no reproduce el caso. No cuenta.\n'
+    exit 1
+fi
+if [ "$canary_rc" -eq 0 ]; then
     ok "base: NO se reproduce el cross-project leak (0 violaciones)"
 else
     ko "base: el aislamiento esta ROTO — el canario reproduce el incidente"
@@ -211,13 +320,22 @@ mutar() { # $1=etiqueta  $2=fichero  $3=esperado(ROJO|SKIP)  $4=porque  $5=pycod
     fi
 
     local reproduce="no"
+    MEDIBLE=1
     canary && reproduce="no" || reproduce="si"
+    # Un `canary` que no pudo medir no es un canario que no cae: es uno que no
+    # dijo nada. Antes de meter esto en un veredicto hay que distinguirlo, o una
+    # mutacion cuyo sujeto dejo de medir se contaria como "el canario aguanto".
+    local medible="$MEDIBLE"
     cp "$WORK/mut.bak" "$fichero"
     build >/dev/null 2>&1
     sha_restore="$(sha256sum "$fichero" | cut -d' ' -f1)"
     if [ "$sha_restore" != "$sha_antes" ]; then
         printf '  [FATAL] %s — la restauracion no fue byte-identica\n' "$etiqueta"
         exit 1
+    fi
+    if [ "$medible" -eq 0 ]; then
+        skip "$etiqueta" "con la mutacion el fixture ya no mide el caso"
+        return
     fi
 
     case "$esperado" in
@@ -245,18 +363,27 @@ assert v in s, "el hash del remote no tiene la forma que esta mutacion supone"
 open(p,"w").write(s.replace(v,n,1))
 '
 
-mutar "M2 el directorio de bindings ignora el project_id" "$CTX" ROJO \
-    "los tres load_binding siguen leyendolo, pero ahora todos los proyectos comparten directorio: el namespacing era la unica defensa y se la quita." \
+# MEDIDO (session-86): esta mutacion era MUERTA. Parcheaba la forma PRE-VA17
+# de `bindings_root(project_data: &Path)`, y el codigo ya dice
+# `bindings_root(session_root: &Path)`, luego el `assert` la tiro y el canario
+# lo conto como SKIP — una falsacion que no puede mover nada. Mismo modo de
+# fallo que las F2/F3 de VA16: una mutacion escrita contra la forma del codigo
+# que existia cuando se concibio, no contra la que existe.
+#
+# Se rehace contra la forma real. La propiedad que V3 afirma es que el
+# directorio de bindings DEPENDE del project_id, y la unica forma de dejarla de
+# depender sin tocar los tres `load_binding` es colgar el path de un temporal
+# compartido: dos proyectos distintos escriben el MISMO fichero.
+mutar "M2 el directorio de bindings deja de depender del project_id" "$CTX" ROJO \
+    "los tres load_binding siguen leyendolo, pero ahora el path cuelga de un temporal compartido: dos proyectos distintos escriben el MISMO fichero y el namespacing era la unica defensa." \
 '
 import os
 p=os.environ["MUT_FILE"]; s=open(p).read()
-v="""fn bindings_root(project_data: &Path) -> PathBuf {
-    project_data.join("context").join("bindings")
+v="""fn bindings_root(session_root: &Path) -> PathBuf {
+    session_root.join("bindings")
 }"""
-n="""fn bindings_root(project_data: &Path) -> PathBuf {
-    project_data
-        .parent()
-        .map_or_else(|| project_data.to_path_buf(), |p| p.join("bindings-compartidos"))
+n="""fn bindings_root(session_root: &Path) -> PathBuf {
+    std::env::temp_dir().join("sddk-bindings-compartidos")
 }"""
 assert v in s, "bindings_root no tiene la forma que esta mutacion supone"
 open(p,"w").write(s.replace(v,n,1))
