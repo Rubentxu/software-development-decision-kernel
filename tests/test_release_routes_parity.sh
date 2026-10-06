@@ -42,6 +42,21 @@ trap cleanup EXIT
 echo "== building the cloud route from a clean checkout =="
 git archive --format=tar HEAD | tar x -C "$WORK"
 
+# GITHUB_REF_NAME comes from the tag in CI. It was frozen at v2.5.3 so that the
+# value was visible in the invocation, and that made the check UNSATISFIABLE the
+# moment the workspace moved past 2.5.3: the script asserted the workspace
+# version equals a literal that stopped being true, so it reported a cloud-route
+# parity failure on a cloud route that had never changed. The same failure shape
+# as ADR-0157's two criteria, and found the same way: a contract written by hand
+# that names something which stopped existing. Deriving it from the workspace
+# version is also what CI really does — §2.3 guarantees the tag being published
+# IS the workspace version, so the two are equal by contract, not by coincidence.
+WORKSPACE_VERSION="$(awk '/^\[workspace\.package\]/{f=1; next} f && /^version = /{gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+if [ -z "$WORKSPACE_VERSION" ]; then
+    echo "no se pudo leer [workspace.package] version del Cargo.toml" >&2
+    exit 2
+fi
+
 # The body below is release.yml:103-141 (the `framework-bundle` job's `run:`),
 # with the two changes that only exist to make it observable here: the version
 # comes from the environment instead of ${GITHUB_REF_NAME#v}, and the tarball
@@ -49,7 +64,7 @@ git archive --format=tar HEAD | tar x -C "$WORK"
 podman run --rm \
     -v "$WORK:/w:ro" \
     -w /tmp \
-    -e GITHUB_REF_NAME=v2.5.3 \
+    -e GITHUB_REF_NAME="v$WORKSPACE_VERSION" \
     docker.io/library/bash:latest \
     bash -c '
         set -euo pipefail
