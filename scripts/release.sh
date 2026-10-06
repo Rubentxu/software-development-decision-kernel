@@ -1542,6 +1542,53 @@ else
          Log: $PURITY_LOG"
 fi
 
+# 3q. El gate de arquitectura declara quince leyes y el veredicto se lee como
+# "el repositorio cumple estas quince". MEDIDO antes de escribirlo: de las
+# quince solo CUATRO producen Pass/Fail (ARCH001, ARCH002, ARCH003, ARCH008) y
+# las dos ultimas estan WAIVED, luego las que median eran dos. Once no median
+# nada, y ahora que ARCH006..ARCH012 tienen evaluador son cinco stubs
+# NotApplicable, dos crates del workspace que ninguna regla nombra, y una ley
+# que se mide y no se sostiene (ARCH010, 14 aristas).
+#
+# Este paso no exige que la brecha esté cerrada: la exige DECLARADA y exacta.
+# Un gate rojo aqui sin poder cerrarse en esta release bloquearia todas las
+# siguientes sin cambiar el producto, que es un gate que solo sabe decir que
+# no. Los dientes estan en las dos direcciones, que es lo que lo hace util: un
+# hallazgo nuevo es rojo, y un hallazgo declarado que desaparece tambien es rojo
+# porque habria que quitar su declaracion.
+#
+# El binario se pasa por SDDK_BIN porque D4 EJECUTA el gate: sin un binario de
+# este checkout responderia con cero leyes en FAIL no porque no haya ninguna,
+# sino porque es el anterior a los seis evaluadores, y las dos salidas son la
+# misma cadena vacia.
+step "3q/15 — el gate de arquitectura declara quince leyes; cuatro median y lo demas esta declarado"
+ARCH_COVERAGE_LOG="$RELEASE_SCRATCH/c5_architecture_coverage.log"
+ARCH_COVERAGE_MUT_LOG="$RELEASE_SCRATCH/c5_architecture_coverage_mutation.log"
+if test_gate "test_c5_architecture_coverage.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif SDDK_BIN="$BIN" bash tests/test_c5_architecture_coverage.sh >"$ARCH_COVERAGE_LOG" 2>&1; then
+    ok "cobertura del gate de arquitectura: $(grep -m1 '^PASS=' "$ARCH_COVERAGE_LOG" || echo PASS)"
+else
+    tail -40 "$ARCH_COVERAGE_LOG" >&2
+    die "la cobertura declarada del gate de arquitectura no coincide con la medida.
+         O aparece una brecha que nadie declaro (una ley nueva sin evaluador, un stub
+         nuevo, un crate que ninguna regla nombra, o una ley que ahora falla), o
+         desaparece una declaracion porque su deuda se cerro y nadie la quito.
+         Log: $ARCH_COVERAGE_LOG"
+fi
+if test_gate "test_c5_architecture_coverage_mutation.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_c5_architecture_coverage_mutation.sh >"$ARCH_COVERAGE_MUT_LOG" 2>&1; then
+    ok "autofalsación de la cobertura del gate: $(grep -m1 '^PASS=' "$ARCH_COVERAGE_MUT_LOG" || echo PASS)"
+else
+    tail -30 "$ARCH_COVERAGE_MUT_LOG" >&2
+    die "la autofalsacion de la cobertura no pasa: cada uno de los cuatro dientes
+         tiene que CAER por su propia mutacion y solo por ella, y las dos
+         direcciones de la declaracion tienen que estar vigiladas. Si esto cae por
+         SKIP>0, una mutacion no se aplico y se esta contando como deteccion.
+         Log: $ARCH_COVERAGE_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"
