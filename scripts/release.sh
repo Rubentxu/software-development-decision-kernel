@@ -1589,6 +1589,58 @@ else
          Log: $ARCH_COVERAGE_MUT_LOG"
 fi
 
+# --- 3r: la build del provider se OBSERVA; la familia se NOMA -----------------
+#
+# `provider_build` entra en el digest de la evidencia, luego un literal ahi hace
+# que dos proveedores distintos que sirven el mismo claim produzcan evidencia
+# INDISTINGUIBLE, y que un receipt afirme una identidad de build sin haberla
+# medido. MEDIDO: `verify_kernel_cmd.rs` construia el `AnalysisBasis` a mano con
+# `provider_build: "cognicode-mcp/verify-cmd".to_string()` mientras acababa de
+# arrancar el binario que le pasa el operador con `--provider-bin`.
+#
+# Por que este guard tiene una capa POSITIVA y no solo prohibiciones: sin
+# comprobar que el build observado sigue siendo load-bearing, las capas A y B se
+# cumplen igual BORRANDO el campo, y eso no seria una correccion sino destruir la
+# trazabilidad y llamarle neutralidad. Un guard que solo prohibe empuja al
+# primero que llega a "neutralizar" escribiendo una falsehood.
+#
+# Los dos van juntos porque el falsador es la unica prueba de que el guard
+# tiene dientes: el guard solo, sin su autofalsacion, es prosa con codigo de
+# salida. El falsador distingue DETECTADA de MAL MOTIVO —caer por la comprobacion
+# equivocada no es detectar— y trata una mutacion no aplicada como SKIP, nunca
+# como PASS.
+step "3r/15 — la build del provider se observa y su falsador cae por su propia comprobacion"
+PROV_LOG="$RELEASE_SCRATCH/provider_neutral_provenance.log"
+PROV_MUT_LOG="$RELEASE_SCRATCH/provider_neutral_provenance_mutation.log"
+if test_gate "test_provider_neutral_provenance.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash tests/test_provider_neutral_provenance.sh >"$PROV_LOG" 2>&1; then
+    ok "procedencia del provider: $(grep -m1 '^RESULT: PASS' "$PROV_LOG" || echo PASS)"
+else
+    tail -30 "$PROV_LOG" >&2
+    die "el runtime vuelve a afirmar una build de proveedor sin medirla. Si cae por
+         A, el runtime construye el AnalysisBasis a mano o el literal de build no
+         medido volvio a algun modulo de src/. Si cae por B, provider_build ha dejado
+         de derivarse del server_info NEGOCIADO — ojo: B2 mira CODIGO, no prosa, y
+         por eso el doc que cita serverInfo no lo satisface. Si cae por D, la
+         identidad observada ha dejado de ser load-bearing, y eso NO se arregla
+         quitting el digest: seria borrar la trazabilidad.
+         Log: $PROV_LOG"
+fi
+if test_gate "falsificar-guard-provenance.sh"; then
+    :   # NO_EJECUTADO declarado por test_gate; ni PASS ni FAIL
+elif bash docs/roadmap/receipts/c3m3-provider-neutral-provenance/falsificar-guard-provenance.sh >"$PROV_MUT_LOG" 2>&1; then
+    ok "autofalsacion de la procedencia: $(grep -m1 '^RESULT: PASS' "$PROV_MUT_LOG" || echo PASS)"
+else
+    tail -30 "$PROV_MUT_LOG" >&2
+    die "la autofalsacion de la procedencia no pasa. Cada una de las ocho mutaciones
+         tiene que CAER por su propia comprobacion y solo por ella: un MAL MOTIVO
+         significa que cayo por otra, que es tan ciego como no caer. Si esto cae por
+         SKIP>0, una mutacion no se aplico y se esta contando como deteccion — una
+         falsacion muerta no es una falsacion.
+         Log: $PROV_MUT_LOG"
+fi
+
 # --- 4. manifest ---
 
 step "4/15 — regenerate MANIFEST.sha256"
