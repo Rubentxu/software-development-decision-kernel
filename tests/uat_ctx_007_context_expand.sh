@@ -256,9 +256,33 @@ else
 fi
 
 # ── 5. ContextReadRecord actualizado: el log crece por sesión ──────────────
+#
+# MEDIDO (session-85, VA17): esta asercion hardcodeaba
+# `projects/$PROJECT_ID/context/reads/...`, que es el layout POR PROYECTO. Con
+# los cuatro almacenes de sesion movidos a POR WORKTREE, el fichero se escribe
+# en `projects/<p>/workspaces/<w>/context/reads/...` y el guion daba
+# `FAIL: no existe el read log` con el producto escribiendo correctamente.
+#
+# El arreglo NO es actualizar la constante al path nuevo: un test que lleva el
+# layout dentro es un test acoplado al layout, y esta PRE-FLIGHT acababa de
+# cambiar el layout. Se LOCALIZA, que es lo que ya hacen los pasos 1-4 de este
+# mismo guion, y luego se AFIRMA la propiedad nueva: que el almacen cuelgue de
+# un `workspaces/<id>` y no de la raiz del proyecto. Asi la asercion no solo
+# sobrevive al cambio, dice por que existo.
 step "ContextReadRecord: una fila por expand, persistida y creciente"
-READS_FILE="$XDG_DATA_HOME/sddk/projects/$PROJECT_ID/context/reads/uat-015-bound.json"
-if [ -f "$READS_FILE" ]; then
+READS_FILE="$(find "$XDG_DATA_HOME/sddk/projects/$PROJECT_ID" \
+    -path '*/context/reads/uat-015-bound.json' -type f 2>/dev/null | head -1)"
+if [ -z "$READS_FILE" ]; then
+    fail "no existe el read log de la sesion bajo $XDG_DATA_HOME/sddk/projects/$PROJECT_ID"
+elif [ -f "$READS_FILE" ]; then
+    case "$READS_FILE" in
+        */workspaces/*/context/reads/*)
+            ok "el read log cuelga de un worktree, no de la raiz del proyecto"
+            ;;
+        *)
+            fail "el read log esta fuera de workspaces/<id>/: $READS_FILE"
+            ;;
+    esac
     N_READS="$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$READS_FILE")"
     if [ "$N_READS" -ge 2 ]; then
         ok "read log acumula $N_READS lecturas (cycle + work-item)"
@@ -275,8 +299,6 @@ if [ -f "$READS_FILE" ]; then
     else
         fail "el log no lleva el content_sha256 del expand"
     fi
-else
-    fail "no existe el read log de la sesión: $READS_FILE"
 fi
 
 # ── 6. Ref desconocida: error tipado con las refs disponibles ──────────────

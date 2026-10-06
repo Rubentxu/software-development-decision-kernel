@@ -50,6 +50,18 @@ pub struct AdoptionPaths {
     pub cache: PathBuf,
     /// Workspace-specific adoption receipt.
     pub receipt: PathBuf,
+    /// Workspace-scoped root of the four session stores (bindings, capsules,
+    /// deltas, reads).
+    ///
+    /// These are WORKSPACE-scoped on purpose and PROJECT-scoped fields are not:
+    /// a session binding describes where an agent was when it ran, and two
+    /// worktrees of the same project are two different places. VA16 measured
+    /// that with the stores hanging off `project_data` a second worktree
+    /// silently inherited the first one's binding, its semantic refs and its
+    /// context basis, with no marker and no warning. `knowledge_profile`,
+    /// `artifacts`, `cycle_artifacts` and `generated` stay project-scoped:
+    /// they describe the project, not the place it is checked out.
+    pub session_root: PathBuf,
 }
 
 impl AdoptionPaths {
@@ -164,6 +176,14 @@ pub fn resolve_xdg_paths(
             .join("workspaces")
             .join(workspace_id)
             .join("adoption.json"),
+        // The session stores live NEXT TO the receipt, which is already the one
+        // workspace-scoped path. Reusing it keeps a single workspace anchor: a
+        // second authority for "where this worktree is" would be exactly the
+        // kind of divergence VA15 and VA16 measured.
+        session_root: project_data
+            .join("workspaces")
+            .join(workspace_id)
+            .join("context"),
     })
 }
 

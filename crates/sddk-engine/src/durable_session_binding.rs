@@ -7,9 +7,13 @@
 //! canonica (`AgenticSessionRef`) y el mismo modelo (no hay segundo modelo
 //! de binding).
 //!
-//! Layout: `<data_home>/sddk/context/bindings/<session_id>.json`
+//! Layout: `<data_home>/sddk/projects/<project_id>/workspaces/<workspace_id>/`
+//! `context/bindings/<session_id>.json`
 //! (un fichero por sesion; JSON canonico de `AgenticBinding`, que ya es
-//! Serialize/Deserialize). El path raiz lo inyecta el caller (la CLI lo
+//! Serialize/Deserialize). Los cuatro almacenes de sesion (capsules, bindings,
+//! reads, deltas) son POR WORKSPACE, no por proyecto: `session_root` es
+//! `projects/<project_id>/workspaces/<workspace_id>/context`, el mismo anchor
+//! que el receipt de adoption. El path raiz lo inyecta el caller (la CLI lo
 //! resuelve desde su XDG data dir — un solo resolver de rutas, nunca dos).
 
 use crate::agentic_session_binding::{AgenticBinding, AgenticSessionRef};

@@ -626,6 +626,13 @@ struct ContextBootstrapArgsCli {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     format: OutputFormat,
+    /// Adopt a persisted binding that belongs to another workspace, or names
+    /// none, instead of refusing (VA17).
+    ///
+    /// Without this, `context bootstrap` is fail-closed on a cross-workspace
+    /// session. With it, the crossing is explicit and leaves a receipt.
+    #[arg(long)]
+    rebind: bool,
 }
 
 #[derive(Debug, Args)]
@@ -2017,6 +2024,7 @@ fn run_context(command: ContextCommand, environment: &CliEnvironment) -> Command
                 cycle: args.cycle,
                 format: args.format,
                 now_ms: now_ms_since_epoch(),
+                rebind: args.rebind,
             };
             match context_cmd::bootstrap(&service_args, environment) {
                 Ok(result) => match render(&result, service_args.format, context_bootstrap_text) {
@@ -2153,6 +2161,15 @@ fn context_delta_text(result: &context_cmd::ContextDeltaResult) -> String {
     }
     if !result.replay_skipped.is_empty() {
         out.push_str(&format!("skipped: {}\n", result.replay_skipped.join(", ")));
+    }
+    if let Some(legacy) = &result.legacy_deltas {
+        out.push_str(&format!(
+            "legacy_deltas_not_visible: {} ({} ficheros en {} directorio(s) de sesion)\n",
+            legacy.path, legacy.files, legacy.sessions
+        ));
+        out.push_str(
+            "  el drain no los lee y el comando NO falla: se drena igualmente lo que este\n  worktree puede ver. Esa ruta es del layout anterior al de workspaces.\n",
+        );
     }
     out.push_str(&format!("facts: {}\n", result.facts));
     out.push_str(&format!("advisory: {}\n", result.advisory));

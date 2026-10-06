@@ -73,6 +73,16 @@ pub struct ContextBasis {
 pub struct AgenticBinding {
     pub session: AgenticSessionRef,
     pub target: BindingTarget,
+    /// Workspace this binding was observed in.
+    ///
+    /// `None` means **UNKNOWN**, never "any workspace". Bindings written before
+    /// the session stores became workspace-scoped carry no workspace, and a host
+    /// that does not observe one leaves it absent. A caller reading a persisted
+    /// binding MUST treat `None` as grounds for an explicit rebind rather than
+    /// as permission to adopt it: adopting an unknown-workspace binding is how
+    /// one worktree ends up continuing another's work.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     /// Semantic references persisted by SDDK (receipts, evidence,
     /// contribution ids). Transcript stays host-owned.
     pub semantic_refs: Vec<String>,
@@ -82,15 +92,69 @@ pub struct AgenticBinding {
     pub receipts: Vec<String>,
 }
 
+/// Verdict on adopting a persisted binding from an observed workspace (VA17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceAdoption {
+    /// The binding was made in the workspace being operated on.
+    Same,
+    /// The binding names a different workspace. Adoption requires an explicit
+    /// rebind: silently continuing someone else's workspace is the defect
+    /// VA16 measured, and a rebind records a receipt (ASB-005).
+    Foreign(String),
+    /// The binding does not name a workspace. Unknown is NOT a wildcard.
+    Unknown,
+}
+
+impl WorkspaceAdoption {
+    /// True when the binding can be adopted without an explicit rebind.
+    #[must_use]
+    pub fn is_adoptable(&self) -> bool {
+        matches!(self, Self::Same)
+    }
+}
+
 impl AgenticBinding {
     #[must_use]
     pub fn attach(session: AgenticSessionRef, target: BindingTarget) -> Self {
+        Self::attach_in_workspace(session, target, None)
+    }
+
+    /// Attach recording the workspace the binding was observed in (VA17).
+    ///
+    /// The three-argument form is the one production callers use. `attach`
+    /// stays as the unknown-workspace constructor and is NOT a default for
+    /// production: a binding that does not say where it was made cannot be
+    /// checked on reattach, which is exactly the gap VA16 measured.
+    #[must_use]
+    pub fn attach_in_workspace(
+        session: AgenticSessionRef,
+        target: BindingTarget,
+        workspace_id: Option<String>,
+    ) -> Self {
         Self {
             session,
             target,
+            workspace_id,
             semantic_refs: Vec::new(),
             context_basis: None,
             receipts: Vec::new(),
+        }
+    }
+
+    /// Whether a persisted binding may be adopted from the workspace the
+    /// caller just observed, without an explicit rebind (VA17).
+    ///
+    /// The stores being workspace-scoped already makes a foreign binding
+    /// unreachable through the filesystem. This is the explicit form of that
+    /// same rule: it is auditable, and a canary can fail when the filesystem
+    /// guarantee is broken (a restored backup, a copied file, a future caller
+    /// that passes a project-scoped root again).
+    #[must_use]
+    pub fn adoption_verdict(&self, observed_workspace: &str) -> WorkspaceAdoption {
+        match self.workspace_id.as_deref() {
+            Some(bound) if bound == observed_workspace => WorkspaceAdoption::Same,
+            Some(bound) => WorkspaceAdoption::Foreign(bound.to_string()),
+            None => WorkspaceAdoption::Unknown,
         }
     }
 
@@ -147,6 +211,24 @@ pub enum AgenticBindingError {
     DuplicateSession { session: String },
     #[error("session {session} not bound")]
     UnknownSession { session: String },
+    /// A binding persisted for a different workspace was found where the
+    /// caller operates (VA17). Adoption is refused: an explicit rebind is
+    /// required, because continuing another workspace's work silently is the
+    /// defect this error exists to make impossible.
+    #[error(
+        "session {session} is bound to workspace {bound}, not {observed}: explicit rebind required"
+    )]
+    WorkspaceMismatch {
+        session: String,
+        bound: String,
+        observed: String,
+    },
+    /// A binding that names no workspace was found (VA17). Unknown is not a
+    /// wildcard: an explicit rebind is required rather than silent adoption.
+    #[error(
+        "session {session} carries no workspace and cannot be adopted silently: explicit rebind required"
+    )]
+    WorkspaceUnknown { session: String },
 }
 
 /// Store of bindings, keyed by session identity. Multiple sessions

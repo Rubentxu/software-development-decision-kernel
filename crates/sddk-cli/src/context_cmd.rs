@@ -21,7 +21,7 @@ use crate::cycle::{InferenceError, RuntimeArgs, resolve_cycle_context};
 use crate::{CliEnvironment, OutputFormat, canonical_root, path_string, resolve_remote};
 use sddk_domain::stable_workspace_id;
 use sddk_engine::agentic_session_binding::{
-    AgenticBinding, AgenticSessionRef, BindingTarget, ContextBasis,
+    AgenticBinding, AgenticSessionRef, BindingTarget, ContextBasis, WorkspaceAdoption,
 };
 use sddk_engine::context_bridge::{ContextBridge, ContextDelta};
 use sddk_engine::context_capsule::{CapsuleTarget, CompilerPolicy, ContextCompiler};
@@ -54,6 +54,13 @@ pub(crate) struct ContextBootstrapArgs {
     pub format: OutputFormat,
     /// Current wall-clock in milliseconds (injected for determinism).
     pub now_ms: i64,
+    /// Adopt a persisted binding that belongs to another workspace, or that
+    /// names none, instead of refusing (VA17).
+    ///
+    /// This is the ONLY way to cross a workspace boundary, and it exists
+    /// because a fail-closed refusal with no way forward is not a policy, it is
+    /// a wall. It is always explicit: nothing infers it.
+    pub rebind: bool,
 }
 
 /// Which side of the durable delta stream this invocation acts on (CTX-008).
@@ -109,6 +116,39 @@ pub(crate) struct ContextDeltaResult {
     /// Content facts in the bridge after applying (advisory content only).
     pub facts: usize,
     pub advisory: usize,
+    /// Present ONLY when a drain found no delta file in the workspace-scoped
+    /// stream and the retired layout still holds something.
+    ///
+    /// It is a NOTICE, not a verdict: the drain drained what this worktree
+    /// can see, it did not fail, and the exit code does not change. What it
+    /// refuses to be is silent — an empty new layout and an invisible legacy
+    /// one look identical on stdout otherwise, and the second is data loss
+    /// dressed as success. `None` whenever there is nothing to report: a
+    /// notice that always fires trains the reader to skip it, which is the
+    /// same defect as the purity guard this repo already closed in VA14.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_deltas: Option<LegacyDeltasOut>,
+}
+
+/// Deltas this worktree cannot see, because they were written before the
+/// stores became workspace-scoped.
+///
+/// `path` is NAMED so the operator can go and look at it. Nothing here
+/// reads that tree, and nothing may: a fallback read would put back the
+/// second authority over session state that moving the stores removed.
+#[derive(Debug, Serialize)]
+pub(crate) struct LegacyDeltasOut {
+    /// The retired project-scoped delta root this worktree does NOT read.
+    pub path: String,
+    /// Session directories under it that hold at least one regular file.
+    pub sessions: usize,
+    /// Regular files counted across those directories.
+    ///
+    /// Deliberately NOT "delta files": which name a delta has on disk is
+    /// the store's business (`FilesystemDeltaStore`), and this notice must
+    /// not become a second authority about it. Counting entries is enough to
+    /// say "there is something here that you cannot see".
+    pub files: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -187,6 +227,26 @@ pub(crate) enum ContextBootstrapError {
     /// not disagree about whether a reference resolves.
     #[error("cycle not found: {cycle_id}\n  recovery: create the record or fix the reference")]
     CycleNotFound { cycle_id: String },
+    /// A persisted binding belongs to another workspace (VA17).
+    ///
+    /// Typed, and naming BOTH workspaces, because the operator's next question
+    /// is which session this was and whose it was. The recovery is an explicit
+    /// rebind; nothing reassigns on its own.
+    #[error(
+        "session {session} is bound to workspace {bound}, but this checkout is workspace {observed}\n  recovery: re-run with --rebind to adopt it explicitly, or use a different --session"
+    )]
+    WorkspaceMismatch {
+        session: String,
+        bound: String,
+        observed: String,
+    },
+    /// A persisted binding names no workspace (VA17). Unknown is not a
+    /// wildcard: adopting it silently is how one worktree continues another's
+    /// work.
+    #[error(
+        "session {session} carries no workspace\n  recovery: re-run with --rebind to adopt it explicitly, or use a different --session"
+    )]
+    WorkspaceUnknown { session: String },
 }
 
 /// Run the bootstrap service.
@@ -270,7 +330,7 @@ pub(crate) fn bootstrap(
     // not yet satisfy: it only *reads* a durable capsule, it never compiles
     // one. Producing no capsule is therefore an unsatisfied MUST, not a
     // successful no-op, and the status must say so (INC-DEBT-042).
-    let capsule_store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
+    let capsule_store = FilesystemCapsuleStore::open(capsule_root(&paths.session_root))
         .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
     let cycle_key = cycle_key(&cycle_state);
     let (context_source, basis_revision, capsule_id, status) =
@@ -336,45 +396,106 @@ pub(crate) fn bootstrap(
         },
     };
 
-    let existing = load_binding(&bindings_root(&paths.project_data), &session)
+    let existing = load_binding(&bindings_root(&paths.session_root), &session)
         .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
+
+    // VA17: a persisted binding may only be continued from the workspace that
+    // made it. The stores are already workspace-scoped, so reaching this point
+    // with a foreign binding means the filesystem guarantee was broken
+    // (restored backup, copied file, or a caller that passed a project-scoped
+    // root again) — and the filesystem being broken is exactly when an explicit
+    // check is worth having. Refusal names both workspaces and never
+    // reassigns: an automatic rebind would erase the evidence of the mismatch.
+    if !args.rebind
+        && let Some(previous) = &existing
+    {
+        match previous.adoption_verdict(&workspace_id) {
+            WorkspaceAdoption::Same => {}
+            WorkspaceAdoption::Foreign(bound) => {
+                return Err(ContextBootstrapError::WorkspaceMismatch {
+                    session: args.session.clone(),
+                    bound,
+                    observed: workspace_id.clone(),
+                });
+            }
+            WorkspaceAdoption::Unknown => {
+                return Err(ContextBootstrapError::WorkspaceUnknown {
+                    session: args.session.clone(),
+                });
+            }
+        }
+    }
+
     let binding_written = match existing {
         Some(previous) => {
+            // Crossing a workspace boundary is decided by the same verdict that
+            // gates admission above, so the refusal and the recovery cannot
+            // disagree about what "crossing" means.
+            let crossing = !previous.adoption_verdict(&workspace_id).is_adoptable();
             let mut next = previous.clone();
-            if next.target != target {
-                next = next.rebind(target, format!("context-bootstrap-{}", args.now_ms));
+            next.workspace_id = Some(workspace_id.clone());
+            if crossing || next.target != target {
+                let receipt = if crossing {
+                    format!("context-bootstrap-rebind-workspace-{}", args.now_ms)
+                } else {
+                    format!("context-bootstrap-{}", args.now_ms)
+                };
+                next = next.rebind(target, receipt);
             }
-            next.context_basis = Some(next_basis(previous.context_basis.as_ref(), &basis_revision));
+            // rebind() already drops the basis, and it must: the previous
+            // workspace's basis does not describe this one. A crossing restarts
+            // the sequence at 0 because it is a different basis, not an advance
+            // of the same one.
+            next.context_basis = if crossing {
+                Some(ContextBasis {
+                    revision: basis_revision.clone(),
+                    seq: 0,
+                })
+            } else {
+                Some(next_basis(previous.context_basis.as_ref(), &basis_revision))
+            };
             let unchanged = next == previous;
             if !unchanged {
-                save_binding(&bindings_root(&paths.project_data), &next)
+                save_binding(&bindings_root(&paths.session_root), &next)
                     .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
             }
             !unchanged
         }
         None => {
-            let mut binding = AgenticBinding::attach(session.clone(), target);
+            let mut binding = AgenticBinding::attach_in_workspace(
+                session.clone(),
+                target,
+                Some(workspace_id.clone()),
+            );
             binding.context_basis = Some(ContextBasis {
                 revision: basis_revision.clone(),
                 seq: 0,
             });
-            save_binding(&bindings_root(&paths.project_data), &binding)
+            save_binding(&bindings_root(&paths.session_root), &binding)
                 .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
             true
         }
     };
 
+    // Derived from the resolved workspace, not a literal: the old string named
+    // the pre-workspace layout and nobody checked it against the path that
+    // actually got written.
+    let binding_ref = format!(
+        "sddk/workspaces/{workspace_id}/context/bindings/{}.json",
+        args.session
+    );
+
     Ok(ContextBootstrapResult {
         status,
         project_id: identity.project_id.as_str().to_string(),
-        workspace_id,
         adoption: adoption_state,
         cycle: cycle_state,
         context_source,
         basis_revision,
         capsule_id,
-        binding_ref: format!("sddk/context/bindings/{}.json", args.session),
+        binding_ref,
         binding_written,
+        workspace_id,
     })
 }
 
@@ -536,10 +657,12 @@ fn xdg_of(environment: &CliEnvironment) -> XdgEnvironment {
     }
 }
 
-/// Durable capsule directory under the project data dir — the SAME resolver
-/// (`resolve_xdg_paths`) that adoption uses, never a second path authority.
-fn capsule_root(project_data: &Path) -> PathBuf {
-    project_data.join("context").join("capsules")
+/// Durable capsule directory under the WORKSPACE session root — the SAME
+/// resolver (`resolve_xdg_paths`) that adoption uses, never a second path
+/// authority. Workspace-scoped: a capsule compiled in one worktree is not the
+/// context of another (VA16).
+fn capsule_root(session_root: &Path) -> PathBuf {
+    session_root.join("capsules")
 }
 
 /// Run the durable delta operation (C3j objetivo 5, CTX-008).
@@ -565,7 +688,7 @@ pub(crate) fn delta(
     // The binding is the authority on what the session believes. A delta
     // against a session with no binding has no basis to bind to, so this is a
     // typed failure rather than a silent no-op.
-    let binding = load_binding(&bindings_root(&paths.project_data), &session)
+    let binding = load_binding(&bindings_root(&paths.session_root), &session)
         .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?
         .ok_or_else(|| {
             ContextBootstrapError::Durable(format!(
@@ -578,7 +701,7 @@ pub(crate) fn delta(
         .as_ref()
         .map_or_else(|| "empty".to_string(), |basis| basis.revision.clone());
 
-    let store = FilesystemDeltaStore::open(&deltas_root(&paths.project_data, &args.session))
+    let store = FilesystemDeltaStore::open(&deltas_root(&paths.session_root, &args.session))
         .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
 
     // A publish's `from_revision` is the session's CURRENT basis, so a
@@ -627,10 +750,25 @@ pub(crate) fn delta(
         let mut next = binding.clone();
         next.context_basis = Some(next_basis(binding.context_basis.as_ref(), &new_basis));
         if next != binding {
-            save_binding(&bindings_root(&paths.project_data), &next)
+            save_binding(&bindings_root(&paths.session_root), &next)
                 .map_err(|e| ContextBootstrapError::Durable(e.to_string()))?;
         }
     }
+
+    // An empty stream is ambiguous and the ambiguity is not academic: on a
+    // machine that still has pre-workspace deltas on disk, "nothing to
+    // drain" is the exact answer of a drain that is looking in a directory
+    // where the data stopped living. Both reads are distinguished HERE,
+    // where the outcome is in hand: an empty stream plus a non-empty retired
+    // tree is a notice, and an empty stream plus nothing is not.
+    let stream_saw_nothing = outcome.applied.is_empty()
+        && outcome.rejected.is_empty()
+        && outcome.replay_skipped.is_empty();
+    let legacy_deltas = if args.mode == DeltaMode::Drain && stream_saw_nothing {
+        legacy_deltas_present(&paths.project_data)
+    } else {
+        None
+    };
 
     Ok(ContextDeltaResult {
         status: "complete",
@@ -654,6 +792,7 @@ pub(crate) fn delta(
         replay_skipped: outcome.replay_skipped,
         facts: bridge.facts().len(),
         advisory: bridge.advisory().len(),
+        legacy_deltas,
     })
 }
 
@@ -759,10 +898,11 @@ pub(crate) struct ContextExpandResult {
     pub reads_recorded: usize,
 }
 
-/// Durable read-log directory: one JSON file per session under the project
-/// data dir (same XDG resolver as capsules/bindings — no second authority).
-fn reads_root(project_data: &Path) -> PathBuf {
-    project_data.join("context").join("reads")
+/// Durable read-log directory: one JSON file per session under the WORKSPACE
+/// session root (same XDG resolver as capsules/bindings — no second
+/// authority). Workspace-scoped, like the rest of the session stores.
+fn reads_root(session_root: &Path) -> PathBuf {
+    session_root.join("reads")
 }
 
 /// Upper bound on records kept per session read log (SPEC-011 §4: traces
@@ -795,7 +935,7 @@ pub(crate) fn expand(
 
     // 1. The binding is the authority on what this session may see.
     let session = AgenticSessionRef::new(args.session.clone());
-    let binding = load_binding(&bindings_root(&paths.project_data), &session)
+    let binding = load_binding(&bindings_root(&paths.session_root), &session)
         .map_err(|e| ContextExpandError::Durable(e.to_string()))?
         .ok_or_else(|| ContextExpandError::NoBinding {
             session: args.session.clone(),
@@ -811,7 +951,7 @@ pub(crate) fn expand(
     };
 
     // 2. The capsule of the bound cycle names what exists to expand.
-    let store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
+    let store = FilesystemCapsuleStore::open(capsule_root(&paths.session_root))
         .map_err(|e| ContextExpandError::Durable(e.to_string()))?;
     let capsule = store
         .last_capsule(&format!("cycle-{cycle_id}"))
@@ -950,7 +1090,7 @@ pub(crate) fn expand(
     recorder.add_category(&kind);
     let mut record = recorder.finish(&args.session, None);
     record.content_hashes = vec![content_sha256.clone()];
-    let reads_dir = reads_root(&paths.project_data);
+    let reads_dir = reads_root(&paths.session_root);
     std::fs::create_dir_all(&reads_dir).map_err(|e| ContextExpandError::Io(e.to_string()))?;
     let reads_path = reads_dir.join(format!("{}.json", args.session));
     let mut log: Vec<sddk_domain::ContextReadRecord> = std::fs::read(&reads_path)
@@ -1050,12 +1190,68 @@ struct ResolvedContextIdentity {
     workspace_id: String,
 }
 
-fn deltas_root(project_data: &Path, session: &str) -> PathBuf {
-    project_data.join("context").join("deltas").join(session)
+fn deltas_root(session_root: &Path, session: &str) -> PathBuf {
+    session_root.join("deltas").join(session)
 }
 
-fn bindings_root(project_data: &Path) -> PathBuf {
-    project_data.join("context").join("bindings")
+fn bindings_root(session_root: &Path) -> PathBuf {
+    session_root.join("bindings")
+}
+
+/// The RETIRED delta root: `project_data/context/deltas/<session>`.
+///
+/// This is the one place in the CLI allowed to name the pre-workspace
+/// layout, and it names it for the only honest reason left: to say that this
+/// worktree does not read it. `project_data` is still project-scoped, which
+/// is exactly why the retired path is reachable from here and why nothing
+/// else about the session stores is.
+fn legacy_deltas_root(project_data: &Path) -> PathBuf {
+    project_data.join("context").join("deltas")
+}
+
+/// Report delta files the retired layout still holds, if any.
+///
+/// `None` means "nothing to say": either the directory does not exist, or it
+/// exists and is empty, or every session directory under it is empty. Those
+/// three are the cases where staying quiet is the correct output, and a
+/// notice that fires on them would be noise.
+///
+/// `Some` is the case that matters: the workspace-scoped stream came back
+/// empty while the retired tree still has content this worktree cannot read.
+/// The caller decides what to do with it; this function only LOOKS, and only
+/// at directory entries — the delta contents are never opened, because
+/// reading them would mean serving them, and serving them from a second path
+/// is the whole defect this block removed.
+fn legacy_deltas_present(project_data: &Path) -> Option<LegacyDeltasOut> {
+    let root = legacy_deltas_root(project_data);
+    let sessions = std::fs::read_dir(&root).ok()?;
+    let mut seen_sessions = 0usize;
+    let mut files = 0usize;
+    for session in sessions.flatten() {
+        let path = session.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        let held = entries
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .count();
+        if held > 0 {
+            seen_sessions += 1;
+            files += held;
+        }
+    }
+    if files == 0 {
+        return None;
+    }
+    Some(LegacyDeltasOut {
+        path: path_string(&root).unwrap_or_else(|_| root.display().to_string()),
+        sessions: seen_sessions,
+        files,
+    })
 }
 
 /// Converge adoption (CTX-005). Reuses the adoption application service:
@@ -1171,6 +1367,9 @@ mod tests {
             cycle: None,
             format: OutputFormat::Json,
             now_ms: 1_760_000_000_000,
+            // Default is fail-closed: a test that wants to cross a workspace
+            // boundary must say so, exactly like the CLI does.
+            rebind: false,
         }
     }
 
@@ -1264,6 +1463,7 @@ mod tests {
                 session: "s-exit".into(),
                 cycle: None,
                 format: OutputFormat::Json,
+                rebind: false,
             }),
             &environment,
         );
@@ -1286,7 +1486,7 @@ mod tests {
         let tmp = tempdir("capsule-complete");
         let environment = environment(&tmp);
         bootstrap(&args_at(&tmp, "s-ok"), &environment).expect("seed");
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         plant(&store, &capsule(UNREACHABLE_CYCLE_KEY));
 
@@ -1355,7 +1555,7 @@ mod tests {
         let tmp = tempdir("capsule");
         let environment = environment(&tmp);
         bootstrap(&args_at(&tmp, "s-3"), &environment).expect("seed");
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         plant(&store, &capsule(UNREACHABLE_CYCLE_KEY));
 
@@ -1372,7 +1572,7 @@ mod tests {
         let tmp = tempdir("isolation");
         let environment = environment(&tmp);
         bootstrap(&args_at(&tmp, "s-4"), &environment).expect("seed");
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         plant(&store, &capsule("cycle-other"));
 
@@ -1530,7 +1730,7 @@ mod tests {
         assert_eq!(result.basis_revision, capsule_id);
 
         // 5. The durable capsule carries the REAL facts, not placeholders.
-        let store = FilesystemCapsuleStore::open(capsule_root(&paths.project_data))
+        let store = FilesystemCapsuleStore::open(capsule_root(&paths.session_root))
             .expect("reopen capsule store");
         let durable = store
             .last_capsule(&format!("cycle-{cycle_id}"))
@@ -1569,7 +1769,7 @@ mod tests {
         let tmp = tempdir("no-transcript");
         let environment = environment(&tmp);
         let result = bootstrap(&args_at(&tmp, "s-5"), &environment).expect("bootstrap");
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let session = AgenticSessionRef::new("s-5");
         let binding = load_binding(&bindings_root(&paths), &session)
             .expect("load")
@@ -1614,8 +1814,8 @@ mod tests {
         let environment = environment(&tmp);
         // A real cycle exists, so "not found" cannot be an artefact of an
         // empty ledger: the reference is wrong, not the project.
-        let project_data = plant_real_cycle(&tmp, &environment, "cycle-real");
-        let paths = project_paths(&tmp, &environment);
+        plant_real_cycle(&tmp, &environment, "cycle-real");
+        let paths = session_paths(&tmp, &environment);
 
         let mut explicit = args_at(&tmp, "s-missing");
         explicit.cycle = Some("cycle-does-not-exist".into());
@@ -1647,7 +1847,7 @@ mod tests {
         );
         // The real cycle planted by the fixture is untouched: the failure is
         // scoped to the bad reference, it does not poison the project.
-        let store = FilesystemCapsuleStore::open(capsule_root(&project_data)).expect("open store");
+        let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         assert!(
             store.last_capsule("cycle-cycle-real").is_none(),
             "the rejected reference must not have compiled a capsule"
@@ -1670,6 +1870,7 @@ mod tests {
                 session: "s-missing-exit".into(),
                 cycle: Some("cycle-does-not-exist".into()),
                 format: OutputFormat::Json,
+                rebind: false,
             }),
             &environment,
         );
@@ -1786,7 +1987,7 @@ mod tests {
         );
         assert_eq!(result.kind, "work-item");
         // La lectura queda registrada: el record existe y nombra el ref.
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let reads = std::fs::read_to_string(reads_root(&paths).join("s-exp-1.json"))
             .expect("reads file persisted");
         assert!(
@@ -1826,7 +2027,7 @@ mod tests {
             "decision content must carry the ledger rationale; got: {}",
             second.content
         );
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let reads =
             std::fs::read_to_string(reads_root(&paths).join("s-exp-2.json")).expect("reads file");
         assert_eq!(
@@ -1915,7 +2116,7 @@ mod tests {
             result.cycle,
             BootstrapCycleState::Explicit { ref cycle_id } if cycle_id == "cycle-explicit"
         ));
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let binding = load_binding(&bindings_root(&paths), &AgenticSessionRef::new("s-6b"))
             .expect("load")
             .expect("binding");
@@ -1935,7 +2136,7 @@ mod tests {
         let tmp = tempdir("explicit-capsule");
         let environment = environment(&tmp);
         plant_real_cycle(&tmp, &environment, "explicit");
-        let paths = project_paths(&tmp, &environment);
+        let paths = session_paths(&tmp, &environment);
         let store = FilesystemCapsuleStore::open(capsule_root(&paths)).expect("open store");
         plant(&store, &capsule("cycle-explicit"));
 
@@ -2035,24 +2236,7 @@ mod tests {
     /// injects a delta must never be able to write into the current working
     /// directory because a path resolved to something unexpected.
     fn deltas_dir(tmp: &Path, environment: &CliEnvironment, session: &str) -> PathBuf {
-        let canonical = std::fs::canonicalize(tmp)
-            .expect("canonicalize tmp")
-            .to_string_lossy()
-            .to_string();
-        let identity = sddk_domain::resolve_project_identity(
-            None,
-            ".",
-            Some(&sddk_domain::stable_fallback_seed(&canonical)),
-        )
-        .expect("identity");
-        let workspace_id = stable_workspace_id(&identity.project_id, &canonical);
-        let paths = sddk_engine::resolve_xdg_paths(
-            &xdg_of(environment),
-            identity.project_id.as_str(),
-            &workspace_id,
-        )
-        .expect("xdg paths");
-        let dir = deltas_root(&paths.project_data, session);
+        let dir = deltas_root(&session_paths(tmp, environment), session);
         assert!(
             dir.is_dir(),
             "deltas dir does not exist: {dir:?} (refusing to write into an unexpected path)"
@@ -2097,6 +2281,136 @@ mod tests {
         let drained = delta(&delta_args(&tmp, "s-e"), &environment).expect("drain");
         assert_eq!(drained.applied, 0);
         assert_eq!(drained.basis_revision, booted.basis_revision);
+    }
+
+    /// Retired delta root of this checkout, where pre-workspace sessions were
+    /// written. Derived from `project_data` through the one function that
+    /// knows the retired layout, so the test plants files exactly where the
+    /// notice looks and nowhere else.
+    fn legacy_dir(tmp: &Path, environment: &CliEnvironment) -> PathBuf {
+        legacy_deltas_root(&adoption_paths(tmp, environment).project_data)
+    }
+
+    /// A drain that sees NOTHING in the workspace-scoped stream must not
+    /// answer "nothing to drain" when the retired layout still holds deltas.
+    ///
+    /// That is data loss dressed as success, and it is worse than the leak
+    /// this layout closed: the operator would never learn that 94 files of
+    /// real history are sitting outside the tree this worktree reads.
+    ///
+    /// The planted content is deliberately NOT a parseable delta. The notice
+    /// must be produced by LOOKING, and a test whose fixture is loadable
+    /// would pass just as happily if some future change started reading (and
+    /// then serving) the retired tree.
+    #[test]
+    fn drain_warns_when_deltas_are_left_in_the_retired_layout() {
+        let tmp = tempdir("delta-legacy");
+        let environment = environment(&tmp);
+        let booted = bootstrap(&args_at(&tmp, "s-l"), &environment).expect("bootstrap");
+
+        let legacy = legacy_dir(&tmp, &environment);
+        let session_dir = legacy.join("s-l");
+        std::fs::create_dir_all(&session_dir).expect("plant retired session dir");
+        std::fs::write(session_dir.join("delta-000000000001.json"), b"{ not json")
+            .expect("plant retired delta");
+
+        let drained = delta(&delta_args(&tmp, "s-l"), &environment).expect("drain");
+        let notice = drained
+            .legacy_deltas
+            .as_ref()
+            .expect("a drain over an empty stream stayed silent about the retired layout");
+        assert_eq!(notice.path, path_string(&legacy).expect("path string"));
+        assert_eq!(notice.sessions, 1);
+        assert_eq!(notice.files, 1);
+
+        // It is a NOTICE: the drain did what it could and the session still
+        // believes what it believed. No error, no invented content.
+        assert_eq!(
+            drained.applied, 0,
+            "the retired tree must not be drained into the bridge"
+        );
+        assert_eq!(drained.basis_revision, booted.basis_revision);
+        assert_eq!(drained.facts, 0);
+
+        // And the operator has to SEE it, not only the machine reading JSON.
+        let text = crate::context_delta_text(&drained);
+        assert!(
+            text.contains("legacy_deltas_not_visible"),
+            "the notice never reached the rendered output: {text}"
+        );
+        assert!(
+            text.contains(&path_string(&legacy).expect("path string")),
+            "the notice does not NAME the path where the unseen deltas may be: {text}"
+        );
+    }
+
+    /// The control the notice needs most: with no retired layout on disk
+    /// there is nothing to warn about, and saying so anyway is the noise that
+    /// trains a reader to skip the line above.
+    #[test]
+    fn drain_stays_silent_when_the_retired_layout_is_absent() {
+        let tmp = tempdir("delta-no-legacy");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-n"), &environment).expect("bootstrap");
+
+        let drained = delta(&delta_args(&tmp, "s-n"), &environment).expect("drain");
+        assert!(
+            drained.legacy_deltas.is_none(),
+            "a warning fired with no retired layout on disk: {:?}",
+            drained.legacy_deltas
+        );
+        assert!(!crate::context_delta_text(&drained).contains("legacy_deltas_not_visible"));
+    }
+
+    /// Existing-but-empty is the case that separates "the retired layout is
+    /// there" from "the retired layout holds something". Only the second is
+    /// worth a word.
+    #[test]
+    fn drain_stays_silent_when_the_retired_layout_holds_nothing() {
+        let tmp = tempdir("delta-empty-legacy");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-q"), &environment).expect("bootstrap");
+
+        // The shape a drained or abandoned session leaves behind: the
+        // directories exist and there is nothing inside them.
+        std::fs::create_dir_all(legacy_dir(&tmp, &environment).join("s-q"))
+            .expect("empty session dir");
+
+        let drained = delta(&delta_args(&tmp, "s-q"), &environment).expect("drain");
+        assert!(
+            drained.legacy_deltas.is_none(),
+            "a warning fired for an empty retired layout: {:?}",
+            drained.legacy_deltas
+        );
+    }
+
+    /// A stream that DOES hold deltas needs no notice: the operator is
+    /// looking at content, not at an absence, and the retired layout would
+    /// only add a line they have no reason to read.
+    #[test]
+    fn drain_stays_silent_when_the_workspace_stream_has_content() {
+        let tmp = tempdir("delta-populated");
+        let environment = environment(&tmp);
+        bootstrap(&args_at(&tmp, "s-p"), &environment).expect("bootstrap");
+        delta(
+            &publish(&tmp, "s-p", "r1", &["el ledger esta bloqueado"]),
+            &environment,
+        )
+        .expect("publish");
+
+        let legacy = legacy_dir(&tmp, &environment);
+        let session_dir = legacy.join("s-p");
+        std::fs::create_dir_all(&session_dir).expect("plant retired session dir");
+        std::fs::write(session_dir.join("delta-000000000001.json"), b"{ not json")
+            .expect("plant retired delta");
+
+        let drained = delta(&delta_args(&tmp, "s-p"), &environment).expect("drain");
+        assert_eq!(drained.applied, 1);
+        assert!(
+            drained.legacy_deltas.is_none(),
+            "a populated stream still warned about the retired layout: {:?}",
+            drained.legacy_deltas
+        );
     }
 
     /// A delta against a session with no durable binding has no basis to bind
@@ -2277,9 +2591,14 @@ mod tests {
         hash
     }
 
-    /// Project data dir of this checkout, resolved with the SAME resolver that
-    /// adoption uses.
-    fn project_paths(tmp: &Path, environment: &CliEnvironment) -> PathBuf {
+    /// Fully resolved adoption paths of this checkout.
+    ///
+    /// ONE resolver, ONE authority for the layout. `session_paths` below is a
+    /// single field read on this value: the session stores are workspace-scoped,
+    /// while `project_data` stays project-scoped. Rebuilding either path by hand
+    /// (`join("workspaces")`, `join("context")`) would reintroduce exactly the
+    /// second authority that the workspace-scoped layout just removed.
+    fn adoption_paths(tmp: &Path, environment: &CliEnvironment) -> sddk_engine::AdoptionPaths {
         let canonical = std::fs::canonicalize(tmp)
             .expect("canonicalize tmp")
             .to_string_lossy()
@@ -2297,7 +2616,18 @@ mod tests {
             &workspace_id,
         )
         .expect("paths")
-        .project_data
+    }
+
+    /// Root of the four session stores (capsules, bindings, reads, deltas) of
+    /// this checkout's workspace.
+    ///
+    /// The stores moved from `project_data/context/**` to this workspace-scoped
+    /// root, so a test that wants to read durable session state must resolve the
+    /// session root, not the project data dir. `project_data` still describes the
+    /// project and stays the anchor for project-scoped state, which is why this
+    /// helper reads the SAME resolver above instead of re-deriving the layout.
+    fn session_paths(tmp: &Path, environment: &CliEnvironment) -> PathBuf {
+        adoption_paths(tmp, environment).session_root
     }
 
     fn tempdir(label: &str) -> PathBuf {
