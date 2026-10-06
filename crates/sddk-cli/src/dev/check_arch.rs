@@ -116,7 +116,7 @@ pub(super) fn run_check_architecture(args: super::CheckArchitectureArgs) -> Comm
     // INC-DEBT-018: decide waiver expiry by real git ancestry, not lexicographic
     // SHA compare (a fixed granted_until_sha expired on every commit otherwise).
     let resolver = git_ancestry_resolver(root);
-    let evaluations = evaluate_all_with_resolver(&registry, &baseline, &now, resolver);
+    let evaluations = evaluate_all_with_resolver(&registry, &baseline, &now, resolver, Some(root));
 
     // ── Render tabular output ──────────────────────────────────────────────
     let mut rows: Vec<ArchCheckRow> = Vec::new();
@@ -265,6 +265,13 @@ fn detail_for(
     match status {
         RuleStatus::Pass => String::new(),
         RuleStatus::Fail => {
+            // An evaluator that knows what its violations ARE says so. Without
+            // this, a manifest rule rendered as "3 edge(s) detected" because
+            // the only fallback counted things: "edge" is ARCH001's noun, not
+            // the vocabulary of a pack manifest or a governed-effect scan.
+            if let Some(summary) = observed.get("summary").and_then(|v| v.as_str()) {
+                return summary.to_owned();
+            }
             if let Some(count) = observed.get("count").and_then(|v| v.as_u64()) {
                 if count == 0 {
                     return "violation detected".to_owned();

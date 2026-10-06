@@ -193,7 +193,21 @@ restore
 echo
 echo "== M4: la declaracion pierde un stub que sigue existiendo =="
 restore
-sed -i 's|^DECLARED_STUBS="ARCH004 ARCH005 ARCH013 ARCH014 ARCH015"$|DECLARED_STUBS="ARCH004 ARCH005 ARCH013 ARCH014"|' "$GUARD_GUARD"
+# La lista se lee del propio guard y se acorta por el ULTIMO elemento, en vez de
+# escribirla entera aqui. Escribiendola fija, cada cierre de deuda (que cambia
+# la lista) dejaba esta mutacion sin aplicar: SKIP, que no es PASS, luego la
+# segunda mitad de D2 se dejaba de ejercitar sola y sin que nadie lo dijera.
+CUR_STUBS="$(sed -n 's|^DECLARED_STUBS="\(.*\)"$|\1|p' "$GUARD_GUARD" | head -1)"
+if [ -z "$CUR_STUBS" ]; then
+    echo "  [FAIL] M4 no pudo leer DECLARED_STUBS: el guard cambio de forma"
+    FAIL=$((FAIL + 1))
+    restore
+else
+    # tr separa la lista por espacios en vez de confiar en el word splitting
+    # de un $VAR sin comillas: mismo resultado, sin riesgo de globbing.
+    SHORT_STUBS="$(printf '%s\n' "$CUR_STUBS" | tr ' ' '\n' | head -n -1 | tr '\n' ' ' | sed 's/ *$//')"
+    sed -i "s|^DECLARED_STUBS=\"$CUR_STUBS\"\$|DECLARED_STUBS=\"$SHORT_STUBS\"|" "$GUARD_GUARD"
+fi
 if cmp -s "$GUARD_GUARD" "$WORK/guard.sh.orig"; then
     echo "  [SKIP] M4 no aplico: el guard quedo byte-identico"
     SKIP=$((SKIP + 1))

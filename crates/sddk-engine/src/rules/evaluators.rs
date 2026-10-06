@@ -79,15 +79,20 @@ fn git_is_ancestor(repo_root: &std::path::Path, ancestor: &str, descendant: &str
         .unwrap_or(false)
 }
 
+/// `root` is the checkout the tree-reading rules (ARCH004, ARCH005) measure
+/// against. `None` means "no tree was supplied", and those two rules then
+/// report `NotApplicable` with a provenance that says the measurement was NOT
+/// performed — never a `Pass` they did not earn.
 pub fn evaluate_all(
     registry: &RuleRegistry,
     baseline: &Baseline,
     evaluated_at: &str,
+    root: Option<&Path>,
 ) -> Vec<RuleEvaluation> {
     // Legacy lexicographic resolver (head_anchor <= granted_until_sha).
     let resolver: sddk_domain::WaiverExpiryResolver =
         std::sync::Arc::new(|head: &str, until: &str| head <= until);
-    evaluate_all_with_resolver(registry, baseline, evaluated_at, resolver)
+    evaluate_all_with_resolver(registry, baseline, evaluated_at, resolver, root)
 }
 
 /// Like [`evaluate_all`], but the waiver-expiry decision comes from the
@@ -99,6 +104,7 @@ pub fn evaluate_all_with_resolver(
     baseline: &Baseline,
     evaluated_at: &str,
     resolver: sddk_domain::WaiverExpiryResolver,
+    root: Option<&Path>,
 ) -> Vec<RuleEvaluation> {
     registry
         .iter()
@@ -150,8 +156,8 @@ pub fn evaluate_all_with_resolver(
                 "ARCH001" => evaluate_arch001(rule, baseline, evaluated_at),
                 "ARCH002" => evaluate_arch002(rule, baseline, evaluated_at),
                 "ARCH003" => evaluate_arch003(rule, baseline, evaluated_at),
-                "ARCH004" => evaluate_arch004(rule, baseline, evaluated_at),
-                "ARCH005" => evaluate_arch005(rule, baseline, evaluated_at),
+                "ARCH004" => evaluate_arch004(rule, baseline, evaluated_at, root),
+                "ARCH005" => evaluate_arch005(rule, baseline, evaluated_at, root),
                 "ARCH006" => evaluate_arch006(rule, baseline, evaluated_at),
                 "ARCH007" => evaluate_arch007(rule, baseline, evaluated_at),
                 "ARCH008" => evaluate_arch008(rule, baseline, evaluated_at),
@@ -358,49 +364,488 @@ fn evaluate_arch003(
 
 // ── ARCH004 ──────────────────────────────────────────────────────────────────
 
-/// packs_must_declare_dependencies: NotApplicable in the kernel repo
-/// (Phase 4 pack-host substrate not shipped here).
-fn evaluate_arch004(
+/// Veredicto honesto cuando no hay árbol contra el que medir.
+///
+/// Estas dos leyes (ARCH004, ARCH005) son las únicas que leen el disco, y un
+/// `NotApplicable` que no distingue "no había nada que medir" de "no medí"
+/// es exactamente el defecto que este ciclo viene a cerrar: el evaluador
+/// anterior decía `NotApplicable` con un motivo falso (`kernel repo, not a
+/// pack host`) sobre un repo que SÍ tiene pack. Por eso el motivo dice
+/// exactamente qué falta, y por eso el estado NO es `Pass`.
+fn not_measured(
     rule: &sddk_domain::ArchitectureRule,
     baseline: &Baseline,
     evaluated_at: &str,
+    what: &str,
 ) -> RuleEvaluation {
     RuleEvaluation {
         rule_id: rule.id.clone(),
         status: RuleStatus::NotApplicable,
-        observed: json!({}),
+        observed: json!({ "measured": false }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
         evaluated_by: format!("sddk-rules-cli@{EVALUATOR_VERSION}"),
         waiver_id: None,
-        evaluator_kind: EvaluatorKind::Schema,
+        evaluator_kind: EvaluatorKind::Heuristic,
         evaluator_version: EVALUATOR_VERSION.to_owned(),
-        provenance: Some(
-            "kernel repo, not a pack host (Phase 4 substrate not shipped here)".to_owned(),
-        ),
+        provenance: Some(format!(
+            "NOT MEASURED: no repository root was supplied, so {what} was never looked at. \
+             This is an absent measurement, not a clean one."
+        )),
+    }
+}
+
+/// Filename locator for pack manifests: `packs/<name>/manifest.toml`.
+fn pack_manifests(root: &Path) -> Vec<PathBuf> {
+    let packs = root.join("packs");
+    let mut out = Vec::new();
+    if let Ok(entries) = fs::read_dir(&packs) {
+        for entry in entries.flatten() {
+            let manifest = entry.path().join("manifest.toml");
+            if manifest.is_file() {
+                out.push(manifest);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Reads `[dependencies]` (requires / integrates_with / conflicts_with) from a
+/// pack manifest. Returns `Err` with the reason when the TOML does not parse or
+/// the table is malformed — an unreadable manifest must not read as "declared
+/// nothing, therefore clean".
+fn declared_pack_deps(manifest: &Path) -> Result<Vec<(String, String)>, String> {
+    let raw = fs::read_to_string(manifest).map_err(|e| e.to_string())?;
+    let value: toml::Value = toml::from_str(&raw).map_err(|e| e.to_string())?;
+    let deps = value.get("dependencies").ok_or("no [dependencies] table")?;
+    let table = deps.as_table().ok_or("[dependencies] is not a table")?;
+    let mut out = Vec::new();
+    for (field, entry) in table {
+        let list = entry
+            .as_array()
+            .ok_or_else(|| format!("dependencies.{field} is not an array"))?;
+        for item in list {
+            let name = item
+                .as_str()
+                .ok_or_else(|| format!("dependencies.{field} holds a non-string"))?;
+            out.push((field.clone(), name.to_owned()));
+        }
+    }
+    Ok(out)
+}
+
+/// The set of crate names that actually exist: every `[package] name` under
+/// `crates/*/Cargo.toml`, plus the workspace `members`.
+fn real_crate_names(root: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Ok(entries) = fs::read_dir(root.join("crates")) {
+        for entry in entries.flatten() {
+            let manifest = entry.path().join("Cargo.toml");
+            let Ok(raw) = fs::read_to_string(&manifest) else {
+                continue;
+            };
+            let Ok(value) = raw.parse::<toml::Value>() else {
+                continue;
+            };
+            if let Some(name) = value
+                .get("package")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
+/// The `sddk-*` dependencies a pack crate really has, from its Cargo.toml.
+///
+/// `path` and `workspace = true` both count: a workspace-inherited
+/// `sddk-domain` is still a dependency the manifest must account for.
+fn actual_crate_deps(root: &Path, pack_name: &str) -> Vec<String> {
+    let manifest = root.join("crates").join(pack_name).join("Cargo.toml");
+    let Ok(raw) = fs::read_to_string(&manifest) else {
+        return Vec::new();
+    };
+    let Ok(value) = raw.parse::<toml::Value>() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for key in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(table) = value.get(key).and_then(|d| d.as_table()) else {
+            continue;
+        };
+        for (name, spec) in table {
+            let is_sddk = name.starts_with("sddk-");
+            let points_at_path = spec.get("path").is_some();
+            let inherits = spec
+                .get("workspace")
+                .and_then(|w| w.as_bool())
+                .unwrap_or(false);
+            if is_sddk && (points_at_path || inherits) {
+                out.push(name.clone());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// `packs_must_declare_dependencies`: the pack's manifest must account for
+/// every dependency the pack actually has, and must not name one that isn't
+/// there.
+///
+/// Both directions, because the law is about the manifest *matching* reality,
+/// and each direction catches a different lie:
+///   - undeclared: `crates/sddk-pack-uat` depends on `sddk-domain`, and the
+///     manifest's `requires` never says so — the pack under-declares.
+///   - dangling: the manifest names `sddk-core`, which no crate provides — the
+///     pack over-declares a relationship with something absent.
+///
+/// The previous evaluator answered `NotApplicable` with "kernel repo, not a
+/// pack host". This repo ships a pack, so that reason was false and the rule
+/// was silent about a real mismatch.
+fn evaluate_arch004(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+    root: Option<&Path>,
+) -> RuleEvaluation {
+    let Some(root) = root else {
+        return not_measured(rule, baseline, evaluated_at, "the pack manifests");
+    };
+
+    let real = real_crate_names(root);
+    let manifests = pack_manifests(root);
+    let mut violations = Vec::new();
+    let mut packs = Vec::new();
+
+    for manifest in &manifests {
+        let rel = manifest
+            .strip_prefix(root)
+            .unwrap_or(manifest)
+            .to_string_lossy()
+            .into_owned();
+        let pack_dir = manifest
+            .parent()
+            .and_then(Path::file_name)
+            .unwrap_or_default();
+        let pack_name = pack_dir.to_string_lossy().into_owned();
+
+        let declared = match declared_pack_deps(manifest) {
+            Ok(d) => d,
+            Err(e) => {
+                // An unreadable manifest is a violation, not a pass: "could not
+                // read" and "declared nothing" must not share a verdict.
+                violations.push(json!({
+                    "pack": pack_name,
+                    "manifest": rel,
+                    "kind": "unreadable_manifest",
+                    "detail": e,
+                }));
+                continue;
+            }
+        };
+
+        let mut declared_names: Vec<&str> = declared.iter().map(|(_, n)| n.as_str()).collect();
+
+        // Direction 1 — dangling: names with no crate behind them.
+        for (field, name) in &declared {
+            if !real.iter().any(|r| r == name) {
+                violations.push(json!({
+                    "pack": pack_name,
+                    "manifest": rel,
+                    "kind": "dangling_declaration",
+                    "field": field,
+                    "declared": name,
+                    "detail": format!("{name} is declared in {field} but no crate provides it"),
+                }));
+            }
+        }
+
+        // Direction 2 — undeclared: real dependencies the manifest omits.
+        let actual = actual_crate_deps(root, &pack_name);
+        for dep in &actual {
+            if !declared_names.contains(&dep.as_str()) {
+                violations.push(json!({
+                    "pack": pack_name,
+                    "manifest": rel,
+                    "kind": "undeclared_dependency",
+                    "actual": dep,
+                    "detail": format!(
+                        "crates/{pack_name} depends on {dep}, which [dependencies] never names"
+                    ),
+                }));
+            }
+        }
+        declared_names.sort_unstable();
+
+        packs.push(json!({
+            "manifest": rel,
+            "declared": declared_names,
+            "actual": actual,
+        }));
+    }
+
+    let status = if violations.is_empty() {
+        RuleStatus::Pass
+    } else {
+        RuleStatus::Fail
+    };
+
+    let dangling = violations
+        .iter()
+        .filter(|v| v.get("kind").and_then(|k| k.as_str()) == Some("dangling_declaration"))
+        .count();
+    let undeclared = violations
+        .iter()
+        .filter(|v| v.get("kind").and_then(|k| k.as_str()) == Some("undeclared_dependency"))
+        .count();
+    let unreadable = violations.len() - dangling - undeclared;
+
+    RuleEvaluation {
+        rule_id: rule.id.clone(),
+        status,
+        observed: json!({
+            "packs": packs,
+            "violations": violations,
+            "count": violations.len(),
+            "real_crates": real.len(),
+            "summary": if violations.is_empty() {
+                format!(
+                    "{} pack manifest(s) match the {} real crate(s)",
+                    packs.len(),
+                    real.len()
+                )
+            } else {
+                format!(
+                    "{dangling} dangling declaration(s), {undeclared} undeclared dependency(ies), {unreadable} unreadable manifest(s)"
+                )
+            },
+        }),
+        baseline_sha256: baseline.ref_.sha256.clone(),
+        evaluated_at: evaluated_at.to_owned(),
+        evaluated_by: format!("sddk-rules-cli@{EVALUATOR_VERSION}"),
+        waiver_id: None,
+        evaluator_kind: EvaluatorKind::Heuristic,
+        evaluator_version: EVALUATOR_VERSION.to_owned(),
+        provenance: Some(format!(
+            "live evaluator: {} pack manifest(s) checked against {} real crate(s), in both \
+             directions (dangling declarations and undeclared actual dependencies)",
+            packs.len(),
+            real.len()
+        )),
     }
 }
 
 // ── ARCH005 ──────────────────────────────────────────────────────────────────
 
-/// reactive_behaviors_must_not_execute_governed_effects_directly:
-/// NotApplicable until Phase 5 reactive runtime ships.
+/// Governed effects, in the vocabulary of SPEC-009: anything that writes to a
+/// durable location or leaves the machine. `Pure` and `Read` are NOT governed,
+/// which is why they are absent here — a reactive verifier that reads the tree
+/// is conforming.
+///
+/// Each entry is (label, RegexSet pattern). These are the shapes that perform
+/// an effect without asking the capability layer first.
+static GOVERNED_EFFECT_PATTERNS: &[(&str, &str)] = &[
+    (
+        "durable_write",
+        r"\bfs::(write|remove_file|remove_dir_all|rename)\b",
+    ),
+    ("file_create", r"\bFile::create\b"),
+    ("subprocess", r"\b(Command::new|process::Command)\b"),
+    (
+        "network_egress",
+        r"\b(reqwest::|ureq::|TcpStream::connect)\b",
+    ),
+    (
+        "storage_adapter",
+        r"\b(sddk_storage|SqliteXStore|SqliteControlPlane)\b",
+    ),
+    ("gateway_egress", r"\bsddk_gateway\b"),
+];
+
+/// Locates the reactive-behavior modules: any `.rs` file under `crates/` whose
+/// file stem or parent directory is `reactive`.
+///
+/// A locator, not a hand-maintained list. The failure mode of a hardcoded list
+/// is that a new reactive module is invisible and the rule silently stops
+/// covering it; the failure mode of a name locator is a module named something
+/// else, which the provenance below makes checkable by a reader.
+fn reactive_behavior_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let is_rust = path.extension().and_then(|e| e.to_str()) == Some("rs");
+                if is_rust && (stem == "reactive" || stem.starts_with("reactive_")) {
+                    out.push(path);
+                }
+            } else if path.is_dir() && path.file_name().and_then(|n| n.to_str()) == Some("reactive")
+            {
+                collect_rust(&path, out);
+            } else if path.is_dir() {
+                walk(&path, out);
+            }
+        }
+    }
+    fn collect_rust(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rust(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+    walk(&root.join("crates"), &mut out);
+    out.sort();
+    out
+}
+
+/// `reactive_behaviors_must_not_execute_governed_effects_directly`: a reactive
+/// behavior decides and verifies; it must not itself write, spawn, dial out or
+/// reach an adapter, because those are the effects the capability layer gates.
+///
+/// The previous evaluator answered `NotApplicable` with "Phase 5 reactive
+/// runtime not yet shipped". `crates/sddk-engine/src/reactive_verify.rs` is 394
+/// lines and `run_reactive_verify` is its entry point, so the reason was false:
+/// the runtime shipped, it conforms, and the rule had never checked.
 fn evaluate_arch005(
     rule: &sddk_domain::ArchitectureRule,
     baseline: &Baseline,
     evaluated_at: &str,
+    root: Option<&Path>,
 ) -> RuleEvaluation {
+    let Some(root) = root else {
+        return not_measured(
+            rule,
+            baseline,
+            evaluated_at,
+            "the reactive behavior modules",
+        );
+    };
+
+    let files = reactive_behavior_files(root);
+    let mut violations = Vec::new();
+    let mut subjects = Vec::new();
+
+    for file in &files {
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .into_owned();
+        let Ok(content) = fs::read_to_string(file) else {
+            violations.push(json!({
+                "file": rel,
+                "effect": "unreadable_file",
+                "line": 0,
+                "text": "",
+            }));
+            continue;
+        };
+        let mut hits = 0usize;
+        for (line_no, line) in content.lines().enumerate() {
+            // Comments and doc comments state the rule; they are not the rule
+            // being broken. Matching them would make the module's own
+            // documentation of the constraint a violation of it.
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
+            for (label, pattern) in GOVERNED_EFFECT_PATTERNS {
+                if regex::Regex::new(pattern)
+                    .expect("static pattern")
+                    .is_match(line)
+                {
+                    violations.push(json!({
+                        "file": rel,
+                        "effect": label,
+                        "line": (line_no + 1) as u32,
+                        "text": line.trim(),
+                    }));
+                    hits += 1;
+                }
+            }
+        }
+        subjects.push(json!({
+            "file": rel,
+            "lines": content.lines().count(),
+            "governed_effect_hits": hits,
+        }));
+    }
+
+    // No subject means the law has nothing to say — but that must be a
+    // statement about the tree, never a silent Pass.
+    if files.is_empty() {
+        return RuleEvaluation {
+            rule_id: rule.id.clone(),
+            status: RuleStatus::NotApplicable,
+            observed: json!({ "subjects": [], "count": 0, "measured": true }),
+            baseline_sha256: baseline.ref_.sha256.clone(),
+            evaluated_at: evaluated_at.to_owned(),
+            evaluated_by: format!("sddk-rules-cli@{EVALUATOR_VERSION}"),
+            waiver_id: None,
+            evaluator_kind: EvaluatorKind::Heuristic,
+            evaluator_version: EVALUATOR_VERSION.to_owned(),
+            provenance: Some(
+                "MEASURED: no reactive behavior module exists under crates/ \
+                 (locator: .rs files whose stem is `reactive` or `reactive_*`). \
+                 The law has no subject here; this is not a conformance claim."
+                    .to_owned(),
+            ),
+        };
+    }
+
+    let status = if violations.is_empty() {
+        RuleStatus::Pass
+    } else {
+        RuleStatus::Fail
+    };
+
     RuleEvaluation {
         rule_id: rule.id.clone(),
-        status: RuleStatus::NotApplicable,
-        observed: json!({}),
+        status,
+        observed: json!({
+            "subjects": subjects,
+            "violations": violations,
+            "count": violations.len(),
+            "vocabulary": GOVERNED_EFFECT_PATTERNS
+                .iter()
+                .map(|(l, _)| *l)
+                .collect::<Vec<_>>(),
+            "summary": format!(
+                "{} governed-effect hit(s) across {} reactive module(s)",
+                violations.len(),
+                files.len()
+            ),
+        }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
         evaluated_by: format!("sddk-rules-cli@{EVALUATOR_VERSION}"),
         waiver_id: None,
-        evaluator_kind: EvaluatorKind::Schema,
+        evaluator_kind: EvaluatorKind::Heuristic,
         evaluator_version: EVALUATOR_VERSION.to_owned(),
-        provenance: Some("Phase 5 reactive runtime not yet shipped".to_owned()),
+        provenance: Some(format!(
+            "live evaluator: {} reactive behavior module(s) scanned for {} governed-effect \
+             shape(s). Reading the tree is `Read`, not governed; writing, spawning, dialing and \
+             adapter reach are.",
+            files.len(),
+            GOVERNED_EFFECT_PATTERNS.len()
+        )),
     }
 }
 

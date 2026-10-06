@@ -55,7 +55,20 @@ FAIL=0
 # la mire, y deuda que se cierra sin que nadie lo registre.
 #
 # MEDIDO sobre HEAD (15 reglas declaradas): 5 stubs y 2 crates sin nombre.
-DECLARED_STUBS="ARCH004 ARCH005 ARCH013 ARCH014 ARCH015"
+# Cierre de dos de los cinco: ARCH004 y ARCH005 ya no son stubs. MEDIDO, no
+# supuesto — cada uno tiene evaluador, sujeto localizado y falsador propio:
+#   ARCH004packs_must_declare_dependencies -> FAIL con 3 violaciones reales
+#            (2 declaraciones colgantes: sddk-core, sddk-bridge-cognicode;
+#             1 dependencia no declarada: sddk-domain). Antes: NotApplicable con
+#             el motivo FALSO "kernel repo, not a pack host" sobre un repo que
+#             si tiene pack.
+#   ARCH005  reactive_behaviors_must_not_execute_governed_effects_directly
+#            -> PASS medido sobre reactive_verify.rs (394 lineas, 0 efectos
+#             gobernados). Antes: NotApplicable con "Phase 5 reactive runtime
+#             not yet shipped" cuando el runtime ya habia llegado.
+# Sus autofalsadores viven en tests/test_tree_reading_evaluators_mutation.sh
+# (6 mutaciones, cada una con el test que debe caer).
+DECLARED_STUBS="ARCH013 ARCH014 ARCH015"
 DECLARED_UNNAMED="sddk-gateway sddk-pack-uat"
 # La tercera clase de brecha, y la que el gate NO distingue de las otras dos: una
 # ley que SI se mide y NO se sostiene. MEDIDO: ARCH010 (cli_must_not_import_

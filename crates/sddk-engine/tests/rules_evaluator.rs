@@ -86,7 +86,7 @@ rules:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![]);
-    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z", None);
     assert_eq!(results.len(), 2);
     // Phase 1: ARCH001 Pass (no violations), ARCH004 NotApplicable (kernel repo)
     let arch001 = results.iter().find(|r| r.rule_id == "ARCH001").unwrap();
@@ -122,7 +122,7 @@ waivers:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![]); // head_anchor = "1dd72d0"
-    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z", None);
     assert_eq!(results.len(), 1);
     let r = &results[0];
     assert_eq!(r.status, RuleStatus::Waived);
@@ -147,7 +147,7 @@ waivers:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![]); // head_anchor = "1dd72d0" > "00001111"
-    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z", None);
     assert_eq!(results.len(), 1);
     let r = &results[0];
     assert_eq!(r.status, RuleStatus::NotApplicable);
@@ -191,7 +191,7 @@ fn shipped_catalog_against_baseline_produces_fifteen_evaluations() {
         .expect("baseline consumer must be created");
     let baseline = consumer.load().expect("baseline must load");
 
-    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-13T12:00:00Z", None);
     assert_eq!(
         results.len(),
         15,
@@ -252,7 +252,7 @@ rules:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![("crates/sddk-engine/src/lib.rs", 23, "sddk-storage")]);
-    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z", None);
     assert_eq!(results.len(), 1);
     let r = &results[0];
     assert_eq!(r.status, RuleStatus::Fail);
@@ -272,7 +272,7 @@ rules:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![]);
-    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z", None);
     let r = &results[0];
     assert_eq!(r.status, RuleStatus::Pass);
 }
@@ -291,12 +291,12 @@ rules:
 
     // With cli→storage edge: Fail
     let baseline_fail = make_baseline(vec![("crates/sddk-cli/src/cycle.rs", 13, "sddk-storage")]);
-    let results_fail = evaluate_all(&registry, &baseline_fail, "2026-08-16T00:00:00Z");
+    let results_fail = evaluate_all(&registry, &baseline_fail, "2026-08-16T00:00:00Z", None);
     assert_eq!(results_fail[0].status, RuleStatus::Fail);
 
     // Without: Pass
     let baseline_pass = make_baseline(vec![]);
-    let results_pass = evaluate_all(&registry, &baseline_pass, "2026-08-16T00:00:00Z");
+    let results_pass = evaluate_all(&registry, &baseline_pass, "2026-08-16T00:00:00Z", None);
     assert_eq!(results_pass[0].status, RuleStatus::Pass);
 }
 
@@ -316,7 +316,7 @@ rules:
 "#;
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     let baseline = make_baseline(vec![]);
-    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z", None);
     assert_eq!(results.len(), 2);
     for r in &results {
         assert_eq!(r.status, RuleStatus::NotApplicable);
@@ -349,7 +349,7 @@ waivers:
     let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse succeeds");
     // Baseline head_anchor "1dd72d0" <= "fffffffff" → Waived (not Fail)
     let baseline = make_baseline(vec![("crates/sddk-engine/src/lib.rs", 23, "sddk-storage")]);
-    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z");
+    let results = evaluate_all(&registry, &baseline, "2026-08-16T00:00:00Z", None);
     let r = &results[0];
     assert_eq!(
         r.status,
@@ -389,7 +389,7 @@ waivers:
     fn status_with(until: &str, resolver: sddk_domain::WaiverExpiryResolver) -> RuleStatus {
         let registry = registry_with_until(until);
         let baseline = make_baseline(vec![("crates/sddk-engine/src/lib.rs", 23, "sddk-storage")]);
-        let results = evaluate_all_with_resolver(&registry, &baseline, "t", resolver);
+        let results = evaluate_all_with_resolver(&registry, &baseline, "t", resolver, None);
         results[0].status
     }
 
@@ -443,5 +443,282 @@ waivers:
         assert!(!first_sha.is_empty(), "need root commit");
         let resolver = git_ancestry_resolver(&root);
         assert_eq!(status_with(&first_sha, resolver), RuleStatus::Waived);
+    }
+}
+
+// ── ARCH004 / ARCH005: falsadores de las dos leyes que eran stubs ─────────────
+//
+// El defecto que estos tests cierran: los dos evaluadores anteriores devolvian
+// `NotApplicable` con un motivo FALSO ("no hay pack", "el runtime reactivo no
+// ha llegado"), y un `NotApplicable` no es un verde — pero tampoco es una
+// medida. Estos tests comprueban las dos propiedades que separan "miré y no
+// hay" de "no miré":
+//
+//   1. cuando hay violacion, la ley CAE (direccionality);
+//   2. cuando no hay arbol, la ley NO se declara conforme (fail-closed).
+//
+// Un test que solo comprobara (1) pasaria con el stub viejo, porque el stub
+// nunca cae: por eso (2) es la mitad del contrato.
+
+mod tree_reading_rules {
+    use super::*;
+    use std::path::Path;
+
+    const CATALOG: &str = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH004
+    severity: error
+    rule: packs_must_declare_dependencies
+    target: pack_manifest
+  - id: ARCH005
+    severity: error
+    rule: reactive_behaviors_must_not_execute_governed_effects_directly
+    target: capability_imports
+"#;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().expect("has parent")).expect("mkdir");
+        std::fs::write(path, body).expect("write");
+    }
+
+    fn verdict(rule_id: &str, root: Option<&Path>) -> sddk_domain::RuleEvaluation {
+        let registry = sddk_domain::RuleRegistry::from_yaml_str(CATALOG).expect("catalog parses");
+        let baseline = make_baseline(vec![]);
+        let results = evaluate_all(&registry, &baseline, "t", root);
+        results
+            .into_iter()
+            .find(|r| r.rule_id == rule_id)
+            .unwrap_or_else(|| panic!("{rule_id} missing from the evaluation"))
+    }
+
+    // ── ARCH004 ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn arch004_fails_on_a_declaration_naming_a_crate_that_does_not_exist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-domain/Cargo.toml"),
+            "[package]\nname = \"sddk-domain\"\n",
+        );
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[pack]\nid = \"demo\"\n\n[dependencies]\nrequires = [\"sddk-ghost\"]\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Fail,
+            "a manifest naming sddk-ghost, which no crate provides, is a violation"
+        );
+        assert_eq!(v.observed["count"], 1);
+        assert_eq!(v.observed["violations"][0]["kind"], "dangling_declaration");
+    }
+
+    #[test]
+    fn arch004_fails_on_a_real_dependency_the_manifest_never_names() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-domain/Cargo.toml"),
+            "[package]\nname = \"sddk-domain\"\n",
+        );
+        write(
+            &root.join("crates/demo/Cargo.toml"),
+            "[package]\nname = \"demo\"\n\n[dependencies]\nsddk-domain = { path = \"../sddk-domain\" }\n",
+        );
+        // The manifest declares nothing at all.
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[pack]\nid = \"demo\"\n\n[dependencies]\nrequires = []\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Fail,
+            "the crate depends on sddk-domain and [dependencies] omits it"
+        );
+        assert_eq!(v.observed["violations"][0]["kind"], "undeclared_dependency");
+        assert_eq!(v.observed["violations"][0]["actual"], "sddk-domain");
+    }
+
+    #[test]
+    fn arch004_passes_when_the_manifest_and_the_crate_agree() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-domain/Cargo.toml"),
+            "[package]\nname = \"sddk-domain\"\n",
+        );
+        write(
+            &root.join("crates/demo/Cargo.toml"),
+            "[package]\nname = \"demo\"\n\n[dependencies]\nsddk-domain = { path = \"../sddk-domain\" }\n",
+        );
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[pack]\nid = \"demo\"\n\n[dependencies]\nrequires = [\"sddk-domain\"]\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Pass,
+            "declared and actual are the same set"
+        );
+        assert_eq!(v.observed["count"], 0);
+    }
+
+    #[test]
+    fn arch004_treats_an_unreadable_manifest_as_a_violation_not_as_absence() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[dependencies\nrequires = broken\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Fail,
+            "a manifest that cannot be parsed must not read as 'declared nothing, therefore clean'"
+        );
+        assert_eq!(v.observed["violations"][0]["kind"], "unreadable_manifest");
+    }
+
+    // ── ARCH005 ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn arch005_fails_when_a_reactive_module_writes_directly() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-engine/src/reactive_verify.rs"),
+            "pub fn go() { std::fs::write(\"/tmp/x\", b\"y\").unwrap(); }\n",
+        );
+
+        let v = verdict("ARCH005", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Fail,
+            "a governed effect executed straight from a reactive behavior is the violation"
+        );
+        assert_eq!(v.observed["count"], 1);
+        assert_eq!(v.observed["violations"][0]["effect"], "durable_write");
+    }
+
+    #[test]
+    fn arch005_fails_when_a_reactive_module_reaches_an_adapter() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-engine/src/reactive.rs"),
+            "use sddk_storage::SqliteXStore;\n",
+        );
+
+        let v = verdict("ARCH005", Some(root));
+        assert_eq!(v.status, RuleStatus::Fail);
+        assert_eq!(v.observed["violations"][0]["effect"], "storage_adapter");
+    }
+
+    #[test]
+    fn arch005_passes_on_a_pure_reactive_module() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-engine/src/reactive_verify.rs"),
+            "pub fn decide() -> bool { let v = std::fs::read_to_string(\"/x\").ok(); v.is_some() }\n",
+        );
+
+        let v = verdict("ARCH005", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Pass,
+            "reading the tree is `Read`, not a governed effect"
+        );
+        assert_eq!(v.observed["count"], 0);
+        assert_eq!(
+            v.observed["subjects"][0]["file"],
+            "crates/sddk-engine/src/reactive_verify.rs"
+        );
+    }
+
+    #[test]
+    fn arch005_does_not_flag_a_module_documenting_the_rule_it_obeys() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-engine/src/reactive_verify.rs"),
+            "// This module must never call fs::write or Command::new itself.\n\
+             //! Governed effects go through the capability layer.\n\
+             pub fn decide() -> bool { true }\n",
+        );
+
+        let v = verdict("ARCH005", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Pass,
+            "a module stating the constraint in its own docs is not violating it"
+        );
+    }
+
+    #[test]
+    fn arch005_without_a_subject_is_measured_but_never_conformant() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let v = verdict("ARCH005", Some(tmp.path()));
+
+        assert_ne!(
+            v.status,
+            RuleStatus::Pass,
+            "no subject means the law says nothing, which is not a conformance claim"
+        );
+        assert_eq!(
+            v.observed["measured"], true,
+            "it looked, and there was nothing to look at"
+        );
+    }
+
+    // ── La mitad fail-closed: sin arbol, NINGUNA de las dos se declara verde ──
+
+    #[test]
+    fn no_repository_root_is_reported_as_not_measured_never_as_a_pass() {
+        for rule_id in ["ARCH004", "ARCH005"] {
+            let v = verdict(rule_id, None);
+            assert_ne!(
+                v.status,
+                RuleStatus::Pass,
+                "{rule_id} with no root must not claim a clean measurement"
+            );
+            assert_eq!(v.status, RuleStatus::NotApplicable);
+            assert_eq!(v.observed["measured"], false);
+            let provenance = v.provenance.expect("provenance states what was not done");
+            assert!(
+                provenance.contains("NOT MEASURED"),
+                "{rule_id} provenance must say the measurement was skipped, got: {provenance}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_summary_names_the_violation_kind_rather_than_borrowing_another_rules_noun() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[dependencies]\nrequires = [\"sddk-ghost\"]\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        let summary = v.observed["summary"].as_str().expect("summary present");
+        assert!(
+            summary.contains("dangling"),
+            "the rendered detail must name what it found, got: {summary}"
+        );
+        assert!(
+            !summary.contains("edge"),
+            "'edge' is ARCH001's noun; a manifest rule borrowing it hides what it measured: {summary}"
+        );
     }
 }

@@ -156,7 +156,14 @@ fn run_rules_check(args: RulesCheckArgs, environment: &CliEnvironment) -> Comman
     let evaluated_at = now_rfc3339();
     // INC-DEBT-018: decide waiver expiry by real git ancestry, not lexicographic SHA compare.
     let resolver = sddk_engine::rules::git_ancestry_resolver(std::path::Path::new("."));
-    let evaluations = evaluate_all_with_resolver(&registry, &baseline, &evaluated_at, resolver);
+    // `None` on purpose: this path evaluates a baseline loaded from a FILE, so the
+    // tree it describes is not provably the cwd. Passing the cwd would let the
+    // tree-reading rules measure a different tree than the one the baseline
+    // anchors, and report a clean measurement of the wrong subject. ARCH004 and
+    // ARCH005 therefore report NOT MEASURED here rather than a Pass they did
+    // not earn. `sddk dev check-arch` is the path that measures the live tree.
+    let evaluations =
+        evaluate_all_with_resolver(&registry, &baseline, &evaluated_at, resolver, None);
     let output = EvaluationOutput {
         schema_version: ARCHITECTURE_RULES_SCHEMA_VERSION,
         evaluator_version: EVALUATOR_VERSION,
