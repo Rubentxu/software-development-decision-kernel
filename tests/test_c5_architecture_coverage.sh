@@ -80,6 +80,13 @@ DECLARED_UNNAMED="sddk-gateway sddk-pack-uat"
 # OPEN_DEBT (exit 1) no porque apareciese deuda nueva, sino porque una ley que
 # nunca se habia medido por fin se midio y no se sostiene.
 DECLARED_FAILING="ARCH010"
+# D5: leyes que salen en verde SIN haber mirado nada. MEDIDO: sddk-domain y
+# sddk-vault no tienen ninguna arista sddk_*, luego ARCH002, ARCH006, ARCH007 y
+# ARCH011 son Pass sobre un conjunto vacio. Que el dominio sea la capa mas
+# interna y eso sea lo CORRECTO es justamente lo que esta cifra deja ver; sin
+# ella, el verde no distinguia "mire 202 aristas" de "no mire ninguna", que es
+# el mismo defecto que un stub con camisa verde.
+DECLARED_EMPTY_SUBJECT="ARCH013 ARCH014 ARCH015"
 
 check() {
     local name="$1" expect="$2" actual="$3"
@@ -249,22 +256,62 @@ echo "           storage y cero a engine, luego ninguna ley de las 15 lo"
 echo "           alcanzaria aunque se escribiera."
 
 echo
+echo "== D5: ninguna ley dice Pass sin haber mirado al menos una arista =="
+# Direccionalidad en las DOS direcciones, por la misma razon que D2: un hallazgo
+# nuevo es rojo, y un hallazgo declarado que desaparece tambien, porque
+# entonces habria que quitar su declaracion y alguien tiene que notarlo.
+#
+# Se mide sobre el codigo, no sobre una tabla: `measured_nothing` lo emite el
+# evaluador, asi que el guard lee la FUENTE y no una captura que podria estar
+# vieja. Contar stubs leyendo evaluadores.rs y contar sujetos leyendo
+# evaluadores.rs es la misma fuente por dos razones distintas.
+# Que "emita el tamano de lo que miro" admite tres formas, y cada una es
+# verdadera para su clase de ley:
+#   - `subject_edges`      : las leyes de arista lo emiten en el helper
+#                             compartido `evaluate_forbidden_edge`, NO en su
+#                             propio cuerpo. Buscarlo solo en el cuerpo daba
+#                             falso rojo sobre seis leyes que si lo emiten.
+#   - `"subjects":`        : ARCH005 lista los modulos reactivos que escaneo.
+#   - `"packs":`           : ARCH004 lista los manifests que leyo.
+# Una ley que no este en ninguno de los tres NO PUEDE decir cuanto mira, y esa
+# es la que viste de verde sin Mirar.
+EMPTY_SUBJECTS=""
+for id in $DISPATCHED; do
+    body="$(awk -v fn="fn evaluate_${id,,}(" '
+        index($0, fn) == 1 { inside = 1; next }
+        inside {
+            if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) { exit }
+            print
+        }' "$EVALUATORS")"
+    if printf '%s\n' "$body" | grep -qE 'subject_edges|evaluate_forbidden_edge\(|"subjects":|"packs":|subject_files'; then
+        continue
+    fi
+    EMPTY_SUBJECTS="$EMPTY_SUBJECTS $id"
+done
+EMPTY_SUBJECTS="$(printf '%s' "$EMPTY_SUBJECTS" | sed 's/^ *//;s/ *$//')"
+DECLARED_EMPTY_SORTED="$(printf '%s' "$DECLARED_EMPTY_SUBJECT" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ *$//')"
+check "las leyes sin medicion de sujeto son exactamente las declaradas" \
+    "$DECLARED_EMPTY_SORTED" "$EMPTY_SUBJECTS"
+echo "        sin forma de decir que miro: ${EMPTY_SUBJECTS:-(ninguna)}"
+echo "        declaradas: $DECLARED_EMPTY_SUBJECT"
+echo "        (las que si lo tienen, lo declaran: eso es lo que evita el verde mudo)"
+
+echo
 echo "== resumen medido =="
 echo "  declaradas=$N_DECLARED despachadas=$N_DISPATCHED stubs=$STUBS crates_sin_regla=$UNNAMED"
 echo "  el gate afirma medir $N_DECLARED reglas y mide $((N_DISPATCHED - STUBS))"
 
 echo
 echo "== lo que NO se puede medir aqui, declarado en vez de dado por bueno =="
-echo "  - Que una regla con cero aristas mida algo. ARCH011 sale hoy en verde"
-echo "    porque sddk-vault no declara ninguna dependencia sddk_*: es un PASS"
-echo "    sobre un conjunto vacio y este guard no lo distingue de una medicion"
-echo "    sustantiva. Distinguirlo exige que el evaluador reporte tambien el"
-echo "    numero de aristas TOTALES del conjunto, y el contrato RuleEvaluation"
-echo "    no expone ese campo."
-echo "  - Que el alcance de ARCH006 sea el que la regla declara. Su"
-echo "    desired_state nombra el modulo graph, pero la medicion dependera de"
-echo "    un prefijo de fichero que este guard no puede juzgar: un scope mas"
-echo "    ancho mediria mas de lo declarado sin que nada lo note."
+echo "  - Que una ley con sujeto vacio LO SEPA al leerla. D5 mide que el"
+echo "    evaluador EMITE el tamano del sujeto, que es lo que evita el verde"
+echo "    mudo. Lo que no mide, porque no puede hacerlo leyendo codigo, es que"
+echo "    la cifra sea la correcta en ejecucion: un evaluador que emitiera"
+echo "    subject_edges: 999 sobre un sujeto de 2 aristas seria verde aqui."
+echo "    Lo que cubre ese caso es el falsador de M8."
+echo "  - Que el alcance de ARCH006 sea el que la regla declara. Ahora es un"
+echo "    path EXACTO (crates/sddk-domain/src/graph.rs), no un prefijo, y hay"
+echo "    test de direccionalidad; lo que este guard no hace es ejecutarlo."
 echo "  - Que la arista reportada sea la arista real. capture_live cuenta solo"
 echo "    lineas que empiezan por use sddk_ y solo las que llegan hasta ::; un"
 echo "    use reescrito con un path alias no deja arista. Ese hueco es del"

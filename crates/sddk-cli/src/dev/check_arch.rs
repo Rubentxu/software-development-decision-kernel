@@ -263,7 +263,20 @@ fn detail_for(
     provenance: Option<&str>,
 ) -> String {
     match status {
-        RuleStatus::Pass => String::new(),
+        RuleStatus::Pass => {
+            // A Pass is a Pass, except when it is a Pass over nothing. With
+            // `count: 0` alone the table could not tell "reviewed 202 edges,
+            // none forbidden" from "reviewed none", and the second one is the
+            // same defect as a stub wearing a green shirt.
+            if observed
+                .get("measured_nothing")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                return "nothing to measure: the subject has no edges at all".to_owned();
+            }
+            String::new()
+        }
         RuleStatus::Fail => {
             // An evaluator that knows what its violations ARE says so. Without
             // this, a manifest rule rendered as "3 edge(s) detected" because

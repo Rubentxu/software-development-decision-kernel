@@ -12,7 +12,7 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::Baseline;
+use super::{Baseline, CrossCrateImport};
 
 pub const EVALUATOR_VERSION: &str = "0.1.0";
 
@@ -194,6 +194,12 @@ fn evaluate_arch001(
     baseline: &Baseline,
     evaluated_at: &str,
 ) -> RuleEvaluation {
+    let subject_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == "sddk-engine")
+        .count();
+
     let violating: Vec<_> = baseline
         .cross_crate_imports
         .iter()
@@ -219,6 +225,8 @@ fn evaluate_arch001(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
+            "subject_edges": subject_edges,
+            "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -244,6 +252,15 @@ fn evaluate_arch002(
     evaluated_at: &str,
 ) -> RuleEvaluation {
     let forbidden = ["sddk-storage", "sddk-gateway", "sddk-cli"];
+    // sddk-domain no tiene NINGUNA arista sddk_*: es la capa mas interna. Su
+    // PASS es arquitectonicamente correcto, pero sin esta cifra la tabla lo
+    // hacia indistinguible de un PASS con 202 aristas revisadas.
+    let subject_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == "sddk-domain")
+        .count();
+
     let violating: Vec<_> = baseline
         .cross_crate_imports
         .iter()
@@ -269,6 +286,8 @@ fn evaluate_arch002(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
+            "subject_edges": subject_edges,
+            "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -303,6 +322,14 @@ fn evaluate_arch003(
     // Known crates that provide LedgerFactory (implement or re-export the trait).
     // These may import from sddk-storage without triggering a violation.
     const LEDGER_FACTORY_PROVIDERS: &[&str] = &["sddk-domain", "sddk-storage"];
+
+    // ARCH003 mide sobre TODOS los crates, luego su sujeto es el conjunto
+    // entero de aristas `use` del baseline, no las de un crate concreto.
+    let subject_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.kind == CrossCrateImportKind::Use)
+        .count();
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
@@ -347,6 +374,8 @@ fn evaluate_arch003(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
+            "subject_edges": subject_edges,
+            "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -907,14 +936,31 @@ fn evaluate_forbidden_edge(
     forbidden: &[&str],
     file_scope: Option<&str>,
 ) -> RuleEvaluation {
+    let in_scope = |e: &CrossCrateImport| match file_scope {
+        Some(path) => e.from_file == path,
+        None => true,
+    };
+
+    // How big is the set the rule actually looked at?
+    //
+    // `count: 0` alone is ambiguous between "examined 202 edges, none
+    // forbidden" and "examined nothing". Those are different claims and the
+    // table showed only the first for both. MEDIDO en este repo: sddk-domain y
+    // sddk-vault no tienen NINGUNA arista sddk_*, luego ARCH002, ARCH006,
+    // ARCH007 y ARCH011 salian en verde sin haber medido nada. Que sea la
+    // forma arquitectonica correcta (el dominio es la capa mas interna) es
+    // justamente lo que la cifra deja ver; sin ella, el verde no lo dice.
+    let subject_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == from_crate && in_scope(e))
+        .count();
+
     let violating: Vec<_> = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == from_crate && forbidden.contains(&e.to_crate.as_str()))
-        .filter(|e| match file_scope {
-            Some(path) => e.from_file == path,
-            None => true,
-        })
+        .filter(|e| in_scope(e))
         .map(|e| {
             json!({
                 "from_file": e.from_file,
@@ -936,6 +982,8 @@ fn evaluate_forbidden_edge(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
+            "subject_edges": subject_edges,
+            "measured_nothing": subject_edges == 0,
             "scope": file_scope,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
@@ -1083,12 +1131,16 @@ fn evaluate_arch008(
     });
 
     let mut violations = Vec::new();
+    let mut scanned_files = 0usize;
+    let mut scanned_lines = 0usize;
 
     // Walk each scope glob from the rule
     for glob_pattern in &rule.scope {
         let matching: Vec<_> = glob_match_files(glob_pattern);
         for file_path in matching {
             if let Ok(content) = fs::read_to_string(&file_path) {
+                scanned_files += 1;
+                scanned_lines += content.lines().count();
                 for (line_no, line) in content.lines().enumerate() {
                     let line_num = (line_no + 1) as u32;
                     if ARCH008_PATTERNS.is_match(line) {
@@ -1115,6 +1167,14 @@ fn evaluate_arch008(
         observed: json!({
             "violations": violations,
             "count": violations.len(),
+            // Cuanto miro, no solo cuanto prohibio. Sin esto, un `count: 0`
+            // sobre un scope que no resolvio ningun fichero seria
+            // indistinguible de un scope que leyo ocho ficheros y no encontro
+            // nada — y el scope vacio es el modo de fallo silencioso de un
+            // locator por prefijo.
+            "subject_files": scanned_files,
+            "subject_lines": scanned_lines,
+            "measured_nothing": scanned_files == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),

@@ -129,6 +129,79 @@ waivers:
     assert_eq!(r.waiver_id.as_deref(), Some("WV-0001"));
 }
 
+// ── El verde que no ha medido nada ──────────────────────────────────────────
+//
+// `count: 0` es ambiguo entre "mire 202 aristas y ninguna era prohibida" y "no
+// mire ninguna". MEDIDO: sddk-domain y sddk-vault no tienen ninguna arista
+// sddk_*, luego cuatro leyes salian en verde sin sujeto. Que sea la forma
+// arquitectonica correcta no la hace menos ambigua: lo que falta es que el
+// veredicto lo diga.
+
+#[test]
+fn an_edge_rule_reports_how_many_edges_it_actually_examined() {
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH001
+    severity: error
+    rule: engine_must_not_depend_on_storage
+    target: dependency_graph
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+
+    // sddk-engine -> sddk-domain: a real edge, to the crate the rule allows.
+    let measured = evaluate_all(
+        &registry,
+        &make_baseline(vec![("crates/sddk-engine/src/lib.rs", 7, "domain")]),
+        "t",
+        None,
+    );
+    let v = &measured[0];
+    assert_eq!(v.status, RuleStatus::Pass);
+    assert_eq!(v.observed["count"], 0, "no forbidden edge");
+    assert_eq!(
+        v.observed["subject_edges"], 1,
+        "but ONE edge was in scope: the green was earned by looking"
+    );
+    assert_eq!(v.observed["measured_nothing"], false);
+
+    // A crate with no cross-crate edges at all: the rule looked at nothing.
+    let empty = evaluate_all(&registry, &make_baseline(vec![]), "t", None);
+    assert_eq!(empty[0].status, RuleStatus::Pass);
+    assert_eq!(empty[0].observed["subject_edges"], 0);
+    assert_eq!(
+        empty[0].observed["measured_nothing"], true,
+        "a Pass over zero edges must be distinguishable from a Pass over many"
+    );
+}
+
+#[test]
+fn a_scoped_rule_counts_only_the_edges_inside_its_scope() {
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH006
+    severity: error
+    rule: graph_projection_must_not_depend_on_engine
+    target: dependency_graph
+    scope:
+      - "**/sddk-domain/src/graph.rs"
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+    // Two sddk-domain edges, only one of them inside the scoped file.
+    let baseline = make_baseline(vec![
+        ("crates/sddk-domain/src/graph.rs", 3, "engine"),
+        ("crates/sddk-domain/src/other.rs", 4, "engine"),
+    ]);
+    let v = &evaluate_all(&registry, &baseline, "t", None)[0];
+    assert_eq!(
+        v.observed["subject_edges"], 1,
+        "the subject of ARCH006 is the graph module, not the whole crate"
+    );
+    assert_eq!(
+        v.observed["count"], 1,
+        "the in-scope edge to engine is the violation"
+    );
+}
+
 #[test]
 fn evaluate_all_returns_not_applicable_when_waiver_expired() {
     let yaml = r#"schema_version: 1.2.0
