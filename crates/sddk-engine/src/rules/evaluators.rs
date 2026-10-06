@@ -502,8 +502,15 @@ fn actual_crate_deps(root: &Path, pack_name: &str) -> Vec<String> {
 /// and each direction catches a different lie:
 ///   - undeclared: `crates/sddk-pack-uat` depends on `sddk-domain`, and the
 ///     manifest's `requires` never says so — the pack under-declares.
-///   - dangling: the manifest names `sddk-core`, which no crate provides — the
-///     pack over-declares a relationship with something absent.
+///   - dangling: the manifest names `sddk-core` in `requires` as a hard
+///     dependency, and no crate provides it — the pack promises it cannot load
+///     without something that is not there.
+///
+/// The bidirectional check is scoped to `requires`, because that is the field
+/// whose contract makes both halves true. `integrates_with` and
+/// `conflicts_with` name optional capabilities whose absence is defined to
+/// degrade gracefully; flagging them would be a rule failing on conformant
+/// packs.
 ///
 /// The previous evaluator answered `NotApplicable` with "kernel repo, not a
 /// pack host". This repo ships a pack, so that reason was false and the rule
@@ -552,8 +559,21 @@ fn evaluate_arch004(
 
         let mut declared_names: Vec<&str> = declared.iter().map(|(_, n)| n.as_str()).collect();
 
-        // Direction 1 — dangling: names with no crate behind them.
+        // Direction 1 — dangling HARD dependencies.
+        //
+        // Scoped to `requires` on purpose. The contract in `pack.rs` says
+        // `requires` is "hard dependencies: the pack cannot load without them"
+        // while `integrates_with` is "optional capabilities that improve
+        // behavior; absence degrades gracefully". An optional capability that
+        // is not installed is the field working as written, not a violation,
+        // and neither is a `conflicts_with` entry that names a capability
+        // nobody ships. Applying the dangling check to all three fields
+        // measures a law the contract does not state, and a rule that fails on
+        // conformant packs is a rule nobody keeps.
         for (field, name) in &declared {
+            if field != "requires" {
+                continue;
+            }
             if !real.iter().any(|r| r == name) {
                 violations.push(json!({
                     "pack": pack_name,
@@ -561,7 +581,10 @@ fn evaluate_arch004(
                     "kind": "dangling_declaration",
                     "field": field,
                     "declared": name,
-                    "detail": format!("{name} is declared in {field} but no crate provides it"),
+                    "detail": format!(
+                        "{name} is a hard dependency but no crate provides it: \
+                         the pack cannot load without it and it is not there"
+                    ),
                 }));
             }
         }
@@ -622,7 +645,7 @@ fn evaluate_arch004(
                 )
             } else {
                 format!(
-                    "{dangling} dangling declaration(s), {undeclared} undeclared dependency(ies), {unreadable} unreadable manifest(s)"
+                    "{dangling} dangling hard dependency(ies), {undeclared} undeclared dependency(ies), {unreadable} unreadable manifest(s)"
                 )
             },
         }),

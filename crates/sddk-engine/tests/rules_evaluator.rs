@@ -571,6 +571,35 @@ rules:
     }
 
     #[test]
+    fn arch004_does_not_flag_an_optional_capability_that_is_absent() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(
+            &root.join("crates/sddk-domain/Cargo.toml"),
+            "[package]\nname = 'sddk-domain'\n",
+        );
+        write(
+            &root.join("crates/demo/Cargo.toml"),
+            "[package]\nname = 'demo'\n\n[dependencies]\nsddk-domain = { path = '../sddk-domain' }\n",
+        );
+        // `integrates_with` names an OPTIONAL capability, and the contract says
+        // its absence degrades gracefully. A rule that failed here would be
+        // failing a pack for using the field the way the field is defined.
+        write(
+            &root.join("packs/demo/manifest.toml"),
+            "[pack]\nid = 'demo'\n\n[dependencies]\nrequires = ['sddk-domain']\nintegrates_with = ['optional-bridge']\n",
+        );
+
+        let v = verdict("ARCH004", Some(root));
+        assert_eq!(
+            v.status,
+            RuleStatus::Pass,
+            "an absent optional capability is the field working, not a violation: {:?}",
+            v.observed["violations"]
+        );
+    }
+
+    #[test]
     fn arch004_treats_an_unreadable_manifest_as_a_violation_not_as_absence() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();

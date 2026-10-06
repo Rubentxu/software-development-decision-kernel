@@ -9,7 +9,17 @@ category = "domain"
 description = "UAT (User Acceptance Testing) pack: plans, guided runner, dashboards, evidence and sign-off (SPEC-008)"
 
 [dependencies]
-requires = ["sddk-core"]
+# `requires` son dependencias DURAS: "the pack cannot load without them"
+# (crates/sddk-domain/src/pack.rs). Aqui se decia `sddk-core`, que no es ningun
+# crate del workspace, y faltaba `sddk-domain`, que si lo es y de hecho es lo
+# unico que `crates/sddk-pack-uat/Cargo.toml` trae. El pack se declaraba
+# incapable de cargar por algo ausente y no declaraba lo que de verdad usa.
+# MEDIDO por ARCH004 (packs_must_declare_dependencies), que antes de esto era un
+# stub con el motivo falso "kernel repo, not a pack host".
+requires = ["sddk-domain"]
+# Opcionales: su ausencia degrada con gracia por contrato, luego no tienen que
+# resolver a un crate. `sddk-bridge-cognicode` se queda como esta porque el
+# contrato lo permite; lo que la ley mide es `requires`.
 integrates_with = ["sddk-bridge-cognicode"]
 conflicts_with = []
 

@@ -191,13 +191,34 @@ PY
 verdict_for "M6 ARCH005 no ve un fs::write" \
   "tree_reading_rules::arch005_fails_when_a_reactive_module_writes_directly" "$(applied $?)"
 
+# ── M7: la comprobacion colgante se extiende a los campos opcionales ─────────
+# El error de alcance: `integrates_with` son capacidades OPCIONALES cuya
+# ausencia degraga con gracia por contrato (pack.rs), asi que exigir que
+# resuelvan a un crate hace caer packs CONFORMES. Esta mutacion reproduce
+# exactamente ese error de mas.
+python3 - "$TARGET" <<'PY'
+import sys
+p=sys.argv[1]; s=open(p).read()
+old = '''            if field != "requires" {
+                continue;
+            }'''
+new = '''            if false {
+                continue;
+            }'''
+assert s.count(old)==1, f"M7 no aplica (count={s.count(old)})"
+open(p,'w').write(s.replace(old,new))
+PY
+verdict_for "M7 la comprobacion colgante alcanza tambien a integrates_with" \
+  "tree_reading_rules::arch004_does_not_flag_an_optional_capability_that_is_absent" "$(applied $?)"
+
 # ── CONTROLES: el codigo intacto debe dejarlo todo en verde ─────────────────
 echo "== controles (codigo intacto) =="
 for t in \
   "tree_reading_rules::arch004_fails_on_a_real_dependency_the_manifest_never_names" \
   "tree_reading_rules::arch005_fails_when_a_reactive_module_writes_directly" \
   "tree_reading_rules::no_repository_root_is_reported_as_not_measured_never_as_a_pass" \
-  "tree_reading_rules::arch004_treats_an_unreadable_manifest_as_a_violation_not_as_absence"
+  "tree_reading_rules::arch004_treats_an_unreadable_manifest_as_a_violation_not_as_absence" \
+  "tree_reading_rules::arch004_does_not_flag_an_optional_capability_that_is_absent"
 do
   if run_test "$t" >/dev/null 2>&1; then
     PASS=$((PASS + 1)); LINES+=("PASS | control (codigo intacto) | $t sigue verde, el guard distingue")
