@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 
 
+## [2.13.0] - 2026-10-06
+
+### Features
+  - feat(rules): seis leyes declaraban una arista prohibida y ninguna se media
+
+### Fixes
+  - fix(rules): el juez de frescura media el binario instalado, no el que se le paso
+  - fix(release): la paridad de rutas congelo un tag y era insatisfacible
+
+### Other
+  - test(rules): el gate de arquitectura declara quince leyes y dice cuatro
+  - docs(receipt): REL-2.12.1 publicada, y los tres rojos que la mataron no eran el mismo rojo
+
 ## [2.12.1] - 2026-10-06
 
 ### Features
