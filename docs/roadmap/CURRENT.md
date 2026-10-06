@@ -9,7 +9,49 @@
 autoridad del estado operativo es SDDK (`sddk cycle`, ledger) mas el
 proceso; estos ficheros son el rastro, no la fuente.
 
-## Estado a 2026-10-05 (session-83, tras publicar v2.11.0)
+## Estado a 2026-10-06 (session-88, tras publicar v2.12.0)
+
+> Este bloque **sustituye** al de session-83, que declaraba `v2.11.0` vigente,
+> `all_present: true` y binario `matches`. Las tres eran falsas: la release
+> vigente es `v2.12.0`, `doctor` da `all_present: false` y el binario va siete
+> commits por detras. Queda abajo como historico.
+
+- **Release vigente: `v2.12.0`**, publicada `2026-10-06T01:32:58Z`,
+  `draft=false`, `prerelease=false`, **9 assets, 0 firmas**, verificada contra
+  la API. La firma `UNSIGNED` esta declarada, no saltada: `v2.11.4` salio igual,
+  luego el artefacto conserva su contrato. Los **15 pasos** corrieron completos.
+- **Instalado en local**: `sddk 2.12.0`,
+  `~/.local/share/sddk/framework/current -> 2.12.0`.
+- **Workspace `Cargo.toml` = 2.12.1**: declarado y **no publicado**. El ultimo
+  tag es `v2.12.0`, luego la proxima release es `v2.12.1` y no un minor.
+- **Frescura del binario: `behind`.** `doctor` marca `binary.build_identity:
+  missing` porque el binario es `f7d2118c` y el checkout va siete commits por
+  delante. Es lo correcto —el workspace bumpea y no publica hasta el release—,
+  pero **no es `matches`**, y esa distincion es justamente la que la deuda
+  declara: un artefacto no puede declarar su propia antigüedad.
+- **`doctor`: `all_present: false`**, 20 checks `missing` (19
+  `surface.briefness.*` y `binary.build_identity`). Exit 0.
+- **Proyecto SDDK**: `p-63676b11dc0ef88f`, ledger real en
+  `~/.local/state/sddk/projects/p-63676b11dc0ef88f/ledger.sqlite`.
+
+### Lo que abrio session-88, y sigue abierto
+
+Dos canarios de aislamiento, ambos con falsificadores. **Ninguno repara nada**:
+miden, y su veredicto abre el bloque que si repara.
+
+| Bloque | Veredicto medido |
+|---|---|
+| `cl-canario-de-aislamiento-entre-proyectos` (VA15) | El cross-project leak **no es alcanzable**: el namespacing en disco por `project_id` lo hace moot. `PASS=4 FAIL=0 SKIP=1` |
+| `cl-aislamiento-por-worktree` (VA16) | El aislamiento por worktree **no existe y es alcanzable**: 4 violaciones. `PASS=4 FAIL=0 SKIP=0` |
+
+**El segundo es el que manda**, y por esto: ahi el `project_id` coincide
+legitimamente —es el mismo proyecto—, luego **ninguna ley por `project_id` puede
+detectar el leak**. De los cinco almacenes de contexto, cuatro son por proyecto y
+solo `adoption.json` es por workspace. Lo que falta no es un `if`: es que cada
+almacen declare si es de proyecto o de worktree, y que el binding lleve el
+discriminante. Es decision de diseno, no de medicion.
+
+## Estado a 2026-10-05 (session-83, tras publicar v2.11.0) — HISTORICO
 
 - **Release vigente: `v2.11.0`**, publicada `2026-10-05T08:01:33Z`,
   `draft=false`, `prerelease=false`, **9 assets**, verificada contra la API

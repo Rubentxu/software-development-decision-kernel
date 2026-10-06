@@ -16389,3 +16389,100 @@ Ninguno de los dos es nuevo, y los dos valieron el trabajo:
    `SESSION-JOURNAL.md` no los reconcilia nadie: el gate no los mira y el script
    no los toca, luego pueden mentir indefinidamente — **y el turno de hoy es el
    quinto ejemplo de un documento que casi cuenta una historia que no ocurrio**.
+
+## session-88 — VA14, VA15 y VA16: el aislamiento se midio en las dos dimensiones, y el de worktree no existe
+
+   **TRES BLOQUES CERRADOS Y PUBLICADOS EN ESTA SESION**, todos con canario y
+   autofalsador, y ninguno repara nada: miden. El detalle esta en sus receipts.
+
+   | commit | bloque | veredicto |
+   |---|---|---|
+   | `e60dae75` | VA14 pureza del nucleo | 46 modulos vigilados, 9 infracciones reales |
+   | `cec5ba60` | VA15 canario cross-project | el leak **no se reproduce** |
+   | `e441df0c` | VA16 canario por worktree | el aislamiento **no existe** |
+
+   **EL HALLAZGO DE FONDO ES QUE LOS DOS CASOS DEL BRIEF TIENEN SIGNOS
+   OPUESTOS, Y EL PEOR ES EL QUE EL BRIEF PRIORIZABA MENOS.**
+
+   X5 (cross-project): **no alcanzable**. `paths.rs:153` construye
+   `project_data = data_home/sddk/projects/<project_id>` con el id resuelto del
+   checkout, y los tres `load_binding` de produccion leen de ahi. Un binding de
+   un proyecto no es alcanzable desde otro **porque vive en otro directorio**,
+   no porque nadie lo compruebe — y la comparacion
+   `binding.project_id == project_id observado` que el brief pide no existe en
+   ningun sitio y no hace falta. M2 lo demuestra: quitar el `project_id` del
+   directorio tira el canario. Es una defensa mas fuerte que un `if`, porque no
+   se puede saltar sin cambiar el codigo.
+
+   X6 (mismo proyecto, worktree distinto): **alcanzable, 4 violaciones**.
+   Medido con dos checkouts del mismo remote: mismo `project_id`, distinto
+   `workspace_id`, **un unico binding compartido**, `written: false` en el
+   segundo, y el trabajo acumulado por el primero sigue ahi despues de que el
+   segundo pase por el binding. No es que el segundo este mal informado: es que
+   **hereda el trabajo del otro y lo presenta como suyo, sin marca y sin aviso**.
+
+   **Y POR QUE ES PEOR: AQUI EL `project_id` COINCIDE LEGITIMAMENTE**, porque es el
+   mismo proyecto. Las cinco leyes por `project_id` del brief (C1-C5) comparan
+   todas `project_id`, luego un `ExecutionContextAdmission` construido como el
+   brief lo describe **pasaria en verde mientras sirve contexto de otro
+   worktree**. Lo unico que lo distingue es `workspace_id`, y `workspace_id` se
+   calcula y se expone **sin entrar en ningun almacen**: de los cinco que
+   cuelgan de `project_data`, cuatro son de sesion y ninguno es por workspace.
+   El unico que si lo es, `workspaces/<w-id>/adoption.json`, es el que nadie
+   mira.
+
+   **EL CONTROL POSITIVO ES LO QUE SALVA EL VEREDICTO.** `adoption` **si** esta
+   separado por workspace, dos ficheros. Luego el mecanismo existe y funciona, y
+   su ausencia en bindings, capsules, deltas y reads no es un limite del
+   sistema: es una omision. Sin ese control, el veredicto habria sido «el
+   sistema no puede aislar por worktree», que es una excusa. Con el, es «nadie
+   lo pidio», que es una tarea.
+
+   **LAS DOS MITADES DEL ARREGLO ESTAN MEDIDAS Y NINGUNA BASTA.** F1
+   (namespacear `project_data` por workspace) quita W1 y W3; F2 (no cargar el
+   binding previo) quita W3 y W3b; **ninguna quita W2**, porque W2 no es un
+   comportamiento sino un campo que no existe. Y F1 **parte tambien
+   `knowledge-profile.json`**, `artifacts`, `cycle_artifacts` y `generated`, que
+   **si** son cosas del proyecto: la pregunta real no es «que directorio uso»
+   sino «que almacenes son de proyecto y cuales son de worktree». Eso es decision
+   de diseno con 265 proyectos reales encima, y **este bloque no la toma**.
+
+   **DOS DEFECTOS PROPIOS DEL CANARIO, AMBOS DEL MISMO TIPO QUE EL QUE EL
+   CANARIO INVESTIGA.** El primero se corrigio antes de ejecutar: buscar el
+   binding donde uno **supone** que esta en vez de donde **cae**, de modo que
+   con F1 puesto —que es justamente lo que lo mueve— el instrumento se apagaba.
+   El segundo se corrigio despues, y la primera corrida **no lo delato, lo
+   enmascaro**: devolvio `PASS=2 FAIL=0 SKIP=2` con F1 y F2 en `SKIP`
+   habiendo funcionado los dos, porque `measure` usaba `return 2` como
+   centinela de «el fixture no mide» **y `2` es tambien un veredicto valido** —
+   F1 y F2 dejan exactamente 2 violaciones. `FAIL=0` es indistinguible de «todo
+   bien» cuando la pregunta es si las comprobaciones vigilan algo; lo que lo
+   delato fue mirar el detalle de las dos SKIP.
+
+   **LO QUE ESTA SESION ENCONTRO Y NO ESTABA EN NINGUNA DEUDA: `CURRENT.md`
+   MENTIA EN TRES PUNTOS A LA VEZ.** Declaraba release vigente `v2.11.0` (es
+   `v2.12.0`), `all_present: true` (`doctor` da `false`, 20 checks `missing`) y
+   binario `matches` (`behind`, con `binary.build_identity` en `missing` porque
+   el binario es `f7d2118c` y el checkout va siete commits por delante). Es la
+   sexta vez que un documento cuenta una historia que no ocurrio, y **la primera
+   que se mide contra la API y el binario y no contra una impresion**. Corregido
+   con los tres valores medidos; el bloque de session-83 queda como historico
+   explicito, no borrado.
+
+   **LO QUE SIGUE ABIERTO, sin cambiar.** Los 6 ciclos `RELEASE_PENDING` (exigen
+   `merge-receipt`; este repo no usa PRs — politica, no bug). **El bloque de
+   reparacion de aislamiento por worktree**, que necesita una decision de diseno
+   antes de codigo: que almacenes son de proyecto y cuales de worktree, si un
+   reattach cross-worktree se permite, exige rebind o exige confirmacion, y si
+   `ledger.sqlite` —hoy por proyecto— debe seguir siendolo. **La capsule con
+   ciclo real: declarada NO medida**, porque `capsule_root` sigue siendo por
+   proyecto y eso serviria un `context: recovered` de otro worktree, pero montar
+   el ciclo era caro y **no se afirma lo que no se ha medido**. El guard de
+   pureza sin extender a `sddk-gateway`/`engine`/`cli`. `AdapterFact`/
+   `EvidenceResolver`, 532 lineas sin consumidor. `DEFAULT_DECLARATIONS` fuera de
+   8 ecosistema. Seis de los siete targets built-in sin cuerpo. Cero
+   observabilidad estructurada; 553 `unwrap`/`expect`. CI: 5/5 workflows en
+   `workflow_dispatch` y `release.yml` publica sin tests. Y **el escaner de
+   contaminacion se dispara con 4 pictogramas preexistentes en `CURRENT.md` y
+   `STATE.yaml`, fuera de lo que se ha escrito hoy**: no se corrigen porque no
+   son de estos bloques, y arrastrarlos aqui seria mezclar deudas.
