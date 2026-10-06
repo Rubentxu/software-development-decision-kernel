@@ -102,9 +102,25 @@ mk_repo() { # $1=directorio  $2=remote
     git -C "$1" commit -qm init >/dev/null 2>&1 || true
 }
 
+# El fichero donde rustc coloca el primer error. Sin esto, `mutar` no puede
+# distinguir SU parche de otra cosa.
+#
+# MEDIDO (session-90): el release de 2.13.0 murio aqui con
+# "el parche dejo el codigo sin compilar" y `PASS=3 FAIL=0 SKIP=1`, y el error
+# de verdad era `observed_provider` en un fichero que esta mutacion NO toca:
+# otra sesion estaba editando el workspace mientras compilaba. El canario leyo
+# la interferencia como una falsacion muerta propia, y al salir con FAIL mato
+# el release culpando al producto de un defecto ajeno. Un instrumento que no
+# sabe EN QUE FICHERO esta el fallo solo puede atribuirlo a lo ultimo que hizo,
+# y en un workspace con dos autores eso es una atribucion falsa.
+build_error_file() {
+    grep -oE '^ *--> [^: ]+' "$WORK/build.log" 2>/dev/null \
+        | head -1 | sed 's|.*--> *||' | tr -d ' '
+}
+
 build() {
     if ! cargo build -p sddk-cli --bin sddk > "$WORK/build.log" 2>&1; then
-        printf 'ERROR: la compilacion fallo\n'
+        printf 'ERROR: la compilacion fallo en %s\n' "$(build_error_file)"
         tail -20 "$WORK/build.log"
         return 1
     fi
@@ -443,7 +459,12 @@ mutar() { # $1=etiqueta $2=fichero $3=efecto(empeora|cambia|igual) $4=porque $5=
         cp "$WORK/mut.bak" "$fichero"; return
     fi
     if ! build; then
-        skip "$etiqueta" "el parche dejo el codigo sin compilar: mide que no arranca, no la propiedad"
+        err_file="$(build_error_file)"
+        if [ -n "$err_file" ] && [ "$err_file" != "$fichero" ]; then
+            skip "$etiqueta" "INTERFERENCIA: la compilacion fallo en $err_file y esta mutacion solo toca $fichero; no es una falsacion muerta de esta comprobacion"
+        else
+            skip "$etiqueta" "el parche dejo el codigo sin compilar: mide que no arranca, no la propiedad"
+        fi
         cp "$WORK/mut.bak" "$fichero"; build >/dev/null 2>&1; return
     fi
 

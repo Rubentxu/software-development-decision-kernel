@@ -9,6 +9,7 @@ All notable changes to this project are documented in this file.
   - feat(rules): seis leyes declaraban una arista prohibida y ninguna se media
 
 ### Fixes
+  - fix(canary): la compilacion se atribuyo al parche sin preguntar en que fichero — MEDIDO: el release de 2.13.0 murio en el paso 3o con "el parche dejo el codigo sin compilar", `PASS=3 FAIL=0 SKIP=1`, y el error de verdad era `observed_provider` en un fichero que esa mutacion NO toca: otra sesion estaba editando el workspace mientras compilaba. El canario leyo la interferencia como una falsacion muerta SUYA, y al salir con FAIL mato el release culpando al producto de un defecto ajeno. `build` ahora nombra el fichero donde rustc coloca el error y `mutar` lo compara con el que su parche toco: si coinciden, la falsacion es de esta comprobacion; si no, el motivo dice INTERFERENCIA y cita los dos ficheros. Un instrumento que no sabe EN QUE FICHERO esta el fallo solo puede atribuirlo a lo ultimo que hizo, y en un workspace con dos autores eso es una atribucion falsa
   - fix(rules): el juez de frescura media el binario instalado, no el que se le paso
   - fix(release): la paridad de rutas congelo un tag y era insatisfacible
 
