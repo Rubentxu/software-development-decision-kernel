@@ -2223,14 +2223,64 @@ sv = data["schema_version"]
 print("actor_kind=" + ak + " actor_id=" + aid + " schema_version=" + str(sv))
 ' "$RECEIPT_PATH")"
 
+# ── Notas de la release: la seccion del changelog de ESTA version ────────────
+#
+# MEDIDO, y era un agujero entero: el changelog se escribe, el gate 2b verifica
+# que la seccion `## [<version>]` describa todo el trabajo que se publica —y
+# fallo con `PASS=4 FAIL=5` la primera vez que se comprobo de verdad—, y despues
+# no se publica en NINGUN sitio. MEDIDO sobre el bundle de v2.13.0: 2 ficheros
+# de docs, cero changelog, cero release notes; `BUNDLE.toml` dice la version y
+# nada mas. Y el body de la release en GitHub eran 127 bytes con la frase
+# "published by scripts/release.sh".
+#
+# O sea: un gate que verifica la fidelidad de un documento que nadie recibe.
+# Cerrar el bucle hace que el gate signifique algo — y de paso que el trabajo
+# publicable se lea sin clonar el repo.
+#
+# Se extrae la seccion EXACTA de CHANGELOG.md, entre su encabezado y el
+# siguiente, y se antepone al recibo. Si la seccion no existe, el release falla:
+# el gate 2b ya habria parado antes, y un fallo aqui es una defensa mas, no una
+# comprobacion nueva que mantener sincronizada.
+extract_changelog_section() {
+    local version="$1" changelog="$2"
+    python3 - "$version" "$changelog" <<'PYEOF'
+import re, sys
+version, path = sys.argv[1], sys.argv[2]
+try:
+    text = open(path, encoding="utf-8").read()
+except OSError as e:
+    sys.stderr.write("no se puede leer %s: %s\n" % (path, e))
+    sys.exit(1)
+m = re.search(r"^## \[%s\][^\n]*\n(.*?)(?=^## \[|\Z)" % re.escape(version),
+              text, re.M | re.S)
+if not m:
+    sys.stderr.write("CHANGELOG.md no tiene seccion ## [%s]\n" % version)
+    sys.exit(1)
+body = m.group(1).strip()
+if not body:
+    sys.stderr.write("la seccion ## [%s] esta vacia\n" % version)
+    sys.exit(1)
+print(body)
+PYEOF
+}
+
+CHANGELOG_SECTION="$(extract_changelog_section "$VERSION" "$ROOT/CHANGELOG.md")" \
+    || die "el changelog no describe $VERSION: se corrige antes de publicar"
+
 RELEASE_ARGS=(
     "$TAG"
     --repo "$REPO"
     --target "$RELEASE_TARGET"
     --title "sddk $TAG"
-    --notes "Release $TAG — published by scripts/release.sh.
+    --notes "sddk $TAG.
 
-ARCH-HEX-001 receipt: ${RECEIPT_SUMMARY}"
+## Que cambia
+
+${CHANGELOG_SECTION}
+
+---
+
+Publicado por scripts/release.sh. Receipt: ${RECEIPT_SUMMARY}"
 )
 # Note: --clobber is NOT supported on `gh release create` in gh <2.99 (only on `upload`).
 # We pass --clobber to `gh release upload` below, which is the path that actually needs it.
