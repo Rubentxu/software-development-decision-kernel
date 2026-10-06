@@ -16575,3 +16575,55 @@ no distingue «no hay ficheros» de «no he mirado donde estan», y solo la segu
 es lo que medi. El canario y sus pruebas fabrican sus fixtures en un temporal
 propio, luego ninguna medicion de este bloque cambio por el error; el dano es
 solo a lo que este journal afirma.
+
+---
+
+## 2026-10-06T15:20Z — REL-2.12.1 publicada, y tres rojos que no eran el mismo rojo
+
+**PUBLICADA.** `v2.12.1` el 2026-10-06T13:01:31Z, `draft=false`,
+`prerelease=false`, 9 assets. Verificada por dos caminos: el binario por **API** y
+por **CDN** da `a3bbbbbe…dbf44` en los dos, y los dos assets del `CHECKSUMS`
+(musl y framework) verificados contra el CDN dan **2/2 OK, 0 FALLO**. Local
+coherente: `sddk 2.12.1`, `framework/2.12.1/`, `current` →
+`framework/2.12.1`. Sin firma: `SDDK_SKIP_SIGNING=1`, `UNSIGNED` declarado, y el
+ancla **no se fabrica**.
+
+**LO QUE ESTE BLOQUE DEMUESTRA, y que no es «tres guards rojos que se arreglan»:**
+un release que muere tres veces por **tres causas de signo opuesto** no estaba
+fallando — estaba midiendo tres cosas distintas.
+
+1. `test_adr_0157_criteria.sh` dio `NOT_APPLIED=2` en C1 porque sus dos tests
+   nombraban lo que `e60dae75` renombro. **MEDIDO que no era redaccion sino
+   saturacion del host**: `load average` 20-39 sobre 64 nucleos, con Gradle y
+   `pytest` de `/Proyectos/kotlin` y `skillgraph` corriendo a la vez. Aislado el
+   guard da `PASS=26 FAIL=0 NOT_APPLIED=0` en 37 s. Repuntado en `b6311078`.
+2. `test_release_state_pointer.sh` dio deriva de **9 commits**: `current_sha`
+   declaraba `e441df0c` con `main` en `b6311078`. Fallo **real** — es el unico
+   guard que sabe si el documento de estado dice la verdad. Reconciliado con el
+   script propio en `f30f0d49`.
+3. `test_build_identity_policy.sh` dio `PASS=6 FAIL=2` por dos caracteres CJK
+   donde debia decir «release». **Lo que lo hace leccion y no incidente**: el
+   guard mide las lineas anadidas en el **diff committeado** contra el tag, no el
+   arbol de trabajo, luego sin commit el FAIL sigue vivo aunque el fichero este
+   limpio en disco. El instrumento lee la puerta y no el umbral. Corregido en
+   `1db13233`, verificado `PASS=8 FAIL=0 NO_MEDIDO=0`.
+
+**CUARTA COSA, y es la que mas cuesta aprender: `HEAD` se movio CUATRO veces bajo
+los pies de esta sesion** — `84fe88b7`, `b6311078`, `9a21d395`, `1db13233` — y
+tres de las cuatro se/stablecieron como **fallos de release sin relacion con lo
+que la sesion creia hacer**. Un intento murio en el preflight por un candado de
+`2.12.1` retenido por un proceso ajeno, y la conclusion correcta no fue «liberar
+el candado» sino «esperar a que el otro terminara». **Un contexto de sesion
+describe un estado pasado; el unico modo de saber el presente es `git log`.**
+
+**DECLARADO, no arreglado.** (1) El layout de sesion es **rompente por
+naturaleza**: quien tenga un `sddk` viejo seguira escribiendo donde el anterior
+leia, sin migracion y sin aviso de vuelta atras. (2) Los ficheros del layout
+viejo —**92 bindings, 94 deltas, 27 capsules**, en `data_home`, medidos hoy—
+quedan **inertes**: 0 ilegibles, ninguno con `workspace_id`, y migrarlos
+exigiria inventar uno. (3) La flakiness por carga ajena **no esta arreglada, esta
+medida**: el host compartido hace que un guard de 56 binarios pueda no terminar a
+tiempo; el guard es correcto, la maquina no es determinista. (4) INC-DEBT-050/061
+(identidad e historia: decision del operador). (5) Orden inestable de
+`candidates` en la ambiguedad de ciclo. (6) El catch-all de `recovery:` en
+`sddk-gateway`. (7) 525 candados `/tmp/sddk-excl.*` (INC-DEBT-075).
