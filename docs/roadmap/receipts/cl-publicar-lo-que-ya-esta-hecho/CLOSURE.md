@@ -146,7 +146,101 @@ La admisión es semántica: comprueba que hay un cambio real y monótono de
 commit ceremonial, y por eso el `pre-push` aceptó los cinco bloques anteriores sin
 `--no-verify`.
 
-**VERIFICACIÓN FINAL: RELLENAR**
+## VERIFICACIÓN FINAL — la release 2.12.0 está publicada y instalada
+
+Quinto intento del release real, y el primero que llegó entero. El cuarto murió en
+el `8c`; lo que se midió y se decidió está en el `PRE-FLIGHT` (checkpoint 3). El
+quinto relance con `SDDK_SKIP_SIGNING=1`, **sin ningún otro cambio**.
+
+### Lo que pasó por verde, en orden
+
+| Paso | Gate | Resultado |
+|------|------|-----------|
+| 0 | preflight, admisión | `ACCEPT last-publish=2.11.4 -> 2.12.0` |
+| 1 | fmt + clippy + test workspace | 308 binarios, 0 fallos |
+| 1b | 52 contratos shell | 52/52 |
+| 2b | changelog coverage | `PASS=22 FAIL=0` |
+| 3 | binario release musl | estático, build-id `8f494f54…` |
+| 3b | reconciliación del artefacto | `PASS=16 FAIL=0` |
+| 3c | autofalsación de la reconciliación | `PASS=10 FAIL=0` |
+| 3d | los cuatro estados de `build_identity` | `PASS=16 FAIL=0` (O6 `NOT_RUN`) |
+| 3e | receipt de frontera exigible | `PASS=14 FAIL=0` |
+| 3f | el nombre no promete una frontera | `PASS=9 FAIL=0` |
+| 3g | autofalsación de la política de nombres | `PASS=8 FAIL=0` |
+| 3h | cita de spec anclada a un documento | `PASS=6 FAIL=0 SKIP=0` |
+| 3i | conjunto cerrado de descarte | `PASS=5 FAIL=0 SKIP=0` |
+| 3i-b | línea base del bump desde el remoto | `PASS=2 FAIL=0 SKIP=0` |
+| 3j | vista del operador derivada | `PASS=4 FAIL=0 SKIP=0` |
+| 3k | enumeración de decisiones | `PASS=5 FAIL=0 SKIP=0` |
+| 3l | línea base publicada del 2b | `PASS=5 FAIL=0 SKIP=0` |
+| 3m | el release nombra su propia causa de fallo | `PASS=20 FAIL=0 SKIP=0` |
+| 3n | los siete `uat_ctx_*` contra el binario a publicar | 7/7 |
+| 4 | `MANIFEST.sha256` | 395 ficheros, verifica |
+| 5–7 | bundle, `BUNDLE.toml`, unificado | 679 KB + 12.692.388 B |
+| 8 | checksums + sbom | presente |
+| 8b | espejo del vault | 69 aceptados, 0 creados (idempotente) |
+| **8c** | **firma** | **`SDDK_SKIP_SIGNING=1` declarado, sin firmar** |
+| 9 | `gh release create` | publicada |
+| 9b | public-release gate | tag SHA `f7d2118c`, **9/9 assets HTTP 200** |
+| **9c** | **autenticidad** | **`NOT_RUN` con su motivo** |
+| 10 | install desde la URL real | CDN convergiu a los 10 s |
+| 11–13 | doctor, prune, round-trip | binario y bundle coherentes |
+
+### El artefacto, medido desde fuera del script
+
+```
+$ gh release view v2.12.0 --json tagName,isDraft,isPrerelease,assets
+tag: v2.12.0 | draft: False | prerelease: False | 2026-10-06T01:32:58Z
+assets: 9        firmas .sig: 0
+
+$ git ls-remote origin refs/tags/v2.12.0
+f7d2118c9b77259df54a00be249d60a5b27eac3a   refs/tags/v2.12.0
+
+$ sddk --version
+sddk 2.12.0        -> /home/rubentxu/.local/bin/sddk
+
+$ ls ~/.local/share/sddk/framework/
+2.12.0    current
+```
+
+**9 assets y 0 firmas es exactamente el contrato de `v2.11.4`.** No se cambió el
+contrato del artefacto publicado: se mantuvo.
+
+### Lo que este release NO verifica, dicho por el propio release
+
+`9c` no corrió, y no por un fallo: `signature files present: 0` luego **no hay
+nada que verificar**, y el gate lo **declaró** en vez de dejarlo en silencio. La
+integridad se verificó —el `sha256` del binario servido por el CDN y coincidente
+con el local, `CHECKSUMS`, `sbom.json`, `MANIFEST.sha256` con 395 ficheros—. **La
+autenticidad no se verificó**, y el instalador lo dice con esas palabras a quien
+lo ejecuta:
+
+```
+warning: integrity (sha256) is verified, authenticity is NOT.
+warning: a compromised download origin would be accepted.
+```
+
+Firmar requiere un KMS que esta máquina no tiene. Approvisionarlo cambia el ancla
+de confianza de un artefacto ya publicado, y eso es una decisión de política, no
+de automatización. Declarado, no forzado.
+
+### El instrumento que se rompió a sí mismo, por quinta vez
+
+Entre el quinto lanzamiento y el `1b` hubo un `ls` y un `tail` sobre el directorio
+de este mismo recibo que devolvieron `No existe el fichero o el directorio`,
+cuando el directorio existe, está en `git` y tenía 321 líneas. Repetido al
+momento: verde. **Y la primera explicación que escribí —«el volumen montado
+devuelve `ENOENT` transitorio bajo carga»— quedó falsada por el comando
+siguiente**: el `cat >>` que escribía el checkpoint devolvió el mismo `ENOENT` y
+**sí escribió** (321 → 413 líneas). Si el error fuera del sistema de ficheros, la
+escritura no habría pasado.
+
+Lo medido es que la misma ruta literal falla unas veces y funciona otras; **la
+causa no está determinada** y queda así, sin explicar. Lo que sí se cambió, y es
+lo único que se cambió: **todas las rutas de este bloque se resuelven con un glob
+en lugar de una cadena escrita a mano**, y antes de dar por perdido un fichero
+versionado se pregunta a `git ls-files`, que responde con la verdad sobre lo que
+Git sabe.
 
 ---
 

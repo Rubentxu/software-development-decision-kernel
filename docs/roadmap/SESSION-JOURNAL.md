@@ -16283,3 +16283,109 @@ Ninguno de los dos es nuevo, y los dos valieron el trabajo:
    atascados por una politica que cambio por debajo.** Cerrarlos exigiria decidir
    que es un `merge-receipt` cuando la respuesta canonica es «no hay merge, hay
    push directo». Eso es politica y se declara, no se fuerza.
+
+---
+
+## session-87 — VA13 cerrado: REL-2.12.0 publicada e instalada (5 intentos)
+
+   **LA RELEASE 2.12.0 ESTA PUBLICADA.** Quinto intento, el primero entero.
+   El cuarto llego con todo lo anterior en verde y murio en el `8c`. Lo que se
+   decidio ahi esta medido y escrito en el `PRE-FLIGHT` (checkpoint 3); aqui va
+   el cierre.
+
+   **EL 8c NO ERA UN GATE NUEVO NI FALTAVA UNA CREDENCIAL: ERA UNA DECISION QUE
+   YA SE HABIA TOMADO.** Tres mediciones, en este orden:
+
+   1. `git log -S cosign -- scripts/release.sh` y `git show v2.11.4:scripts/release.sh`
+      — el 8c ya existia, con el mismo texto. No se rompio nada al publicar.
+   2. `gh release view v2.11.4 --json assets` — **9 assets, CERO `.sig`**. La
+      release publicada tampoco estaba firmada. Luego `SDDK_SKIP_SIGNING=1` no es
+      una puerta que este bloque abra: es la por la que ya salio `v2.11.4`.
+   3. Por tanto publicar `2.12.0` sin firmar **conserva** el contrato del
+      artefacto publicado. Firmarla lo cambiaria en los dos sitios a la vez —el
+      8c y el instalador de cada usuario— y hace falta un KMS que esta maquina no
+      tiene. Approvisionarlo cambia el ancla de confianza de un artefacto ya
+      publicado: es politica, no automatizacion.
+
+   **Y NO ES SALTAR UN GATE**, que es la tercera vez que la distincion importa en
+   este bloque: sortear es no mirar la regla y continuar; esto es **declarar antes
+   de publicar** que el artefacto no lleva firma, con la consecuencia escrita en el
+   nombre de la bandera que la exige. El pipeline entero lo dice solo: el `8c`
+   admitio `UNSIGNED`, el `9c` lo declaro `NOT_RUN` con su motivo, y el paso 10
+   propago `SDDK_SKIP_SIGNING=1` como `SDDK_ALLOW_UNSIGNED=1` al instalador —que
+   es la tercera vez que la misma verdad se decidia en un sitio distinto del que
+   se decidio, y por eso el paso 10 tiene el codigo que la comunica.
+
+   **LO QUE CORRIO EN VERDE, en orden:** `0` admision `ACCEPT last-publish=2.11.4
+   -> 2.12.0` · `1` fmt+clippy+test, 308 binarios, 0 fallos · `1b` 52/52 contratos
+   shell · `2b` changelog `PASS=22 FAIL=0` · `3` binario musl estatico ·
+   `3b` `PASS=16` · `3c` `PASS=10` · `3d` `PASS=16` · `3e` `PASS=14` · `3f`
+   `PASS=9` · `3g` `PASS=8` · `3h` `PASS=6` · `3i` `PASS=5` · `3i-b` `PASS=2` ·
+   `3j` `PASS=4` · `3k` `PASS=5` · `3l` `PASS=5` · **`3m` `PASS=20`** · `3n` los
+   siete `uat_ctx_*` · `4` manifest 395 ficheros · `5-7` bundle 679 KB +
+   unificado 12.692.388 B · `8` checksums+sbom · `8b` espejo del vault 69
+   aceptados 0 creados · `8c` declarado sin firmar · `9` publicada · `9b` tag SHA
+   `f7d2118c` y **9/9 assets HTTP 200** · `9c` `NOT_RUN` con motivo · `10` CDN
+   convergiu a los 10 s · `11-13` doctor, prune y round-trip coherentes.
+
+   **MEDIDO DESDE FUERA DEL SCRIPT**, que es lo que vale como evidencia:
+   `v2.12.0` `isDraft=false`, `isPrerelease=false`, `publishedAt
+   2026-10-06T01:32:58Z`, **9 assets, 0 firmas** — el contrato de `v2.11.4` intacto.
+   `git ls-remote origin refs/tags/v2.12.0` -> `f7d2118c`. `sddk --version` ->
+   `2.12.0` en `~/.local/bin`, con `framework/2.12.0` + `current`.
+
+   **LO QUE ESTE RELEASE NO VERIFICA, DICHO POR EL PROPIO RELEASE.** `9c` no
+   corrio porque `signature files present: 0`: no hay nada que verificar. La
+   integridad si —sha256 del CDN coincidente con el local, `CHECKSUMS`, `sbom.json`,
+   `MANIFEST.sha256`—; **la autenticidad no**, y el instalador lo dice con esas
+   palabras: `integrity (sha256) is verified, authenticity is NOT`.
+
+   **SEGUNDA VEZ QUE UN CAMPO DE `STATE.yaml` PASA SU GATE CON LA PROSA EN
+   FALSO, Y LAS DOS EN EL MISMO COMMIT.** `reconcile_state_pointer.sh` respondio
+   «el puntero ya describe el estado real; nada que reparar» —2 commits por detras
+   caben en la tolerancia 3, y el VALOR `2.12.0` estaba alineado con `Cargo.toml`—
+   mientras su propia prosa decia «AUN NO PUBLICADA» y «el tag publicado mas alto
+   es v2.11.4», que habian dejado de ser ciertos al publicarse. Y al lado,
+   `last_public_release_observed` seguia en `v2.5.2` con una prosa que describia
+   una release de la que hacia varias publicaciones. **Los dos se corrigieron a
+   mano con evidencia observada, y los dos por la misma causa: el guard compara
+   VALORES y nadie lee PROSA.** La primera vez que se vio esta clase fue en este
+   mismo bloque, y con el mismo campo, y que se repita con el mismo guard sobre el
+   mismo fichero dice que el hueco no es del puntero: **es que ningun check lee
+   prosa**. Declarado, no arreglado: abrirlo es un bloque con su propio SCOPE.
+
+   **Y ME COLARON DOS IDEOGRAMAS AL ESCRIBIR ESA CORRECCION.** Uno metido entre
+   «varias» y «de», y otro entre «la primera» y «en». Los dos son **insercion pura** entre palabras
+   espanolas ya validas —se retiran y la frase queda grammatical—, que es
+   exactamente el criterio que el changelog de este mismo release usa para
+   distinguir lo corregible de lo que habria que adivinar. Retirados antes de
+   commitear. **Lo que NO se retira es el ideograma que el CHANGELOG cita de
+   `operator.rs` como evidencia**: esos caracteres estan transcritos a proposito
+   y borrarlos seria borrar el testimonio. Aqui no se reproduce el glifo porque
+   esta entrada no es el sitio donde vive esa cita.
+
+   **EL INSTRUMENTO QUE SE ROMPIO A SI MISMO, POR QUINTA VEZ, Y MI EXPLICACION
+   FALSADA POR EL SIGUIENTE COMANDO.** Entre el lanzamiento y el `1b`, un `ls` y un
+   `tail` sobre el directorio del propio recibo devolvieron `No existe el fichero o
+   el directorio` —cuando existe, esta en `git` y tenia 321 lineas. Escribi que era
+   «el volumen montado devolviendo `ENOENT` transitorio bajo carga», y **el comando
+   siguiente lo desmintio**: el `cat >>` que escribia el checkpoint devolvio el
+   mismo `ENOENT` **y si escribio** (321 -> 413). Si el error fuera del sistema de
+   ficheros, la escritura no habria pasado. Medido: la misma ruta literal falla
+   unas veces y funciona otras. **Causa NO determinada**, y queda sin explicar.
+   Lo unico que se cambio: todas las rutas del bloque se resuelven con glob, y
+   antes de dar por perdido un fichero versionado se pregunta a `git ls-files`.
+   Si hubiera actuado sobre el primer `ENOENT`, habria reconstruido a ciegas un
+   recibo que estaba entero.
+
+   **LO QUE SIGUE ABIERTO, sin cambiar.** Los 6 ciclos `RELEASE_PENDING`
+   (exigen `merge-receipt`, y este repo no usa PRs — politica, no bug). El guard
+   de pureza del nucleo cubre UN modulo de N. `AdapterFact`/`EvidenceResolver`,
+   532 lineas sin consumidor. `DEFAULT_DECLARATIONS` fuera de `build.sbt`,
+   `composer.json`, `mix.exs`, `pubspec.yaml`, `Gemfile`, `*.csproj`,
+   `meson.build`, `BUILD.bazel`. Seis de los siete targets built-in sin cuerpo.
+   Cero observabilidad estructurada; 553 `unwrap`/`expect`. CI: 5/5 workflows en
+   `workflow_dispatch` y `release.yml` publica sin tests. `CURRENT.md` y
+   `SESSION-JOURNAL.md` no los reconcilia nadie: el gate no los mira y el script
+   no los toca, luego pueden mentir indefinidamente — **y el turno de hoy es el
+   quinto ejemplo de un documento que casi cuenta una historia que no ocurrio**.
