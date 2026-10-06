@@ -280,3 +280,167 @@ rules: []
         stdout
     );
 }
+
+// ── C5: las reglas de arista se miden de verdad ─────────────────────────────
+//
+// Las seis reglas siguientes declaraban una arista prohibida sin evaluador:
+// caian en el `_ =>` del dispatcher y salian `NotApplicable`, que el veredicto
+// lee igual que "no hay". Estos tres tests miden la propiedad que el gap
+// rompia, no la forma del codigo:
+//
+//   1. la arista prohibida produce FAIL y exit 1;
+//   2. la arista INVERSA no produce FAIL (el matcher es direccional);
+//   3. el scope de ARCH006 se queda en su fichero y no se ensancha con un
+//      vecino del mismo crate que si depende de engine.
+//
+// El tercero es el que importa: sin el, un scope de prefijo pasaria el 1 y el
+// 2 igual, y mediria mas de lo que la regla declara sin que nada lo note.
+
+fn crate_toml(name: &str) -> String {
+    format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+}
+
+/// Build a two-crate workspace and run the gate against `rules_yaml`.
+///
+/// `from_files` is a list of `(filename, source)` written under
+/// `sddk-<from_crate>/src`; `to_crate` is scaffolded empty. Returns
+/// `(stdout, exit_code)`.
+fn run_gate_on_pair(
+    rules_yaml: &str,
+    from_crate: &str,
+    from_files: &[(&str, &str)],
+    to_crate: &str,
+) -> (String, i32) {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        format!("[workspace]\nresolver = \"2\"\nmembers = [\"{from_crate}\", \"{to_crate}\"]\n"),
+    )
+    .unwrap();
+
+    let from_dir = root.join("crates").join(from_crate).join("src");
+    std::fs::create_dir_all(&from_dir).unwrap();
+    std::fs::write(
+        root.join("crates").join(from_crate).join("Cargo.toml"),
+        crate_toml(from_crate),
+    )
+    .unwrap();
+    for (file, source) in from_files {
+        std::fs::write(from_dir.join(file), source).unwrap();
+    }
+
+    let to_dir = root.join("crates").join(to_crate).join("src");
+    std::fs::create_dir_all(&to_dir).unwrap();
+    std::fs::write(
+        root.join("crates").join(to_crate).join("Cargo.toml"),
+        crate_toml(to_crate),
+    )
+    .unwrap();
+    std::fs::write(to_dir.join("lib.rs"), "// no edges").unwrap();
+
+    let rules_path = root.join("rules.yaml");
+    std::fs::write(&rules_path, rules_yaml).unwrap();
+
+    let bin = sddk_bin();
+    assert!(bin.is_file(), "sddk binary missing at {bin:?}");
+    let output = Command::new(&bin)
+        .args([
+            "dev",
+            "check-architecture",
+            "--root",
+            root.to_str().unwrap(),
+            "--rules",
+            rules_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("sddk dev check-architecture must run");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        output.status.code().unwrap_or(-1),
+    )
+}
+
+const ARCH010_RULES: &str = r#"schema_version: "1.2.0"
+rules:
+  - id: ARCH010
+    severity: error
+    rule: cli_must_not_import_storage_directly
+    target: source_imports_and_calls
+"#;
+
+#[test]
+fn arch010_fails_when_the_forbidden_edge_exists() {
+    // sddk-cli -> sddk-storage is the edge ARCH010 declares.
+    let (stdout, code) = run_gate_on_pair(
+        ARCH010_RULES,
+        "sddk-cli",
+        &[("lib.rs", "use sddk_storage::Store;")],
+        "sddk-storage",
+    );
+    assert!(
+        stdout.contains("ARCH010") && stdout.contains("FAIL"),
+        "the declared violation must be reported FAIL; got:\n{stdout}"
+    );
+    assert_eq!(code, 1, "an unwaived error violation is exit 1 (OPEN_DEBT)");
+}
+
+#[test]
+fn arch010_ignores_the_reverse_edge() {
+    // sddk-storage -> sddk-cli is the opposite direction. ARCH010 forbids the
+    // first; a matcher that only counted "these two crates are connected"
+    // would call this a violation too, and would then be measuring a topology
+    // that no rule declares.
+    let (stdout, code) = run_gate_on_pair(
+        ARCH010_RULES,
+        "sddk-storage",
+        &[("lib.rs", "use sddk_cli::run;")],
+        "sddk-cli",
+    );
+    assert!(
+        !stdout.contains("FAIL"),
+        "the reverse edge is not the declared violation; got:\n{stdout}"
+    );
+    assert_eq!(code, 0, "no declared violation is CONFORMANT: exit 0");
+}
+
+#[test]
+fn arch006_scope_does_not_widen_to_a_neighbouring_file() {
+    const ARCH006_RULES: &str = r#"schema_version: "1.2.0"
+rules:
+  - id: ARCH006
+    severity: error
+    rule: graph_projection_must_not_depend_on_engine
+    target: dependency_graph
+"#;
+
+    // `graph_extra.rs` depends on the engine; `graph.rs` does not. The rule
+    // names the graph module, so this must PASS. Under a prefix scope it would
+    // FAIL, which is how a scope that depends on the future alphabet of file
+    // names gets to measure more than it declares with nothing noticing.
+    let (stdout, code) = run_gate_on_pair(
+        ARCH006_RULES,
+        "sddk-domain",
+        &[("graph_extra.rs", "use sddk_engine::Engine;")],
+        "sddk-engine",
+    );
+    assert!(
+        !stdout.contains("FAIL"),
+        "a neighbouring file must not widen ARCH006's scope; got:\n{stdout}"
+    );
+    assert_eq!(code, 0, "the scoped file is clean, so ARCH006 passes");
+
+    // The scoped file itself violating the rule must FAIL. Without this, the
+    // previous assertion would also hold if the scope matched nothing at all.
+    let (stdout, code) = run_gate_on_pair(
+        ARCH006_RULES,
+        "sddk-domain",
+        &[("graph.rs", "use sddk_engine::Engine;")],
+        "sddk-engine",
+    );
+    assert!(
+        stdout.contains("ARCH006") && stdout.contains("FAIL"),
+        "the scoped file violating the rule must be FAIL; got:\n{stdout}"
+    );
+    assert_eq!(code, 1, "an unwaived error violation is exit 1 (OPEN_DEBT)");
+}

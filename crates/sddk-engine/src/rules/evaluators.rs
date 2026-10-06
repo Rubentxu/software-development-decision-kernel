@@ -152,7 +152,13 @@ pub fn evaluate_all_with_resolver(
                 "ARCH003" => evaluate_arch003(rule, baseline, evaluated_at),
                 "ARCH004" => evaluate_arch004(rule, baseline, evaluated_at),
                 "ARCH005" => evaluate_arch005(rule, baseline, evaluated_at),
+                "ARCH006" => evaluate_arch006(rule, baseline, evaluated_at),
+                "ARCH007" => evaluate_arch007(rule, baseline, evaluated_at),
                 "ARCH008" => evaluate_arch008(rule, baseline, evaluated_at),
+                "ARCH009" => evaluate_arch009(rule, baseline, evaluated_at),
+                "ARCH010" => evaluate_arch010(rule, baseline, evaluated_at),
+                "ARCH011" => evaluate_arch011(rule, baseline, evaluated_at),
+                "ARCH012" => evaluate_arch012(rule, baseline, evaluated_at),
                 "ARCH013" => evaluate_arch013(rule, baseline, evaluated_at),
                 "ARCH014" => evaluate_arch014(rule, baseline, evaluated_at),
                 "ARCH015" => evaluate_arch015(rule, baseline, evaluated_at),
@@ -396,6 +402,186 @@ fn evaluate_arch005(
         evaluator_version: EVALUATOR_VERSION.to_owned(),
         provenance: Some("Phase 5 reactive runtime not yet shipped".to_owned()),
     }
+}
+
+// ── Evaluadores de arista (C5) ───────────────────────────────────────────────
+//
+// Las seis reglas siguientes declaraban una arista prohibida y no tenian
+// evaluador: caian en el `_ =>` del dispatcher, que devuelve `NotApplicable`
+// con `provenance: "evaluator not implemented"`. Un veredicto que dice
+// "no aplica" no es "no hay", asi que el gate podia declarar conformidad sobre
+// seis leyes que no habia mirado nunca.
+//
+// Las seis son LA MISMA medicion: una arista `from_crate -> to_crate` sobre
+// `baseline.cross_crate_imports`. Copiar el bloque de ARCH001 seis veces
+// serian seis copias que divergen en cuanto una cambia, luego la forma esta
+// factorizada en `evaluate_forbidden_edge` y cada regla la llama con sus dos
+// argumentos y nada mas.
+//
+// El septimo argumento, `file_scope`, distingue la unica que no es una arista
+// entre crates sino la arista de UN modulo: ARCH006 se declara sobre el
+// modulo `graph` de `sddk-domain`, no sobre el crate entero.
+
+/// Shared edge matcher: fail when any `from -> to` edge survives `file_scope`.
+///
+/// `file_scope`, when `Some`, narrows the measurement to one exact file. It is
+/// what keeps ARCH006 measuring the graph projection instead of the whole
+/// crate. Exact path, not prefix: with a prefix, `crates/sddk-domain/src/graph`
+/// measures what the rule declares today only because no other file starts
+/// with `graph` yet, and the day `graph_builder.rs` appears the rule would
+/// measure more than it declares with nothing noticing. A scope that depends
+/// on the future alphabet of names is not a scope.
+fn evaluate_forbidden_edge(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+    from_crate: &str,
+    forbidden: &[&str],
+    file_scope: Option<&str>,
+) -> RuleEvaluation {
+    let violating: Vec<_> = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == from_crate && forbidden.contains(&e.to_crate.as_str()))
+        .filter(|e| match file_scope {
+            Some(path) => e.from_file == path,
+            None => true,
+        })
+        .map(|e| {
+            json!({
+                "from_file": e.from_file,
+                "line": e.line,
+                "kind": e.kind,
+            })
+        })
+        .collect();
+
+    let status = if violating.is_empty() {
+        RuleStatus::Pass
+    } else {
+        RuleStatus::Fail
+    };
+
+    RuleEvaluation {
+        rule_id: rule.id.clone(),
+        status,
+        observed: json!({
+            "edges": violating,
+            "count": violating.len(),
+            "scope": file_scope,
+        }),
+        baseline_sha256: baseline.ref_.sha256.clone(),
+        evaluated_at: evaluated_at.to_owned(),
+        evaluated_by: format!("sddk-rules-cli@{EVALUATOR_VERSION}"),
+        waiver_id: None,
+        evaluator_kind: EvaluatorKind::Schema,
+        evaluator_version: EVALUATOR_VERSION.to_owned(),
+        provenance: Some(format!(
+            "live evaluator: {from_crate}->{{{}}} edges in cross_crate_imports{}",
+            forbidden.join(","),
+            match file_scope {
+                Some(path) => format!(" scoped to {path}"),
+                None => String::new(),
+            }
+        )),
+    }
+}
+
+/// ARCH006: the `sddk-domain` graph projection must depend only on inward
+/// ports, never on the engine.
+fn evaluate_arch006(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-domain",
+        &["sddk-engine"],
+        Some("crates/sddk-domain/src/graph.rs"),
+    )
+}
+
+/// ARCH007: domain types must not import storage.
+fn evaluate_arch007(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-domain",
+        &["sddk-storage"],
+        None,
+    )
+}
+
+/// ARCH009: storage must not import engine.
+fn evaluate_arch009(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-storage",
+        &["sddk-engine"],
+        None,
+    )
+}
+
+/// ARCH010: the CLI must not import storage directly.
+fn evaluate_arch010(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-cli",
+        &["sddk-storage"],
+        None,
+    )
+}
+
+/// ARCH011: the vault must not import storage.
+fn evaluate_arch011(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-vault",
+        &["sddk-storage"],
+        None,
+    )
+}
+
+/// ARCH012: the testkit must not import storage.
+fn evaluate_arch012(
+    rule: &sddk_domain::ArchitectureRule,
+    baseline: &Baseline,
+    evaluated_at: &str,
+) -> RuleEvaluation {
+    evaluate_forbidden_edge(
+        rule,
+        baseline,
+        evaluated_at,
+        "sddk-testkit",
+        &["sddk-storage"],
+        None,
+    )
 }
 
 // ── ARCH008 ──────────────────────────────────────────────────────────────────
