@@ -203,6 +203,109 @@ rules:
 }
 
 #[test]
+fn an_edge_rule_ignores_a_forbidden_edge_that_only_exists_under_cfg_test() {
+    // The gate measures PRODUCTION. A `use sddk_storage::...` inside
+    // `#[cfg(test)]` is the test suite exercising the command, and charging
+    // production code for it would be a law that fails the tests proving the
+    // code works.
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH010
+    severity: error
+    rule: cli_must_not_import_storage_directly
+    target: source_imports_and_calls
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+
+    // The baseline comes from the REAL capture path, not from `make_baseline`:
+    // a fixture would carry whatever `kind` this test wanted it to carry, and
+    // a test that chooses the answer it is asserting proves nothing about the
+    // scanner.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("crates/sddk-cli/src")).expect("mkdir");
+    std::fs::write(
+        root.join("crates/sddk-cli/Cargo.toml"),
+        "[package]\nname = \"sddk-cli\"\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/sddk-cli\"]\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("crates/sddk-cli/src/lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    use sddk_storage::SqliteEventStore;\n}\n",
+    )
+    .expect("write");
+
+    let captured = sddk_engine::rules::BaselineConsumer::capture_live(root).expect("capture");
+    let prod: Vec<_> = captured
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.kind == sddk_engine::rules::CrossCrateImportKind::Use)
+        .collect();
+    assert!(
+        prod.is_empty(),
+        "the only storage edge lives in a test module, so production has none"
+    );
+
+    let v = &evaluate_all(&registry, &captured, "t", None)[0];
+    assert_eq!(
+        v.status,
+        RuleStatus::Pass,
+        "a forbidden edge that only exists under #[cfg(test)] cannot fail a production law"
+    );
+    assert_eq!(
+        v.observed["test_edges_excluded"], 1,
+        "and it is still REPORTED, not dropped"
+    );
+}
+
+#[test]
+fn a_test_scoped_edge_does_not_inflate_the_subject_of_a_production_rule() {
+    // The mirror image: dropping edges silently is how a rule stops covering
+    // anything without anyone noticing. The count of what was excluded has to
+    // be visible, or "the gate says 0" and "the gate looked at 0" look alike.
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH001
+    severity: error
+    rule: engine_must_not_depend_on_storage
+    target: dependency_graph
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("crates/sddk-engine/src")).expect("mkdir");
+    std::fs::write(
+        root.join("crates/sddk-engine/Cargo.toml"),
+        "[package]\nname = \"sddk-engine\"\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/sddk-engine\"]\n",
+    )
+    .expect("write");
+    std::fs::write(
+        root.join("crates/sddk-engine/src/lib.rs"),
+        "use sddk_domain::Thing;\n#[cfg(test)]\nmod tests {\n    use sddk_storage::SqliteEventStore;\n}\n",
+    )
+    .expect("write");
+
+    let captured = sddk_engine::rules::BaselineConsumer::capture_live(root).expect("capture");
+    let v = &evaluate_all(&registry, &captured, "t", None)[0];
+    assert_eq!(v.observed["subject_edges"], 1, "una arista de produccion");
+    assert_eq!(
+        v.observed["test_edges_excluded"], 1,
+        "y una de test que se reporta aparte"
+    );
+    assert_eq!(v.status, RuleStatus::Pass);
+}
+
+#[test]
 fn evaluate_all_returns_not_applicable_when_waiver_expired() {
     let yaml = r#"schema_version: 1.2.0
 rules:
@@ -516,6 +619,154 @@ waivers:
         assert!(!first_sha.is_empty(), "need root commit");
         let resolver = git_ancestry_resolver(&root);
         assert_eq!(status_with(&first_sha, resolver), RuleStatus::Waived);
+    }
+}
+
+// ── ARCH010: el reparto entre composition root y comando ─────────────────────
+//
+// La ley no exime al composition root — construir el adaptador alli es lo que
+// un composition root HACE —, pero la fila tiene que poder distinguir "estas 12
+// aristas son deuda" de "estas 2 ya estan concedidas por WV-0015". Un 14 sin
+// repartir no sirve como entrada de un ciclo de rework, y un 12 en el aire seria
+// una deuda distinta de la que existe.
+mod arch010_split {
+    use super::*;
+    use sddk_domain::RuleStatus;
+    use sddk_engine::rules::{BaselineConsumer, CrossCrateImportKind};
+
+    const CATALOG: &str = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH010
+    severity: error
+    rule: cli_must_not_import_storage_directly
+    target: source_imports_and_calls
+"#;
+
+    /// `files` maps a repo-relative path to its contents; `lib.rs` must exist.
+    fn build(root: &std::path::Path, files: &[(&str, &str)]) -> sddk_engine::rules::Baseline {
+        std::fs::create_dir_all(root.join("crates/sddk-cli")).expect("mkdir crate");
+        std::fs::write(
+            root.join("crates/sddk-cli/Cargo.toml"),
+            "[package]\nname = 'sddk-cli'\n",
+        )
+        .expect("write");
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = ['crates/sddk-cli']\n",
+        )
+        .expect("write");
+        for (rel, body) in files {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().expect("has parent")).expect("mkdir");
+            std::fs::write(path, body).expect("write");
+        }
+        BaselineConsumer::capture_live(root).expect("capture")
+    }
+
+    fn eval(baseline: &sddk_engine::rules::Baseline) -> sddk_domain::RuleEvaluation {
+        let registry = sddk_domain::RuleRegistry::from_yaml_str(CATALOG).expect("parse");
+        evaluate_all(&registry, baseline, "t", None).remove(0)
+    }
+
+    #[test]
+    fn arch010_separates_the_composition_root_from_the_command_modules() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // One edge at the composition root (lib.rs), two in command modules,
+        // each in its own file, which is how the real crate is laid out.
+        let baseline = build(
+            tmp.path(),
+            &[
+                (
+                    "crates/sddk-cli/src/lib.rs",
+                    "use sddk_storage::SqliteControlPlane;\npub use sddk_storage::Storage;\n",
+                ),
+                (
+                    "crates/sddk-cli/src/backlog.rs",
+                    "use sddk_storage::SqliteBacklogStoreOwned;\n",
+                ),
+                (
+                    "crates/sddk-cli/src/fork_cmd.rs",
+                    "use sddk_storage::SqliteForkStore;\n",
+                ),
+            ],
+        );
+        let v = eval(&baseline);
+
+        assert_eq!(v.status, RuleStatus::Fail);
+        assert_eq!(v.observed["count"], 4, "las cuatro aristas son de la ley");
+        assert_eq!(
+            v.observed["composition_root_edges"], 2,
+            "las dos que estan en lib.rs son el composition root"
+        );
+        assert_eq!(
+            v.observed["outside_composition_root"], 2,
+            "y las otras dos son deuda de verdad"
+        );
+    }
+
+    /// The composition-root split is FILE-granular, and this is where that
+    /// boundary is. A command module written inline inside `lib.rs` counts as
+    /// composition root, because the baseline knows files and lines, not
+    /// modules. Declaring it as a test is what keeps it from being an accident:
+    /// the day the baseline learns module scope, this test is where the
+    /// behaviour is expected to CHANGE, and whoever changes it reads why.
+    #[test]
+    fn the_composition_root_split_is_file_granular_not_module_granular() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let baseline = build(
+            tmp.path(),
+            &[(
+                "crates/sddk-cli/src/lib.rs",
+                "use sddk_storage::SqliteControlPlane;\n\
+                 mod backlogs {\n    use sddk_storage::SqliteBacklogStoreOwned;\n}\n",
+            )],
+        );
+        let v = eval(&baseline);
+
+        assert_eq!(v.observed["count"], 2);
+        assert_eq!(
+            v.observed["composition_root_edges"], 2,
+            "the inline module sits in lib.rs, so the file-granular split calls it\
+             composition root — a known limit of the baseline, not a claim about\
+             what the code does"
+        );
+        assert_eq!(v.observed["outside_composition_root"], 0);
+    }
+
+    #[test]
+    fn an_edge_inside_a_test_module_does_not_count_as_command_debt() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let baseline = build(
+            tmp.path(),
+            &[
+                ("crates/sddk-cli/src/lib.rs", ""),
+                (
+                    "crates/sddk-cli/src/backlog.rs",
+                    "use sddk_storage::SqliteBacklogStoreOwned;\n",
+                ),
+                (
+                    "crates/sddk-cli/src/ledger.rs",
+                    "#[cfg(test)]\nmod tests {\n    use sddk_storage::SqliteEventStore;\n}\n",
+                ),
+            ],
+        );
+        let v = eval(&baseline);
+
+        assert_eq!(
+            v.observed["count"], 1,
+            "el `use` de test no es deuda del comando"
+        );
+        assert_eq!(v.observed["outside_composition_root"], 1);
+        assert_eq!(
+            v.observed["test_edges_excluded"], 1,
+            "y se reporta aparte en vez de desaparecer"
+        );
+        assert!(
+            baseline
+                .cross_crate_imports
+                .iter()
+                .any(|e| e.kind == CrossCrateImportKind::TestScopedUse)
+        );
     }
 }
 

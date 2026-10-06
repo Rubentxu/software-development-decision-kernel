@@ -21,6 +21,20 @@ pub enum CrossCrateImportKind {
     CargoDep,
     /// This edge was derived from a `use` statement in source code.
     Use,
+
+    /// A `use` that sits inside a `#[cfg(test)]` module.
+    ///
+    /// Production and test are different claims. A CLI command module that
+    /// constructs `SqliteEventStore` at runtime is the CLI reaching the
+    /// adapter; a test that constructs one to prove the command works is the
+    /// test suite doing its job. Counting the second as the first inflates
+    /// every edge rule over the whole workspace with edges that only exist
+    /// under `cargo test`.
+    ///
+    /// Kept as a separate kind rather than a boolean so the discrimination
+    /// lives in the data the rules already match on, instead of in a field
+    /// every future rule has to remember to honour.
+    TestScopedUse,
 }
 
 /// A single cross-crate import edge, either from a `use` statement or a Cargo dependency.
@@ -502,13 +516,66 @@ fn normalize_crate_name(raw: &str) -> String {
 /// captured; `crate::` and `super::` are intentionally skipped (they resolve
 /// within the same crate and don't form cross-crate edges).
 fn scan_use_statements(content: &str, rel_path: &str, out: &mut Vec<CrossCrateImport>) {
+    let mut depth: i32 = 0;
+    // Depth INSIDE the innermost test block, once we are in it. `None` means
+    // production.
+    let mut test_depth: Option<i32> = None;
+    // Depth at which a `#[cfg(test)]` attribute sat, waiting for the block it
+    // annotates to actually open.
+    let mut pending_at: Option<i32> = None;
+
     for (line_idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
-        if !trimmed.starts_with("use ") {
-            continue;
+        let depth_before = depth;
+
+        // Leave the test scope when its block closes: the line after the
+        // closing brace sits at a lower depth than any line inside it.
+        if test_depth.is_some_and(|inside_at| depth_before < inside_at) {
+            test_depth = None;
         }
+
+        if trimmed.starts_with("#[cfg(test)]") {
+            pending_at = Some(depth);
+        }
+
+        // Enter the block the attribute annotates. This is a separate step from
+        // the attribute because the `mod tests {` line is itself OUTSIDE the
+        // block: recording the depth at the attribute made the `mod` line look
+        // like the end of the block, and everything after it stayed test-scoped
+        // — silently deleting production edges from the verdict. That was not
+        // hypothetical; two of the tests below caught exactly it.
+        if pending_at.is_some_and(|at| depth_before > at) {
+            test_depth = Some(depth_before);
+            pending_at = None;
+        }
+
+        // Brace counting, with the usual caveat: a brace inside a string or a
+        // comment moves the count. That is why the fallback below is the
+        // STRICT one. A miscount can only ever push an edge OUT of test scope
+        // and into production, never the other way round — the gate stays
+        // stricter when the heuristic is wrong, which is the direction that
+        // can still catch debt.
+        depth += line.matches('{').count() as i32;
+        depth -= line.matches('}').count() as i32;
+        if depth < 0 {
+            depth = 0;
+        }
+
+        // `pub use` counts too, and it counts MORE: a re-export makes the
+        // adapter part of this crate's public surface, so any consumer of the
+        // CLI now depends on it transitively. The scanner used to require the
+        // line to start with `use `, which meant `pub use sddk_storage::Storage;`
+        // in the composition root was not an edge at all — the one place where
+        // the ARCH003 waiver is written down. The measurement could not see the
+        // edge its own waiver names.
+        let rest = if let Some(r) = trimmed.strip_prefix("pub use ") {
+            r
+        } else if let Some(r) = trimmed.strip_prefix("use ") {
+            r
+        } else {
+            continue;
+        };
         // Find "use sddk_" pattern
-        let rest = &trimmed[4..]; // after "use "
         if !rest.starts_with("sddk_") {
             continue;
         }
@@ -525,7 +592,11 @@ fn scan_use_statements(content: &str, rel_path: &str, out: &mut Vec<CrossCrateIm
                 from_crate,
                 to_crate_raw: to_crate_raw.to_owned(),
                 to_crate,
-                kind: CrossCrateImportKind::Use,
+                kind: if test_depth.is_some() {
+                    CrossCrateImportKind::TestScopedUse
+                } else {
+                    CrossCrateImportKind::Use
+                },
             });
         }
     }
@@ -616,6 +687,84 @@ mod tests {
         assert_eq!(
             baseline1.ref_.sha256, baseline2.ref_.sha256,
             "sha256 must be stable across two capture_live calls on the same tree"
+        );
+    }
+
+    // ── El capturador: que arista existe, y de quien ────────────────────────
+    //
+    // Tres huecos encontrados midiendo ARCH010, y los tres hacen lo mismo:
+    // la medicion cuenta menos de lo que existe, y lo hace en silencio.
+    //
+    //   1. un `use` dentro de `#[cfg(test)]` contaba como arista de PRODUCCION.
+    //   2. un `pub use` no contaba como arista en absoluto.
+    //   3. `dev/projection.rs` llama a `sddk_storage::SqliteEventStore::open(..)`
+    //      sin `use`, y tampoco cuenta. Ese sigue ABIERTO y lo dice el guard
+    //      de cobertura; aqui solo se arreglan los dos primeros.
+
+    fn kinds_of(src: &str) -> Vec<CrossCrateImportKind> {
+        let mut out = Vec::new();
+        scan_use_statements(src, "crates/sddk-cli/src/x.rs", &mut out);
+        out.into_iter().map(|e| e.kind).collect()
+    }
+
+    #[test]
+    fn a_use_in_a_test_module_is_not_a_production_edge() {
+        let src = "use sddk_storage::SqliteEventStore;\n\n#[cfg(test)]\nmod tests {\n    use sddk_storage::SqliteEventStore;\n}\nuse sddk_storage::SqliteControlPlane;\n";
+        assert_eq!(
+            kinds_of(src),
+            vec![
+                CrossCrateImportKind::Use,
+                CrossCrateImportKind::TestScopedUse,
+                CrossCrateImportKind::Use,
+            ],
+            "el use de test no puede salir como arista de produccion, y el de DESPUES del \
+             modulo tiene que volver a ser de produccion"
+        );
+    }
+
+    #[test]
+    fn a_use_after_a_test_module_closes_is_production_again() {
+        // El fallo silencioso de la cuenta de llaves: si el bloque de test no
+        // se cerrara bien, todo lo que viniera despues quedaria marcado como
+        // test y las aristas de produccion desaparecerian del veredicto.
+        let src = "#[cfg(test)]\nmod tests {\n    use sddk_storage::A;\n}\n\nfn real() {}\nuse sddk_storage::B;\n";
+        let kinds = kinds_of(src);
+        assert_eq!(kinds[0], CrossCrateImportKind::TestScopedUse);
+        assert_eq!(
+            kinds[1],
+            CrossCrateImportKind::Use,
+            "tras cerrarse `mod tests`, la arista vuelve a ser de produccion"
+        );
+    }
+
+    #[test]
+    fn a_pub_use_is_an_edge() {
+        // El composition root re-exporta `Storage` con `pub use`, y el escaner
+        // exigia que la linea empezara por `use `. La arista que el waiver de
+        // ARCH003 concede por nombre no existia en la medicion que ese waiver
+        // pretendia fundamentar.
+        let mut out = Vec::new();
+        scan_use_statements(
+            "pub use sddk_storage::Storage;\n",
+            "crates/sddk-cli/src/lib.rs",
+            &mut out,
+        );
+        assert_eq!(out.len(), 1, "un re-export publico es una dependencia");
+        assert_eq!(out[0].to_crate, "sddk-storage");
+    }
+
+    #[test]
+    fn a_stray_brace_cannot_hide_a_production_edge() {
+        // La cuenta de llaves por linea no entiende cadenas ni comentarios. Sin
+        // `#[cfg(test)]` de por medio no puede haber ambigüedad posible: este
+        // test fija la DIRECCION del fallo, que es que un error de conteo solo
+        // puede empujar una arista HACIA produccion, nunca fuera de ella.
+        let src = "fn f() { let s = \"{\"; }\nuse sddk_storage::X;\n";
+        assert!(
+            kinds_of(src)
+                .iter()
+                .all(|k| *k == CrossCrateImportKind::Use),
+            "sin `#[cfg(test)]` de por medio, ninguna arista puede marcarse como de test"
         );
     }
 }

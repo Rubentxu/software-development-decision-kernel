@@ -12,6 +12,7 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::baseline::CrossCrateImportKind;
 use super::{Baseline, CrossCrateImport};
 
 pub const EVALUATOR_VERSION: &str = "0.1.0";
@@ -185,6 +186,37 @@ pub fn evaluate_all_with_resolver(
         .collect()
 }
 
+/// Production edges only.
+///
+/// A `use sddk_storage::...` inside `#[cfg(test)]` is the test suite exercising
+/// the module, not the module reaching the adapter at runtime. Without this,
+/// every law counts test fixtures as architecture and charges production code
+/// for the tests that prove it works.
+///
+/// Shared by the bespoke evaluators (ARCH001/002/003) and by the edge matcher,
+/// because a rule that counted differently depending on which shape its
+/// evaluator happens to have would be two rules wearing one name.
+fn is_production_edge(e: &CrossCrateImport) -> bool {
+    e.kind != CrossCrateImportKind::TestScopedUse
+}
+
+/// How many in-scope edges live only under `#[cfg(test)]`, for the same scope.
+///
+/// Reported rather than dropped: dropping edges silently is how a rule stops
+/// covering anything without anything noticing.
+fn test_edges_in_scope(
+    baseline: &Baseline,
+    from_crate: &str,
+    in_scope: impl Fn(&CrossCrateImport) -> bool,
+) -> usize {
+    baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == from_crate && in_scope(e))
+        .filter(|e| !is_production_edge(e))
+        .count()
+}
+
 // ── ARCH001 ──────────────────────────────────────────────────────────────────
 
 /// engine_must_not_depend_on_storage: Fail if any edge from sddk-engine to sddk-storage
@@ -194,16 +226,19 @@ fn evaluate_arch001(
     baseline: &Baseline,
     evaluated_at: &str,
 ) -> RuleEvaluation {
+    let test_edges = test_edges_in_scope(baseline, "sddk-engine", |_| true);
     let subject_edges = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-engine")
+        .filter(|e| is_production_edge(e))
         .count();
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-engine" && e.to_crate == "sddk-storage")
+        .filter(|e| is_production_edge(e))
         .map(|e| {
             json!({
                 "from_file": e.from_file,
@@ -226,6 +261,7 @@ fn evaluate_arch001(
             "edges": violating,
             "count": violating.len(),
             "subject_edges": subject_edges,
+            "test_edges_excluded": test_edges,
             "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
@@ -255,16 +291,19 @@ fn evaluate_arch002(
     // sddk-domain no tiene NINGUNA arista sddk_*: es la capa mas interna. Su
     // PASS es arquitectonicamente correcto, pero sin esta cifra la tabla lo
     // hacia indistinguible de un PASS con 202 aristas revisadas.
+    let test_edges = test_edges_in_scope(baseline, "sddk-domain", |_| true);
     let subject_edges = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-domain")
+        .filter(|e| is_production_edge(e))
         .count();
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-domain" && forbidden.contains(&e.to_crate.as_str()))
+        .filter(|e| is_production_edge(e))
         .map(|e| {
             json!({
                 "from_file": e.from_file,
@@ -287,6 +326,7 @@ fn evaluate_arch002(
             "edges": violating,
             "count": violating.len(),
             "subject_edges": subject_edges,
+            "test_edges_excluded": test_edges,
             "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
@@ -325,10 +365,19 @@ fn evaluate_arch003(
 
     // ARCH003 mide sobre TODOS los crates, luego su sujeto es el conjunto
     // entero de aristas `use` del baseline, no las de un crate concreto.
+    let test_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| {
+            e.kind == CrossCrateImportKind::Use || e.kind == CrossCrateImportKind::TestScopedUse
+        })
+        .filter(|e| !is_production_edge(e))
+        .count();
     let subject_edges = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.kind == CrossCrateImportKind::Use)
+        .filter(|e| is_production_edge(e))
         .count();
 
     let violating: Vec<_> = baseline
@@ -349,6 +398,10 @@ fn evaluate_arch003(
             }
             // Crates that provide LedgerFactory are allowed
             if LEDGER_FACTORY_PROVIDERS.contains(&e.from_crate.as_str()) {
+                return false;
+            }
+            // Test fixtures do not make the production crate non-conformant.
+            if !is_production_edge(e) {
                 return false;
             }
             true
@@ -375,6 +428,7 @@ fn evaluate_arch003(
             "edges": violating,
             "count": violating.len(),
             "subject_edges": subject_edges,
+            "test_edges_excluded": test_edges,
             "measured_nothing": subject_edges == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
@@ -941,6 +995,21 @@ fn evaluate_forbidden_edge(
         None => true,
     };
 
+    // Production only. A `use sddk_storage::...` inside `#[cfg(test)]` is the
+    // test suite exercising the command, not the command reaching the adapter
+    // at runtime, and a law that cannot tell those apart charges production
+    // code for the tests that prove it works. The count is still REPORTED
+    // (`test_edges`), because dropping edges silently is how a rule stops
+    // covering anything without anyone noticing — the same failure this whole
+    // cycle has been closing, in a new costume.
+    let is_production = is_production_edge;
+    let test_edges = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| e.from_crate == from_crate && in_scope(e))
+        .filter(|e| !is_production(e))
+        .count();
+
     // How big is the set the rule actually looked at?
     //
     // `count: 0` alone is ambiguous between "examined 202 edges, none
@@ -954,6 +1023,7 @@ fn evaluate_forbidden_edge(
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == from_crate && in_scope(e))
+        .filter(|e| is_production(e))
         .count();
 
     let violating: Vec<_> = baseline
@@ -961,6 +1031,7 @@ fn evaluate_forbidden_edge(
         .iter()
         .filter(|e| e.from_crate == from_crate && forbidden.contains(&e.to_crate.as_str()))
         .filter(|e| in_scope(e))
+        .filter(|e| is_production(e))
         .map(|e| {
             json!({
                 "from_file": e.from_file,
@@ -983,6 +1054,7 @@ fn evaluate_forbidden_edge(
             "edges": violating,
             "count": violating.len(),
             "subject_edges": subject_edges,
+            "test_edges_excluded": test_edges,
             "measured_nothing": subject_edges == 0,
             "scope": file_scope,
         }),
@@ -1052,20 +1124,59 @@ fn evaluate_arch009(
     )
 }
 
+/// The file that composes the application. An adapter constructed here is a
+/// composition root, which is the one place in the CLI that is SUPPOSED to know
+/// the concrete type: it is what the other modules receive through a port.
+const CLI_COMPOSITION_ROOT: &str = "crates/sddk-cli/src/lib.rs";
+
 /// ARCH010: the CLI must not import storage directly.
+///
+/// The measurement is delegated to the shared edge matcher, and then split, so
+/// the number a reader sees is not one undifferentiated count of 14.
+///
+/// MEDIDO: 14 aristas de produccion sddk-cli -> sddk-storage, de las cuales 2
+/// estan en el composition root — exactamente las dos que el waiver de ARCH003
+/// (`WV-0015`) concede por nombre y con ADR. La ley no las exime, y el veredicto
+/// no se toca aqui: por eso el reparto se REPORTA en vez de descontarse. Un 12
+/// en el aire seria una deuda distinta de la que existe, y una regla que
+/// descuenta aristas por una razon que no esta en la regla es una regla que
+/// nadie puede auditar.
+///
+/// El trabajo pendiente es, por tanto, exacto: 12 aristas fuera del composition
+/// root, que es lo que un ciclo de rework necesita como entrada.
 fn evaluate_arch010(
     rule: &sddk_domain::ArchitectureRule,
     baseline: &Baseline,
     evaluated_at: &str,
 ) -> RuleEvaluation {
-    evaluate_forbidden_edge(
+    let mut eval = evaluate_forbidden_edge(
         rule,
         baseline,
         evaluated_at,
         "sddk-cli",
         &["sddk-storage"],
         None,
-    )
+    );
+
+    let at_composition_root = eval.observed["edges"]
+        .as_array()
+        .map(|edges| {
+            edges
+                .iter()
+                .filter(|e| {
+                    e.get("from_file").and_then(|f| f.as_str()) == Some(CLI_COMPOSITION_ROOT)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    let outside = eval.observed["count"].as_u64().unwrap_or(0) as usize - at_composition_root;
+
+    eval.observed["composition_root_edges"] = json!(at_composition_root);
+    eval.observed["outside_composition_root"] = json!(outside);
+    eval.observed["summary"] = json!(format!(
+        "{outside} edge(s) outside the composition root, {at_composition_root} at it          (covered by the ARCH003 waiver WV-0015)"
+    ));
+    eval
 }
 
 /// ARCH011: the vault must not import storage.
