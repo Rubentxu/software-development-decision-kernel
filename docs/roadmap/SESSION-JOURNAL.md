@@ -16486,3 +16486,76 @@ Ninguno de los dos es nuevo, y los dos valieron el trabajo:
    contaminacion se dispara con 4 pictogramas preexistentes en `CURRENT.md` y
    `STATE.yaml`, fuera de lo que se ha escrito hoy**: no se corrigen porque no
    son de estos bloques, y arrastrarlos aqui seria mezclar deudas.
+---
+
+## 2026-10-06T11:47Z — VA17 cerrada y censo de gates a verde (b6ad2d36)
+
+**RECUPERACION, y por que importa el orden.** El turno arranca con el
+contexto de session-85 y `HEAD=66dc32a2`. Al medir resulta que `HEAD` habia
+movido dos veces mientras se trabajaba: `84fe88b7` (VA17) y `17f7cdee` (guard de
+memoria del paso 1). **El contexto de la sesion no era la realidad del
+repositorio, y la unica forma de saberlo fue `git log`.** Nada de lo que se
+escribio en este turno dependia de la suposicion equivocada — la implementacion
+de VA17 ya estaba commiteada con las reparaciones del canario dentro — pero
+todo el trabajo posterior (cableado de gates, changelog) se hizo sobre HEAD real.
+
+**LO MEDIDO, que es lo que cierra el bloque.** Tres instrumentos, tres formas
+distintas de no decir lo que declaraban:
+
+1. **El canario cross-project cantaba `REPRODUCIDO`** — el incidente que declara
+   medir — y era FALSO. Localizaba sus bindings con `find` y despues comparaba
+   contra un path escrito a mano del layout viejo (`projects/<p>/context/
+   bindings/`). Con el layout por worktree decia «el binding no esta». Era el
+   instrumento roto, no el producto. **Septima vez de la clase «un FAIL del
+   instrumento es indistinguible de un FAIL real si no se distingue de quien lo
+   pide», y la mas cara del bloque**: un canario de REPRODUCION en falso invita
+   a «arreglar» un producto sano. Corregido localizando por el `project_id` que
+   el binding DECLARA, no por la ruta, y afirmando la propiedad.
+2. **Dos mutaciones muertas.** La M2 del canario de worktree quita el
+   `#[serde(default)]` de `workspace_id` y no cambia NADA: **serde_derive ya
+   trata `Option<T>` ausente como `None` sin ese atributo**. Fijado en
+   `crates/sddk-engine/tests/va17_legacy_binding_serde.rs`, con un control que
+   demuestra que el mismo approach sobre un `String` si falla. Su justificacion
+   («212 bindings quedan ilegibles») era falsa por partida doble. Sustituida
+   por la que deshace la propiedad real (`Unknown` tratado como `Same`): 0->1.
+   La M2 del cross-project parcheaba la forma PRE-VA17 de `bindings_root` y su
+   localizador seguia sin verla al escribir fuera del directorio del fixture;
+   rehecha y verificada, ahora cae.
+3. **Los dos canarios escribian en la maquina del operador.** Aislaban
+   `SDDK_DATA_DIR` pero no el ESTADO, y `paths.rs:173` resuelve el ledger por
+   `state_home`, cuya precedencia (SDDK_STATE_HOME, XDG_STATE_HOME, $HOME) es
+   independiente. Medido: cada corrida creaba un
+   `~/.local/state/sddk/projects/<pid>/ledger.sqlite` de verdad, en una maquina
+   con 362 proyectos. Verificado despues: con el override puesto el ledger cae
+   en el temporal y el estado real conserva su mtime.
+
+**LO QUE CIERRA.** `test_worktree_isolation_canary.sh` entra como paso **3o** y
+`test_cross_project_isolation_canary.sh` + `test_kernel_purity_fitness_mutation.sh`
+como paso **3p** de `scripts/release.sh`. Los dos guards de recibos van a
+`EXCEPTIONS` con motivo escrito y medido: leen el `ledger.sqlite` de la maquina
+para comparar los `cycle_id` que declaran los recibos con los que la autoridad
+tiene; en una release limpia ese ledger no existe y su rojo describe la ausencia
+del artefacto. Excepcionado el guard y **no** su autofalsacion habria dejado al
+segundo afirmando cosas que nadie ha comprobado jamas.
+
+**VERDE, medido.** Censo `SIN runner y SIN motivo: 0`, su autofalsacion
+`PASS=33 FAIL=0` con el sujeto real intacto por sha256. Canarios: worktree
+`PASS=4 FAIL=0 SKIP=0`, cross-project `PASS=4 FAIL=0 SKIP=1` (M4, declarada no
+aplicable con motivo), pureza `PASS=11 FAIL=0 SKIP=0`. `cargo clippy -D warnings`
+limpio sobre `sddk-cli` y `sddk-engine`, shellcheck sin filtro limpio sobre los
+tres ficheros de shell tocados, changelog `PASS=9 FAIL=0`.
+
+**PUSH.** `b6ad2d36` publicado en `main` **sin `--no-verify`**, por la ruta
+`A-v2` (workspace `2.12.1` por encima del tag publicado `v2.12.0`). No se bumpeo
+para satisfacer el hook: la siguiente release ES `2.12.1`.
+
+**LO QUE SIGUE ABIERTO, sin cambiar.** INC-DEBT-050/061 (identidad e historia:
+decision del operador, no tocar). Firma: `SDDK_SKIP_SIGNING=1`, ancla y clave son
+placeholder y **no se fabricar ninguna**. El orden inestable de `candidates` en
+la ambiguedad de ciclo (decision de producto). El catch-all de `recovery:` en
+`sddk-gateway` — el mismo patron que se corrigio en `sddk-engine` en
+session-84 bis 7, alli declarado y aqui tambien. 525 candados `/tmp/sddk-excl.*`
+(INC-DEBT-075). Los **212 ficheros de sesion del layout antiguo ya NO EXISTEN**
+en `~/.local/state/sddk`: no hay ni un `bindings/`, `deltas/` ni `capsules/` ahi.
+La PRE-FLIGHT que los contaba queda con ese dato caducado, y se anota porque un
+recuento que se cita sin volver a medir vuelve a tener autoridad por vecindad.
