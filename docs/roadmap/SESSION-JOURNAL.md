@@ -16627,3 +16627,76 @@ tiempo; el guard es correcto, la maquina no es determinista. (4) INC-DEBT-050/06
 (identidad e historia: decision del operador). (5) Orden inestable de
 `candidates` en la ambiguedad de ciclo. (6) El catch-all de `recovery:` en
 `sddk-gateway`. (7) 525 candados `/tmp/sddk-excl.*` (INC-DEBT-075).
+
+---
+
+## C3m.3 — provider-neutral provenance: cerrado, y el hallazgo no era el que se buscaba
+
+**Commit:** `f6cff89a` (arreglo + guard + falsador), `a041c629` (PRE-FLIGHT
+corregido), `4e481c13` (cableado al release como paso 3r), `5c3ba315` (puntero
+de estado reconciliado). **HEAD == origin/main == `5c3ba315`.**
+
+**LO QUE SE BUSCABA Y LO QUE SE ENCONTRO.** El PRE-FLIGHT de este corte afirmaba
+que el arreglo era de una sola direccion y que no habia que tocar
+`code_intelligence_port_mcp.rs`. **Las dos afirmaciones eran falsas**, y se
+conservan escritas en el documento con un checkpoint que las marca. La primera
+porque el mecanismo existia pero **privado**; la segunda porque el criterio de
+exito mas caro —«el comando no contiene el token `cognicode`»— obligaba a cambiar
+el locator y el `producer`, que **no hacen falta**.
+
+**EL HALLAZGO DE VERDAD, y es de otra clase.** Al buscar la autoridad antes de
+editar aparecio **ADR-0155**, `accepted`, `2026-10-03`, **de este mismo ciclo**, y
+su §Consecuencias afirma que `provider_build` «viene de un string declarado por
+el adaptador». MEDIDO con `grep`: en `crates/*/src/` queda **un** constructor
+vivo, el del adapter, y el resto en `tests/`. El SCOPE-CONTRACT §3 lista lo que
+se aplico y `verify_kernel_cmd.rs` no esta. **O sea: el codigo incumplia un ADR
+que su propio ciclo habia aprobado.** No era «este codigo esta mal»; era que el
+ciclo se cerro sin cubrir esa ruta.
+
+**LA FRONTERA QUE QUEDA, y por que no se tocaron dos cosas.** El nombre de
+FAMILIA (`producer`, locator) vive en el adapter, que es cognicode-especifico
+por construccion — ADR-0155 §218 lo dice literal—. Lo que se afirma del **BUILD**
+tiene que estar medido. Una primera version derivo ambos del `provider_build`
+observado y era incorrecta por tres razones, **ninguna visible sin medir**:
+(1) `provider_build` es `nombre/version`, luego como esquema URI produce
+`cognicode-mcp/0.4.1://...`, y un esquema **no puede contener `/`**; (2) C2a fijo
+que cambiar ese URI **exige ADR** (`c2a-msgfix/SCOPE-CONTRACT.md` F5) y no lo hay;
+(3) no hacia falta, porque `digest_result` ya lleva la identidad al `basis` y de
+ahi a `ObservationId::derive`. El arreglo de este bloque no era neutralidad: era
+**ruido con forma de neutralidad**.
+
+**EL GUARD, Y LA CAPA QUE FALTA POR DEFECTO.** Cuatro capas, y la cuarta es
+**POSITIVA**: comprobar que el build observado **sigue siendo load-bearing**.
+Sin ella, A y B se cumplen igual **borrando el campo**, y eso no seria una
+correccion sino destruir la trazabilidad y llamarle neutralidad — que es
+exactamente el modo de verde falso que ADR-0155 §3 describe («un guard que
+prohibe el nombre sin comprobar que quede forma de declararlo empuja al primero
+que llega a escribir una falsehood»).
+
+  `PASS=9 FAIL=0`
+  `DETECTADAS=8  MAL_MOTIVO=0  SOBREVIVIDAS=0  SKIP=0`
+
+**Dos fallos del guard, ambos contra si mismo, ninguno resuelto bajando el
+liston.** A3 daba **falso positivo**: filtraba la salida de `grep -rn` con un
+helper que asume lineas de fichero, y `grep -rn` antepone `ruta:linea:`, luego
+ninguna linea empezaba por `//` y la propia linea de comentario que cita el
+literal para explicar el defecto contaba como reaparicion. B2 lo satisfacia la
+**prosa**: buscaba `serverInfo` en crudo y el doc de `basis()` lo cita al
+explicar de donde sale la identidad, luego el check daba verde con el handshake
+desconectado.
+
+**EL RELEASE 2.13.0 MURIO POR INTERFERENCIA, y no lo primero que se pensaria.**
+Paso 1, `cargo clippy`, `unused variable: session_root` en
+`context_cmd.rs:1197`. Ese fichero **esta commiteado y limpio**, y en disco la
+funcion **usa** el parametro (linea 1198): el codigo commiteado compila. MEDIDO
+despues: `cargo clippy -p sddk-cli --all-targets -- -D warnings` sale **0**. Y un
+muestreo del arbol durante 24 s, 6 tomas, dio **limpio en las 6**. Es decir: otra
+sesion estaba **editando ese mismo fichero mientras compilaba**, y su edicion
+desaparecio antes de que yo llegara a mirarlo.
+
+Es **la misma clase** que el fallo que mato el intento anterior de 2.13.0 —que
+el changelog ya describe— y el paso 3p ya sabe distinguir INTERFERENCIA porque
+`build` nombra el fichero donde rustc pone el error. **El paso 1 no lo tiene.**
+Registrado como deuda tangencial, **no arreglado aqui**: abrirlo seria otro
+frente y el arreglo pertenece a la superficie del release, no a C3m.3.
+
