@@ -273,7 +273,7 @@ fn detail_for(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
-                return "nothing to measure: the subject has no edges at all".to_owned();
+                return "nothing to measure: the subject declares nothing at all".to_owned();
             }
             String::new()
         }
@@ -289,7 +289,7 @@ fn detail_for(
                 if count == 0 {
                     return "violation detected".to_owned();
                 }
-                return format!("{} edge(s) detected", count);
+                return format!("{} declaration(s) detected", count);
             }
             provenance.unwrap_or("violation detected").to_owned()
         }

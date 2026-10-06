@@ -267,7 +267,7 @@ echo "== D5: ninguna ley dice Pass sin haber mirado al menos una arista =="
 # evaluadores.rs es la misma fuente por dos razones distintas.
 # Que "emita el tamano de lo que miro" admite tres caminos, y hay que recorrer
 # el camino, no mirar el nombre de la funcion:
-#   - emitirlo en su propio cuerpo (`subject_edges`, `"subjects":`, `"packs":`,
+#   - emitirlo en su propio cuerpo (`subject_declarations`, `"subjects":`, `"packs":`,
 #     `subject_files`);
 #   - o delegar en el helper compartido `evaluate_forbidden_edge`, en cuyo caso
 #     lo que importa es que EL HELPER lo emita.
@@ -280,7 +280,7 @@ EMPTY_SUBJECTS=""
 HELPER_REPORTS=""
 if awk '/^fn evaluate_forbidden_edge\(/ { inside = 1; next }
        inside { if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) exit; print }' "$EVALUATORS" \
-     | grep -q '"subject_edges":'; then
+     | grep -q '"subject_declarations":'; then
     HELPER_REPORTS=yes
 fi
 for id in $DISPATCHED; do
@@ -291,7 +291,7 @@ for id in $DISPATCHED; do
             print
         }' "$EVALUATORS")"
     if printf '%s\n' "$body" \
-        | grep -qE '"subject_edges":|"subjects":|"packs":|subject_files'; then
+        | grep -qE '"subject_declarations":|"subjects":|"packs":|subject_files'; then
         continue
     fi
     if printf '%s\n' "$body" | grep -q 'evaluate_forbidden_edge(' && [ "$HELPER_REPORTS" = "yes" ]; then
@@ -318,7 +318,8 @@ echo "  - Que una ley con sujeto vacio LO SEPA al leerla. D5 mide que el"
 echo "    evaluador EMITE el tamano del sujeto, que es lo que evita el verde"
 echo "    mudo. Lo que no mide, porque no puede hacerlo leyendo codigo, es que"
 echo "    la cifra sea la correcta en ejecucion: un evaluador que emitiera"
-echo "    subject_edges: 999 sobre un sujeto de 2 aristas seria verde aqui."
+echo "    subject_declarations: 999 sobre un sujeto de 2 declaraciones seria"
+    echo "    verde aqui."
 echo "    Lo que cubre ese caso es el falsador de M8."
 echo "  - Que el alcance de ARCH006 sea el que la regla declara. Ahora es un"
 echo "    path EXACTO (crates/sddk-domain/src/graph.rs), no un prefijo, y hay"

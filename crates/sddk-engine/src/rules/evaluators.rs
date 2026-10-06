@@ -217,6 +217,28 @@ fn test_edges_in_scope(
         .count()
 }
 
+/// The DISTINCT crates reachable from `from_crate` inside `in_scope`.
+///
+/// An empty `from_crate` means "every crate", which is what ARCH003 needs: it
+/// measures across the whole baseline rather than from one crate.
+fn distinct_targets(
+    baseline: &Baseline,
+    from_crate: &str,
+    in_scope: &dyn Fn(&CrossCrateImport) -> bool,
+) -> Vec<String> {
+    let mut v: Vec<String> = baseline
+        .cross_crate_imports
+        .iter()
+        .filter(|e| from_crate.is_empty() || e.from_crate == from_crate)
+        .filter(|e| in_scope(e))
+        .filter(|e| is_production_edge(e))
+        .map(|e| e.to_crate.clone())
+        .collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 // ── ARCH001 ──────────────────────────────────────────────────────────────────
 
 /// engine_must_not_depend_on_storage: Fail if any edge from sddk-engine to sddk-storage
@@ -227,12 +249,13 @@ fn evaluate_arch001(
     evaluated_at: &str,
 ) -> RuleEvaluation {
     let test_edges = test_edges_in_scope(baseline, "sddk-engine", |_| true);
-    let subject_edges = baseline
+    let subject_declarations = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-engine")
         .filter(|e| is_production_edge(e))
         .count();
+    let subject_crates = distinct_targets(baseline, "sddk-engine", &|_| true);
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
@@ -260,9 +283,10 @@ fn evaluate_arch001(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
-            "subject_edges": subject_edges,
-            "test_edges_excluded": test_edges,
-            "measured_nothing": subject_edges == 0,
+            "subject_declarations": subject_declarations,
+            "subject_crates": subject_crates,
+            "test_declarations_excluded": test_edges,
+            "measured_nothing": subject_declarations == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -292,12 +316,13 @@ fn evaluate_arch002(
     // PASS es arquitectonicamente correcto, pero sin esta cifra la tabla lo
     // hacia indistinguible de un PASS con 202 aristas revisadas.
     let test_edges = test_edges_in_scope(baseline, "sddk-domain", |_| true);
-    let subject_edges = baseline
+    let subject_declarations = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == "sddk-domain")
         .filter(|e| is_production_edge(e))
         .count();
+    let subject_crates = distinct_targets(baseline, "sddk-domain", &|_| true);
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
@@ -325,9 +350,10 @@ fn evaluate_arch002(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
-            "subject_edges": subject_edges,
-            "test_edges_excluded": test_edges,
-            "measured_nothing": subject_edges == 0,
+            "subject_declarations": subject_declarations,
+            "subject_crates": subject_crates,
+            "test_declarations_excluded": test_edges,
+            "measured_nothing": subject_declarations == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -373,12 +399,15 @@ fn evaluate_arch003(
         })
         .filter(|e| !is_production_edge(e))
         .count();
-    let subject_edges = baseline
+    // ARCH003 measures across ALL crates, so its subject is every crate the
+    // baseline mentions at all.
+    let subject_declarations = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.kind == CrossCrateImportKind::Use)
         .filter(|e| is_production_edge(e))
         .count();
+    let subject_crates = distinct_targets(baseline, "", &|_| true);
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
@@ -427,9 +456,10 @@ fn evaluate_arch003(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
-            "subject_edges": subject_edges,
-            "test_edges_excluded": test_edges,
-            "measured_nothing": subject_edges == 0,
+            "subject_declarations": subject_declarations,
+            "subject_crates": subject_crates,
+            "test_declarations_excluded": test_edges,
+            "measured_nothing": subject_declarations == 0,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
         evaluated_at: evaluated_at.to_owned(),
@@ -1019,12 +1049,26 @@ fn evaluate_forbidden_edge(
     // ARCH007 y ARCH011 salian en verde sin haber medido nada. Que sea la
     // forma arquitectonica correcta (el dominio es la capa mas interna) es
     // justamente lo que la cifra deja ver; sin ella, el verde no lo dice.
-    let subject_edges = baseline
+    let subject_declarations = baseline
         .cross_crate_imports
         .iter()
         .filter(|e| e.from_crate == from_crate && in_scope(e))
         .filter(|e| is_production(e))
         .count();
+
+    // How many DISTINCT crates this one reaches.
+    //
+    // `cross_crate_imports` is a list of OCCURRENCES, not of edges, and the gap
+    // is not small. MEDIDO en este repo: 437 declaraciones `use` son 19 aristas
+    // distintas — un factor 23. Un campo llamado `subject_edges: 202` no
+    // contaba 202 aristas: contaba 202 DECLARACIONES de las 5 que
+    // sddk-engine tiene. Y el "12 edge(s) outside the composition root" de
+    // ARCH010 no eran 12 aristas: eran 12 declaraciones de UNA arista,
+    // sddk-cli -> sddk-storage, repartida en 9 ficheros. Un rework no
+    // persigue aristas: persigue declaraciones. Saber cuales son, de un total
+    // de una, es la diferencia entre "doce cosas" y "una dependencia mal
+    // puesta en nueve sitios".
+    let subject_crates = distinct_targets(baseline, from_crate, &in_scope);
 
     let violating: Vec<_> = baseline
         .cross_crate_imports
@@ -1053,9 +1097,10 @@ fn evaluate_forbidden_edge(
         observed: json!({
             "edges": violating,
             "count": violating.len(),
-            "subject_edges": subject_edges,
-            "test_edges_excluded": test_edges,
-            "measured_nothing": subject_edges == 0,
+            "subject_declarations": subject_declarations,
+            "subject_crates": subject_crates,
+            "test_declarations_excluded": test_edges,
+            "measured_nothing": subject_declarations == 0,
             "scope": file_scope,
         }),
         baseline_sha256: baseline.ref_.sha256.clone(),
@@ -1065,7 +1110,7 @@ fn evaluate_forbidden_edge(
         evaluator_kind: EvaluatorKind::Schema,
         evaluator_version: EVALUATOR_VERSION.to_owned(),
         provenance: Some(format!(
-            "live evaluator: {from_crate}->{{{}}} edges in cross_crate_imports{}",
+            "live evaluator: {from_crate}->{{{}}} declarations in cross_crate_imports{}",
             forbidden.join(","),
             match file_scope {
                 Some(path) => format!(" scoped to {path}"),
@@ -1171,10 +1216,11 @@ fn evaluate_arch010(
         .unwrap_or(0);
     let outside = eval.observed["count"].as_u64().unwrap_or(0) as usize - at_composition_root;
 
-    eval.observed["composition_root_edges"] = json!(at_composition_root);
+    eval.observed["composition_root_declarations"] = json!(at_composition_root);
     eval.observed["outside_composition_root"] = json!(outside);
     eval.observed["summary"] = json!(format!(
-        "{outside} edge(s) outside the composition root, {at_composition_root} at it          (covered by the ARCH003 waiver WV-0015)"
+        "{outside} declaration(s) outside the composition root, {at_composition_root} at it \
+         (covered by the ARCH003 waiver WV-0015)"
     ));
     eval
 }

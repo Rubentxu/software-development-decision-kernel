@@ -51,22 +51,48 @@ restore() {
 }
 
 # Un test cae si su nombre aparece entre los FAILED de la suite.
+#
+# El TARGET importa y no es cosmetico: `cargo test --lib <filtro>` sobre un
+# filtro que no existe en la libreria corre CERO tests y sale con exito 0, luego
+# "el test sigue verde" era la lectura de una suite que nunca se ejecuto. N5 y
+# N6 salieron "no detectadas" por eso, no porque el codigo resistiera.
 unit_cae() {
-    local filter="$1" out
-    out="$(cargo test -q -p sddk-engine --lib "$filter" 2>&1)"
+    local target="$1" filter="$2" out
+    # Sin comillas a proposito: `$target` son VARIOS argumentos de cargo
+    # (`--test rules_evaluator` es dos, no uno). Citado, cargo responde
+    # "unexpected argument '--test rules_evaluator' found", no compila nada y
+    # sale con codigo 0 en el grep: N4, N5 y N6 salian "no detectadas" porque
+    # el harness no estaba ejecutando el test que decia ejecutar.
+    # shellcheck disable=SC2086
+    out="$(cargo test -q -p sddk-engine $target "$filter" 2>&1)"
+    # Un filtro que no existe NUNCA puede contar como "sigue verde".
+    # La unica comprobacion fiable es que la suite llegara a correr. Un test que
+    # falla imprime `error: test failed`, asi que buscar `^error` confundia un
+    # fallo con "cargo no arranco" — que es como se declararon N4, N5 y N6 no
+    # medidas cuando si lo estaban.
+    if ! printf '%s\n' "$out" | grep -qE 'running [1-9][0-9]* test'; then
+        LINES+=("   (la suite no llego a correr; primera linea: $(printf '%s\n' "$out" | grep -m1 . || echo '<vacia>'))")
+        return 2
+    fi
     printf '%s\n' "$out" | grep -qE '^test result: FAILED|panicked at' && return 0
     return 1
 }
 
 verdict_for() {
-    local name="$1" filter="$2" applied="$3"
+    local name="$1" filter="$2" applied="$3" target="${4:---lib}"
     if [ "$applied" != "yes" ]; then
         restore
         SKIP=$((SKIP + 1))
         LINES+=("SKIP | $name | la mutacion no aplico")
         return
     fi
-    if unit_cae "$filter"; then
+    unit_cae "$target" "$filter"
+    local rc=$?
+    if [ $rc -eq 2 ]; then
+        restore
+        FAIL=$((FAIL + 1))
+        LINES+=("FAIL | $name | el filtro no existe en $target: la mutacion no se ha medido")
+    elif [ $rc -eq 0 ]; then
         PASS=$((PASS + 1))
         LINES+=("PASS | $name | cae como debe: $filter")
     else
@@ -147,33 +173,37 @@ new='''fn is_production_edge(_e: &CrossCrateImport) -> bool {
 assert s.count(old)==1, "N4 no aplica"
 open(p,'w').write(s.replace(old,new))
 PY
-OUT="$(cargo test -q -p sddk-engine --test rules_evaluator 2>&1)"; RC=$?
-restore
-if [ $RC -ne 0 ]; then
-    PASS=$((PASS+1)); LINES+=("PASS | N4 el filtro de produccion desaparece | cae la suite del evaluador")
-else
-    printf '%s\n' "$OUT" | sed 's/^/          | /' >&2
-    FAIL=$((FAIL+1)); LINES+=("FAIL | N4 el filtro de produccion desaparece | la suite sigue verde: la arista de test infla el sujeto")
-fi
+verdict_for "N4 el filtro de produccion desaparece" "arch010_split" "$(applied $?)" "--test rules_evaluator"
 
 # ── N5: ARCH010 deja de separar el composition root ─────────────────────────
 python3 - "$EVAL" <<'PY'
+import sys, re
+p=sys.argv[1]; s=open(p).read()
+m = re.search(r'eval\.observed\["(composition_root_\w+)"\] = json!\(at_composition_root\);', s)
+assert m, "N5 no aplica: no se encuentra la clave del composition root"
+key = m.group(1)
+old = m.group(0)
+new = 'let at_composition_root = 0;\n    ' + old
+open(p,'w').write(s.replace(old, new))
+PY
+verdict_for "N5 ARCH010 reporta 0 en el composition root" "arch010_split" "$(applied $?)" "--test rules_evaluator"
+
+# ── N6: subject_crates vuelve a ser el recuento de declaraciones ────────────
+# La cifra nueva, sin su distincion, seria un numero que no significa nada
+# nuevo: 4 declaraciones de 2 crates leidas como "2" esconden que se repite.
+python3 - "$EVAL" <<'PY2'
 import sys
 p=sys.argv[1]; s=open(p).read()
-old='''    eval.observed["composition_root_edges"] = json!(at_composition_root);'''
-new='''    let at_composition_root = 0;
-    eval.observed["composition_root_edges"] = json!(at_composition_root);'''
-assert s.count(old)==1, "N5 no aplica"
+old='''    v.sort();
+    v.dedup();
+    v
+}'''
+new='''    v
+}'''
+assert s.count(old)==1, "N6 no aplica"
 open(p,'w').write(s.replace(old,new))
-PY
-OUT="$(cargo test -q -p sddk-engine --test rules_evaluator arch010_split 2>&1)"; RC=$?
-restore
-if [ $RC -ne 0 ]; then
-    PASS=$((PASS+1)); LINES+=("PASS | N5 ARCH010 reporta 0 en el composition root | cae el test del reparto")
-else
-    printf '%s\n' "$OUT" | sed 's/^/          | /' >&2
-    FAIL=$((FAIL+1)); LINES+=("FAIL | N5 ARCH010 reporta 0 en el composition root | el reparto no esta verificado")
-fi
+PY2
+verdict_for "N6 subject_crates no deduplica" "a_rule_reports_declarations_and_distinct_targets_separately" "$(applied $?)" "--test rules_evaluator"
 
 # ── CONTROLES ──────────────────────────────────────────────────────────────
 echo "== controles (codigo intacto) =="

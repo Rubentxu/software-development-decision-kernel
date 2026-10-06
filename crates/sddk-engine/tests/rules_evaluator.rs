@@ -159,7 +159,7 @@ rules:
     assert_eq!(v.status, RuleStatus::Pass);
     assert_eq!(v.observed["count"], 0, "no forbidden edge");
     assert_eq!(
-        v.observed["subject_edges"], 1,
+        v.observed["subject_declarations"], 1,
         "but ONE edge was in scope: the green was earned by looking"
     );
     assert_eq!(v.observed["measured_nothing"], false);
@@ -167,7 +167,7 @@ rules:
     // A crate with no cross-crate edges at all: the rule looked at nothing.
     let empty = evaluate_all(&registry, &make_baseline(vec![]), "t", None);
     assert_eq!(empty[0].status, RuleStatus::Pass);
-    assert_eq!(empty[0].observed["subject_edges"], 0);
+    assert_eq!(empty[0].observed["subject_declarations"], 0);
     assert_eq!(
         empty[0].observed["measured_nothing"], true,
         "a Pass over zero edges must be distinguishable from a Pass over many"
@@ -193,7 +193,7 @@ rules:
     ]);
     let v = &evaluate_all(&registry, &baseline, "t", None)[0];
     assert_eq!(
-        v.observed["subject_edges"], 1,
+        v.observed["subject_declarations"], 1,
         "the subject of ARCH006 is the graph module, not the whole crate"
     );
     assert_eq!(
@@ -258,7 +258,7 @@ rules:
         "a forbidden edge that only exists under #[cfg(test)] cannot fail a production law"
     );
     assert_eq!(
-        v.observed["test_edges_excluded"], 1,
+        v.observed["test_declarations_excluded"], 1,
         "and it is still REPORTED, not dropped"
     );
 }
@@ -297,12 +297,112 @@ rules:
 
     let captured = sddk_engine::rules::BaselineConsumer::capture_live(root).expect("capture");
     let v = &evaluate_all(&registry, &captured, "t", None)[0];
-    assert_eq!(v.observed["subject_edges"], 1, "una arista de produccion");
     assert_eq!(
-        v.observed["test_edges_excluded"], 1,
+        v.observed["subject_declarations"], 1,
+        "una arista de produccion"
+    );
+    assert_eq!(
+        v.observed["test_declarations_excluded"], 1,
         "y una de test que se reporta aparte"
     );
     assert_eq!(v.status, RuleStatus::Pass);
+}
+
+// ── Declaraciones frente a aristas ───────────────────────────────────────────
+//
+// `cross_crate_imports` es una lista de OCURRENCIAS. MEDIDO: 437 declaraciones
+// `use` en este repo son 19 aristas distintas. Un contador que las llama
+// "aristas" describe algo 23 veces mas grande de lo que cuenta, y el que lo lee
+// se lleva una impresion equivocada del trabajo que hay.
+//
+// Estos tests fijan las DOS cifras, porque el fallo interesante no es que una
+// falte: es que se confundan entre si.
+
+#[test]
+fn a_rule_reports_declarations_and_distinct_targets_separately() {
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH001
+    severity: error
+    rule: engine_must_not_depend_on_storage
+    target: dependency_graph
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+    let baseline = make_baseline(vec![
+        ("crates/sddk-engine/src/a.rs", 1, "domain"),
+        ("crates/sddk-engine/src/b.rs", 2, "domain"),
+        ("crates/sddk-engine/src/c.rs", 3, "domain"),
+        ("crates/sddk-engine/src/d.rs", 4, "testkit"),
+    ]);
+    let v = &evaluate_all(&registry, &baseline, "t", None)[0];
+
+    assert_eq!(
+        v.observed["subject_declarations"], 4,
+        "cuatro declaraciones"
+    );
+    assert_eq!(
+        v.observed["subject_crates"],
+        serde_json::json!(["sddk-domain", "sddk-testkit"]),
+        "pero solo dos crates distintos: declarar tres veces lo mismo no crea\
+         tres aristas"
+    );
+}
+
+#[test]
+fn the_distinct_targets_are_sorted_and_deduplicated() {
+    // El orden importa porque `observed` se compara en tests y se imprime en
+    // receipts: un conjunto sin ordenar hace el mismo gate irreproducible.
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH001
+    severity: error
+    rule: engine_must_not_depend_on_storage
+    target: dependency_graph
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+    let baseline = make_baseline(vec![
+        ("crates/sddk-engine/src/a.rs", 1, "testkit"),
+        ("crates/sddk-engine/src/b.rs", 2, "domain"),
+        ("crates/sddk-engine/src/c.rs", 3, "testkit"),
+    ]);
+    let v = &evaluate_all(&registry, &baseline, "t", None)[0];
+    assert_eq!(
+        v.observed["subject_crates"],
+        serde_json::json!(["sddk-domain", "sddk-testkit"])
+    );
+}
+
+#[test]
+fn arch010_reports_declarations_not_edges() {
+    // El nombre del campo es la asercion. Una ley que cuenta declaraciones y las
+    // llama aristas no es un problema de redaccion: cambia lo que un rework
+    // cree que tiene delante (doce dependencias mal puestas frente a una
+    // repartida en nueve sitios).
+    let yaml = r#"schema_version: 1.2.0
+rules:
+  - id: ARCH010
+    severity: error
+    rule: cli_must_not_import_storage_directly
+    target: source_imports_and_calls
+"#;
+    let registry = sddk_domain::RuleRegistry::from_yaml_str(yaml).expect("parse");
+    let baseline = make_baseline(vec![("crates/sddk-cli/src/ledger.rs", 9, "storage")]);
+    let v = &evaluate_all(&registry, &baseline, "t", None)[0];
+
+    assert!(
+        v.observed.get("subject_edges").is_none(),
+        "el campo `subject_edges` no debe volver: contaba declaraciones"
+    );
+    assert!(
+        v.observed.get("subject_declarations").is_some(),
+        "y el que las cuenta debe decir como se llama"
+    );
+    let summary = v.observed["summary"].as_str().expect("summary");
+    assert!(
+        summary.contains("declaration"),
+        "el detalle de la tabla no puede decir 'edge(s)': {summary}"
+    );
+    assert!(!summary.contains("edge(s)"));
 }
 
 #[test]
@@ -695,7 +795,7 @@ rules:
         assert_eq!(v.status, RuleStatus::Fail);
         assert_eq!(v.observed["count"], 4, "las cuatro aristas son de la ley");
         assert_eq!(
-            v.observed["composition_root_edges"], 2,
+            v.observed["composition_root_declarations"], 2,
             "las dos que estan en lib.rs son el composition root"
         );
         assert_eq!(
@@ -725,7 +825,7 @@ rules:
 
         assert_eq!(v.observed["count"], 2);
         assert_eq!(
-            v.observed["composition_root_edges"], 2,
+            v.observed["composition_root_declarations"], 2,
             "the inline module sits in lib.rs, so the file-granular split calls it\
              composition root — a known limit of the baseline, not a claim about\
              what the code does"
@@ -758,7 +858,7 @@ rules:
         );
         assert_eq!(v.observed["outside_composition_root"], 1);
         assert_eq!(
-            v.observed["test_edges_excluded"], 1,
+            v.observed["test_declarations_excluded"], 1,
             "y se reporta aparte en vez de desaparecer"
         );
         assert!(

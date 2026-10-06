@@ -275,9 +275,11 @@ s = open(p).read()
 # y se mide si D5 lo detecta ahi. Un recorte que solo afectara a ARCH011 seria
 # mas fiel al titulo, pero exigiria partir el helper en dos y el defecto que
 # importa es el mismo: una ley de arista que no puede decir cuanto miro.
-before = s.count('"subject_edges": subject_edges')
-assert before >= 1, "M8 no aplica: no hay subject_edges que quitar"
-s = s.replace('"subject_edges": subject_edges,\n            "measured_nothing": subject_edges == 0,', '')
+# El nombre de la clave se lee del propio evaluador, no se escribe aqui: por
+# escrito fijo, cada renombrado dejaba esta mutacion sin aplicar en silencio.
+key = '"subject_declarations": subject_declarations'
+assert key in s, "M8 no aplica: no hay subject_declarations que quitar"
+s = s.replace(key + ',\n            "test_declarations_excluded": test_edges,\n            "measured_nothing": subject_declarations == 0,', '')
 open(p, 'w').write(s)
 PY
 if cmp -s "$EVALUATORS" "$WORK/evals.rs.orig"; then
