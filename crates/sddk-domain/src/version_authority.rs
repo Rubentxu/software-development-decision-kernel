@@ -26,10 +26,11 @@
 //!
 //! # Fitness
 //!
-//! `version_authority_fitness` is not a style preference. It scans this
-//! module for concrete technology names and fails the build if it finds one.
-//! A fitness that is only a comment is a comment that will be wrong in six
-//! months.
+//! `kernel_purity_fitness` is not a style preference. It scans every module of
+//! this crate for concrete technology names and fails the build if it finds one
+//! outside a `#[cfg(test)]` zone. A fitness that is only a comment is a comment
+//! that will be wrong in six months —and so was a fitness that only scanned
+//! this one file, which is where this block starts.
 //!
 //! # What this module deliberately does NOT assume
 //!
@@ -613,7 +614,7 @@ pub enum ProviderError {
     ///
     /// MEDIDO, y contra este mismo fichero: la primera versión de este párrafo
     /// citaba la herramienta concreta del ejemplo que lo motivó, y
-    /// `tests/version_authority_fitness.rs` —`the_decision_module_names_no_concrete_technology`—
+    /// `tests/kernel_purity_fitness.rs` —`el_nucleo_no_nombra_tecnologia_concreta`—
     /// cayó en rojo en el perfil completo del workspace. No cayó antes porque el
     /// perfil que se corrió tras el bloque era el del gateway, y el fichero
     /// cambiado estaba en el dominio: **el alcance lo decidí por el crate que

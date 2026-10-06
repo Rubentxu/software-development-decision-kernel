@@ -1,157 +1,28 @@
-//! Fitness and conformance for the generic version authority model.
+//! Conformance of the generic version authority model.
 //!
-//! Two things are checked here, and they are different in kind:
+//! Lo que queda aqui es la **tabla de verdad del reducer** completa, incluidas
+//! las propiedades que son faciles de enunciar y faciles de perder: que no
+//! depende del orden de observacion, y que la identidad de un provider no le
+//! compra nada.
 //!
-//! 1. **Fitness** — a static scan proving the decision module names no
-//!    concrete technology. This is the part that cannot be reviewed by
-//!    reading: a denylist is only worth having if something enforces it, and
-//!    the failure mode it prevents (a tool name leaking into the kernel) is
-//!    exactly the kind that arrives one "harmless" convenience at a time.
-//! 2. **Conformance** — the reducer's whole truth table, including the
-//!    properties that are easy to state and easy to lose: that it does not
-//!    depend on observation order, and that a provider's identity buys it
-//!    nothing.
+//! ## Y DONDE ESTA LA OTRA MITAD
+//!
+//! La parte de *fitness* —el escaneo que prohibe que el nucleo nombre
+//! tecnologia concreta— **no vive aqui**: vive en
+//! `tests/kernel_purity_fitness.rs`, que escanea los **cuarenta y seis** modulos
+//! del dominio y no uno.
+//!
+//! Untilo alli en vez de dejar las dos copias, por una razon que es la misma que
+//! motivo el bloque: dos copias de un vocabulario son dos autoridades para la
+//! misma ley. Dos autoridades significan que alguien actualiza una y la otra
+//! protege de menos sin que nada se entere. Aqui quedaba el include_str de un
+//! solo modulo, que era justo el defecto que hizo falta corregir.
 
 use sddk_domain::version_authority::{
     ProductVersion, ReleaseTarget, VersionAuthority, VersionEvidence, VersionObservation,
     VersionProbe, reduce,
 };
 
-// ---------------------------------------------------------------------------
-// 1. Fitness
-// ---------------------------------------------------------------------------
-
-/// Names that must never appear in the module that decides.
-///
-/// Written as literal substrings rather than a clever pattern, because the
-/// failure this guards against is somebody writing the name once in a
-/// comment and a reviewer not objecting. `manifest` is deliberately absent:
-/// it is a generic word, and a fitness that banned ordinary English would
-/// push people to evade it rather than to comply.
-const FORBIDDEN: &[&str] = &[
-    // languages
-    "rust",
-    "python",
-    "kotlin",
-    "groovy",
-    "java",
-    "typescript",
-    "javascript",
-    "go_lang",
-    "golang",
-    "csharp",
-    "c_plus_plus", // build systems
-    "gradle",
-    "maven",
-    "cargo",
-    "npm",
-    "yarn",
-    "pnpm",
-    "bazel",
-    "cmake",
-    "msbuild",
-    "dotnet",
-    "pip",
-    "poetry", // concrete files
-    "cargo.toml",
-    "package.json",
-    "pyproject.toml",
-    "gradle.properties",
-    "build.gradle",
-    "pom.xml",
-    "directory.build.props",
-    "cmakelists.txt",
-    "go.mod",
-    "module.bazel",
-    // ecosystems as the kernel would name them
-    "jvm_gradle",
-    "cpp_cmake",
-];
-
-/// Busca `needle` como PALABRA, no como subcadena.
-///
-/// ## El defecto que esto arregla, medido en el escáner hermano
-///
-/// La primera versión de este escáner usaba `contains`. Al aplicarlo al módulo
-/// del motor —que sí tenía las tres palabras en su prosa— dio tres rojos que
-/// no eran del defecto que el guard vigila: `rust` dentro de **«trusted»**,
-/// `pip` dentro de **«pipeline»** y `cargo` dentro del nombre de una variable
-/// de compilación. El defecto estaba en el instrumento, no en el código, y se
-///icidal aquí antes de que apareciera por azar.
-///
-/// Un guard que produce rojos falsos entrena a su lector a ignorarlo, que es
-/// como un guard desactivado se parece a uno que pasa.
-fn find_word(haystack: &str, needle: &str) -> bool {
-    let bytes = haystack.as_bytes();
-    let target = needle.as_bytes();
-    if target.is_empty() || bytes.len() < target.len() {
-        return false;
-    }
-    for start in 0..=(bytes.len() - target.len()) {
-        if &bytes[start..start + target.len()] != target {
-            continue;
-        }
-        let before_ok = start == 0 || !is_word_byte(bytes[start - 1]);
-        let after = start + target.len();
-        let after_ok = after == bytes.len() || !is_word_byte(bytes[after]);
-        if before_ok && after_ok {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_word_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.' || byte == b'-'
-}
-
-#[test]
-fn the_decision_module_names_no_concrete_technology() {
-    let source = include_str!("../src/version_authority.rs").to_lowercase();
-    let mut hits: Vec<&str> = Vec::new();
-    for needle in FORBIDDEN {
-        if find_word(&source, needle) {
-            hits.push(needle);
-        }
-    }
-    assert!(
-        hits.is_empty(),
-        "el modulo de decision nombra tecnologia concreta: {hits:?}. \
-         El kernel define las preguntas; los providers saben obtener la evidencia."
-    );
-}
-
-/// The fitness above scans the module *source*. This one proves the scanner
-/// is capable of finding a name, so a future `hits.is_empty()` cannot pass
-/// because the denylist rotted or the `include_str!` stopped resolving.
-///
-/// The control injects a synthetic haystack carrying a listed name and runs
-/// the SAME predicate over it. A control that greps a literal nobody ever
-/// wrote —which is what the first version of this test did— passes or fails
-/// for reasons unrelated to the scanner.
-#[test]
-fn the_fitness_scanner_can_actually_see_a_name() {
-    let haystack = format!("un fichero de ejemplo y otro de {} al lado", FORBIDDEN[0]);
-    let found: Vec<&str> = FORBIDDEN
-        .iter()
-        .copied()
-        .filter(|needle| haystack.contains(needle))
-        .collect();
-    assert_eq!(
-        found,
-        vec![FORBIDDEN[0]],
-        "el scanner no encuentra un nombre que esta en la lista: el fitness de arriba \
-         no miraria nada"
-    );
-    // Y la lista no esta vacia, que es la forma mas tonta de pasar.
-    assert!(
-        FORBIDDEN.len() >= 10,
-        "la lista de prohibidos se ha vaciado"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
 // ---------------------------------------------------------------------------
 
 fn v(value: &str) -> ProductVersion {
@@ -221,7 +92,7 @@ fn invalid(provider: &str) -> VersionObservation {
 }
 
 // ---------------------------------------------------------------------------
-// 2. The reducer's truth table
+// 1. The reducer's truth table
 // ---------------------------------------------------------------------------
 
 #[test]

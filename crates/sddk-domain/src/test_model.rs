@@ -561,8 +561,8 @@ pub struct SutNodeV1 {
     pub node_id: String,
     /// Kind of SUT node (closed set).
     pub kind: SutKind,
-    /// Ecosystem identifier (e.g. "rust", "typescript", "" for neutral).
-    /// Adapters map this to TEST-ADAPTER-* tooling; kernel stays build-neutral.
+    /// Ecosystem identifier, or empty for a neutral node.
+    /// Adapters map this to their own tooling; kernel stays build-neutral.
     pub ecosystem: String,
     /// Optional human-readable label.
     pub label: Option<String>,

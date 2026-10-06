@@ -118,9 +118,9 @@ pub trait VerificationCapabilityRegistry: Send + Sync {
 pub trait TestCatalogPort: Send + Sync {
     /// Returns stable test identifiers for the given SUT node.
     ///
-    /// The returned identifiers are ecosystem-specific strings (e.g. "tests/unit/foo.rs"
-    /// for Rust, "test/Foo.test.ts" for TypeScript) that remain stable across
-    /// topology changes.
+    /// The returned identifiers are ecosystem-specific strings that remain
+    /// stable across topology changes. What one of them looks like is the
+    /// adapter's business: the kernel only stores and compares them.
     fn tests_for(&self, sut_node_id: &str) -> Result<Vec<String>, AdapterError>;
 }
 

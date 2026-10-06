@@ -17,9 +17,9 @@
 ///      - removing a variant (literal count drops below expected)
 ///      - renaming or reshaping a listed variant (match arm fails to bind)
 ///
-/// Stable on all Rust editions ≥ 2018. No nightly features required. Uses
-/// only `stringify!` + `const fn` arithmetic + `assert!`, all available in
-/// stable Rust.
+/// Stable on all editions ≥ 2018. No nightly features required. Uses only
+/// `stringify!` + `const fn` arithmetic + `assert!`, all available on the
+/// stable channel.
 ///
 /// # Example
 ///

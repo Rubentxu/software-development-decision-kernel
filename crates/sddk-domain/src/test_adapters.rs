@@ -42,9 +42,11 @@ pub struct EcosystemProfileV1 {
     pub schema_version: u32,
     /// Unique adapter identifier (non-empty).
     pub adapter_id: String,
-    /// Ecosystem identifier e.g. "rust", "typescript", "python" (non-empty).
+    /// Ecosystem identifier declared by the producer (non-empty). The kernel
+    /// reads it as an opaque label and never interprets it.
     pub ecosystem: String,
-    /// Path to the ecosystem manifest file (non-empty, e.g. "Cargo.toml").
+    /// Path to the ecosystem manifest file (non-empty). Which file that is, is
+    /// the adapter's business and not the kernel's.
     pub manifest_path: String,
     /// Substrings that MUST appear in the manifest content for detection (non-empty vec).
     pub markers: Vec<String>,

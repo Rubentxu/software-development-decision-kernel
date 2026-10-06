@@ -7,7 +7,42 @@ la vigila **un** fitness sobre **un** módulo de **cuarenta y seis**. Este bloqu
 extiende la vigilancia a todo el dominio y, de paso, repara la única violación
 real que aparece al extenderla.
 
-## Lo que ya está medido, no supuesto
+## CORRECCION A LOS PUNTOS 2 Y 3 DE ABAJO — MEDIDA, NO OPINADA
+
+Este `PRE-FLIGHT` se escribió diciendo «escaneé los 46 con el mismo vocabulario
+del guard». **Es falso, y la frase es la que importa.** La criba real fue un
+`grep` de **seis** entradas (`cargo`, `gradle`, `npm`, `go.mod`,
+`package.json`, `bazel`) cuando el guard usa **treinta y cuatro**, que incluyen
+los nombres de lenguaje.
+
+El efecto fue medir «no hay nada» con un instrumento más estrecho que el que se
+acabaría usando, y **declarar una infraccion donde hay cinco**:
+
+| lo que este PRE-FLIGHT afirma | lo medido al escribir el guard |
+|---|---|
+| 3 módulos nombran tecnología | **4**: `macros.rs`, `test_adapters.rs`, `test_model.rs`, `test_ports.rs` |
+| 42 ocurrencias | **51** |
+| «de esas 42, exactamente UNA viola la ley» | **nueve, en cinco líneas, todas doc-comments de producción** |
+
+Las ocho que faltaban son nombres de lenguaje (`rust`, `typescript`, `python`)
+escritos con mayúscula inicial, y **`Cargo.toml`** con mayúscula inicial. Ninguna
+estaba en la criba de seis.
+
+La lección no es «usa el `grep` bueno», que es lo de Perogrullo: es que **un
+recuento que sale suspiciously limpio con un instrumento parcial no es un
+recuento, es la ausencia de una medición**. Cuando el número que sale es «1» y
+el dominio tiene cuarenta y seis módulos, la respuesta honesta es «todavía no lo
+he mirado bien», y por eso este bloque no empezó a escribir el guard hasta
+después de hacerlo bien.
+
+El resto del `PRE-FLIGHT` —el atajo descartado, la estructura de zonas, el
+riesgo de la exclusión— se sostiene: se comprobó contra el guard escrito, y el
+riesgo del `#[cfg(test)] use` resultó **peor** de lo previsto, porque la segunda
+defensa que tiene el detector lo hace no observable en el corpus real.
+
+---
+
+## Lo que estaba medido cuando se escribio esto
 
 **1. El guard cubre 1 de 46.**
 
