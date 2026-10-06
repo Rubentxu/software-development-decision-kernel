@@ -9,7 +9,65 @@
 autoridad del estado operativo es SDDK (`sddk cycle`, ledger) mas el
 proceso; estos ficheros son el rastro, no la fuente.
 
-## Estado a 2026-10-06 (session-88, tras publicar v2.12.0)
+## Estado a 2026-10-06 (session-89) — dos bloques cerrados, ambos medidos
+
+- **Release vigente: `v2.12.0`**, sin cambios. **Workspace `Cargo.toml` = 2.12.1**,
+  declarada y **no publicada** → por §2.3 la siguiente release **es 2.12.1**.
+- **Frescura del binario: `behind`.** `f7d2118c` contra el checkout `a3470d61`:
+  el binario instalado es 2.12.0 y el checkout lleva dos commits más. Es lo
+  correcto —el workspace bumpea y no publica hasta el release—, pero conviene
+  no leerlo como otra cosa.
+- **Publicado en `main`**: `84fe88b7` (VA17) y `a3470d61` (INC-DEBT-063), push
+  limpio y **sin `--no-verify`**: el predicado de admisión admits porque
+  `2.12.1` es semver-mayor que el mayor tag remoto, `v2.12.0`.
+
+### Lo que session-89 cerró
+
+| Bloque | Gates medidos |
+|---|---|
+| **VA17** `cl-almacenes-de-sesion-por-worktree` — los cuatro almacenes de sesión pasan a ser por worktree | canario `PASS=4 FAIL=0 SKIP=0` (base **0 violaciones**) · test nuevo `va17_legacy_binding_serde` **2 passed** · `uat_ctx_001..007` **0/7 rojos** · `cargo fmt --check` y `cargo check` limpios |
+| **INC-DEBT-063** → `resolved` — ningún recibo declara un ciclo que la autoridad no tiene | guard `PASS=20 FAIL=0 SKIP=0` (antes `PASS=6 FAIL=7`) · autofalsación `PASS=4 FAIL=0 SKIP=0` · `shellcheck` limpio |
+
+**Dos cifras publicadas que estaban mal y ahora están medidas:**
+
+- La deuda decía **tres** recibos con un ciclo inexistente. La medición da
+  **13**, en 15 ficheros: once `cycle_id` completos inexistentes y dos campos
+  `**Cycle:**` que contenían un hito del roadmap. Sus propias `references:`
+  citaban un recibo cuyo `cycle_id` **sí** existía.
+- La session-88 corrigió `CURRENT.md` con tres valores medidos, y este bloque los
+  vuelve a medir: los tres siguen siendo ciertos (release, workspace, binario).
+
+### Lo que session-89 NO cerró
+
+1. **58 documentos de intención** (`PRE-FLIGHT.md`, `SCOPE-CONTRACT.md`) siguen
+   declarando ciclos inexistentes: **27 ficheros** con `cycle_id` inexistente y
+   **31** afirmaciones `**Cycle:** C3e` sin id. Es decisión de alcance, escrita
+   en la cabecera del guard con los números para que el hueco sea visible:
+   [`INC-DEBT-063-FU-PLANNING-DOCUMENTS.md`](../debt/INC-DEBT-063-FU-PLANNING-DOCUMENTS.md).
+2. **VA17 no migra datos.** Hay ~212 ficheros en el layout viejo sin
+   `workspace_id`; migrarlos exigiría inventarlo, así que quedan inertes. Y el
+   layout es **rompiente por naturaleza**: un binario construido contra el
+   layout anterior sigue escribiendo donde el anterior leía.
+3. **INC-DEBT-050 / 061** — decisiones del operador. No tocar.
+
+### El incidente operativo que esta sesión casi no midió
+
+Dos agentes escribieron en este mismo árbol durante ~40 minutos. Se detectó
+porque un fichero cambió de mtime entre dos mediciones, y se **abortó la
+verificación** en vez de medir sobre un árbol que se movía: `VA17` se había
+implementado a las 10:20 y a las 10:43 todavía se tocaba.
+
+**La consecuencia que importa para el puntero:** el código de VA17 lo escribió
+una sesión que **nunca lo ejecutó**, y las tres afirmaciones que importan
+—que compila, que los guards sobreviven, que el canario vigila— no tenían
+ninguna medición detrás. La regla operativa que sale de aquí: **si hay un
+escritor concurrente, el trabajo que parece hecho no está hecho.** Un árbol con
+cambios sin commitear de otro agente es un árbol que otro agente va a seguir
+tocando, y medir sobre él produce evidencia caduca.
+
+---
+
+## Estado a 2026-10-06 (session-88, tras publicar v2.12.0) — HISTÓRICO
 
 > Este bloque **sustituye** al de session-83, que declaraba `v2.11.0` vigente,
 > `all_present: true` y binario `matches`. Las tres eran falsas: la release
