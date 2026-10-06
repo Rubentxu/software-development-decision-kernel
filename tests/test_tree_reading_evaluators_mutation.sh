@@ -24,9 +24,6 @@ FAIL=0
 SKIP=0
 declare -a LINES=()
 
-cleanup() { cp "$BACKUP" "$TARGET"; rm -f "$BACKUP"; }
-trap cleanup EXIT
-
 restore() {
   cp "$BACKUP" "$TARGET"
   local now
@@ -36,6 +33,22 @@ restore() {
     exit 1
   fi
 }
+
+# El trap RESTAURA, y va DESPUES de que `restore` exista: un trap que solo
+# borra el temporal deja el fuente de produccion mutado si el script muere por
+# donde no sea el final.
+#
+# MEDIDO, y no supuesto: al cablear este test al camino de release se paro el
+# propio script a mitad de una mutacion, y `evaluators.rs` quedo con DOS
+# mutaciones vivas --una armadura `Err(_e) => continue` en el match de
+# `declared_pack_deps` y un `let at_composition_root = 0;` que anula el reparto
+# del composition root en ARCH010. La segunda es exactamente el estado que este
+# falsador existe para detectar, y estaba en el arbol de trabajo sin commit, sin
+# restauracion y sin que nadie lo nombrara: el fallo que el guard caza, cobrado
+# por el propio guard. `restore` estaba definida y con verificacion por sha, solo
+# que el trap no la llamaba.
+cleanup() { restore; rm -f "$BACKUP"; }
+trap cleanup EXIT
 
 run_test() {
   # El nombre completo va como filtro de `--exact`. Con un segundo argumento de

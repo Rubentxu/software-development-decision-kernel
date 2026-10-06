@@ -479,7 +479,32 @@ if [ "$SKIP_TESTS" = "0" ]; then
     else
         warn "shellcheck not installed — skipping static gate (install shellcheck for full coverage)"
     fi
-    for t in tests/test_guard_exit_code_fidelity_mutation.sh \
+    # Los tres falsadores del bloque C5 entran aqui MEDIDO, no por buena voluntad.
+    # `test_gate_coverage.py` dio FAIL con "SIN runner y SIN motivo: 3" nombrando
+    # los tres: existen, pasaban a mano, y NADIE los ejecutaba — guardas de decoracion,
+    # que es justo lo que el censo existe para impedir. Los tres son HERMETICOS (no
+    # abren red, ni contenedores, ni artefacto de maquina), luego por la regla del
+    # censo lo que les tocaba era cablearse, no excepcionarse con un motivo escrito:
+    # "es lento" no es una categoria que el gate admita, y admitirla seria abrir la
+    # puerta a que cualquier test caro se declare exceptuado.
+    #
+    # LO QUE PAGA ESTE CAMBIO, MEDIDO Y DECLARADO: ~5 min por test en esta maquina,
+    # porque cada mutacion recompila `sddk-engine` (cargo test -q -p sddk-engine
+    # --test rules_evaluator). Son los mas caros del 1b con diferencia. Se cablean
+    # porque un guard que nadie ejecuta no mide, y el coste es medible y finito.
+    #
+    # Y LA CONDICION SIN LA CUAL ESTO NO SERIA SEGURO: los dos primeros MUTAN EL
+    # FUENTE REAL (`evaluators.rs`, `baseline.rs`) y lo restauran. MEDIDO al
+    # parar uno a mitad de una mutacion: quedaron dos mutaciones VIVAS en
+    # `evaluators.rs`, entre ellas `let at_composition_root = 0;` en ARCH010, que
+    # es justo el estado que ese falsador existe para detectar. El trap de ambos
+    # ahora restaura (y va despues de que `restore` exista, para que un fallo
+    # anterior a su definicion no deje el arbol a medias). Sin eso, cablearlos
+    # seria dejar el release con permiso de corromper el fuente que acaba de compilar.
+    for t in tests/test_capture_fidelity_mutation.sh \
+             tests/test_tree_reading_evaluators_mutation.sh \
+             tests/test_release_notes_extraction.sh \
+             tests/test_guard_exit_code_fidelity_mutation.sh \
              tests/test_push_prevention_hook.sh \
              tests/test_push_prevention_coherence_mutation.sh \
              tests/test_release_admission.sh \

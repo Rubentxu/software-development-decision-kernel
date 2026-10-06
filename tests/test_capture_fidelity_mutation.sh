@@ -37,8 +37,6 @@ dispose() {
         rm -rf "$1"
     fi
 }
-trap 'dispose "$WORK"' EXIT
-
 restore() {
     cp "$WORK/base.rs.orig" "$BASE"
     cp "$WORK/eval.rs.orig" "$EVAL"
@@ -49,6 +47,14 @@ restore() {
         echo "RESTAURACION NO BYTE-IDENTICA"; exit 1
     fi
 }
+
+# El trap RESTAURA y va DESPUES de que `restore` exista. MEDIDO en el hermano
+# `test_tree_reading_evaluators_mutation.sh`: al pararlo a mitad de una
+# mutacion quedaron dos mutaciones VIVAS en `evaluators.rs`, una de ellas el
+# `let at_composition_root = 0;` de ARCH010 — el estado que ese falsador existe
+# para detectar, cobrado por el propio falsador. `restore` estaba escrita y con
+# verificacion por sha; lo que faltaba era que el trap la llamara.
+trap 'restore; dispose "$WORK"' EXIT
 
 # Un test cae si su nombre aparece entre los FAILED de la suite.
 #
