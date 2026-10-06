@@ -277,9 +277,13 @@ s = open(p).read()
 # importa es el mismo: una ley de arista que no puede decir cuanto miro.
 # El nombre de la clave se lee del propio evaluador, no se escribe aqui: por
 # escrito fijo, cada renombrado dejaba esta mutacion sin aplicar en silencio.
-key = '"subject_declarations": subject_declarations'
-assert key in s, "M8 no aplica: no hay subject_declarations que quitar"
-s = s.replace(key + ',\n            "test_declarations_excluded": test_edges,\n            "measured_nothing": subject_declarations == 0,', '')
+# Se borra la CLAVE EMITIDA y lo que la acompaña, sin escribir de mas aqui: el
+# orden de las claves dentro del `json!` no es un contrato y basta con que
+# cambie para que una sustitucion escrita a mano deje de aplicar — en silencio,
+# y como SKIP, que es el peor sitio posible para perder una mutacion.
+before = s.count('"subject_declarations":')
+assert before >= 1, "M8 no aplica: no hay subject_declarations que quitar"
+s = re.sub(r'\n *"subject_declarations": subject_declarations,', '', s)
 open(p, 'w').write(s)
 PY
 if cmp -s "$EVALUATORS" "$WORK/evals.rs.orig"; then
