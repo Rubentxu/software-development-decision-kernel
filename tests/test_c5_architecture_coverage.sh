@@ -265,17 +265,24 @@ echo "== D5: ninguna ley dice Pass sin haber mirado al menos una arista =="
 # evaluador, asi que el guard lee la FUENTE y no una captura que podria estar
 # vieja. Contar stubs leyendo evaluadores.rs y contar sujetos leyendo
 # evaluadores.rs es la misma fuente por dos razones distintas.
-# Que "emita el tamano de lo que miro" admite tres formas, y cada una es
-# verdadera para su clase de ley:
-#   - `subject_edges`      : las leyes de arista lo emiten en el helper
-#                             compartido `evaluate_forbidden_edge`, NO en su
-#                             propio cuerpo. Buscarlo solo en el cuerpo daba
-#                             falso rojo sobre seis leyes que si lo emiten.
-#   - `"subjects":`        : ARCH005 lista los modulos reactivos que escaneo.
-#   - `"packs":`           : ARCH004 lista los manifests que leyo.
-# Una ley que no este en ninguno de los tres NO PUEDE decir cuanto mira, y esa
-# es la que viste de verde sin Mirar.
+# Que "emita el tamano de lo que miro" admite tres caminos, y hay que recorrer
+# el camino, no mirar el nombre de la funcion:
+#   - emitirlo en su propio cuerpo (`subject_edges`, `"subjects":`, `"packs":`,
+#     `subject_files`);
+#   - o delegar en el helper compartido `evaluate_forbidden_edge`, en cuyo caso
+#     lo que importa es que EL HELPER lo emita.
+#
+# La primera version de este diente aceptaba la ley solo por DELEGAR, sin
+# comprobar el helper. Con el helper vaciado de su cifra, las seis leyes de
+# arista seguian dando verde: el criterio miraba a quien llama, no lo que el
+# llamado cumple. Delegar no es informar; hay que bajar por la llamada.
 EMPTY_SUBJECTS=""
+HELPER_REPORTS=""
+if awk '/^fn evaluate_forbidden_edge\(/ { inside = 1; next }
+       inside { if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) exit; print }' "$EVALUATORS" \
+     | grep -q '"subject_edges":'; then
+    HELPER_REPORTS=yes
+fi
 for id in $DISPATCHED; do
     body="$(awk -v fn="fn evaluate_${id,,}(" '
         index($0, fn) == 1 { inside = 1; next }
@@ -283,7 +290,11 @@ for id in $DISPATCHED; do
             if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) { exit }
             print
         }' "$EVALUATORS")"
-    if printf '%s\n' "$body" | grep -qE 'subject_edges|evaluate_forbidden_edge\(|"subjects":|"packs":|subject_files'; then
+    if printf '%s\n' "$body" \
+        | grep -qE '"subject_edges":|"subjects":|"packs":|subject_files'; then
+        continue
+    fi
+    if printf '%s\n' "$body" | grep -q 'evaluate_forbidden_edge(' && [ "$HELPER_REPORTS" = "yes" ]; then
         continue
     fi
     EMPTY_SUBJECTS="$EMPTY_SUBJECTS $id"

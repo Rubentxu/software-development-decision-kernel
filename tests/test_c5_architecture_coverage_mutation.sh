@@ -259,6 +259,47 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ── M8: un evaluador deja de poder decir que mira ────────────────────────────
+# La propiedad de D5. Quitarle el campo a una ley que hoy lo tiene la convierte
+# en verde sin sujeto otra vez, y eso tiene que ser rojo por D5 y SOLO por D5:
+# si lo detectara D2 seria porque la ley paso a contarse como stub, que es otro
+# defecto, y el guard no debe tapar uno con el otro.
+echo
+echo "== M8: ARCH011 deja de reportar el tamano de su sujeto =="
+restore
+python3 - "$EVALUATORS" <<'PY'
+import sys, re
+p = sys.argv[1]
+s = open(p).read()
+# ARCH011 delega en el helper compartido, asi que el campo se quita del helper
+# y se mide si D5 lo detecta ahi. Un recorte que solo afectara a ARCH011 seria
+# mas fiel al titulo, pero exigiria partir el helper en dos y el defecto que
+# importa es el mismo: una ley de arista que no puede decir cuanto miro.
+before = s.count('"subject_edges": subject_edges')
+assert before >= 1, "M8 no aplica: no hay subject_edges que quitar"
+s = s.replace('"subject_edges": subject_edges,\n            "measured_nothing": subject_edges == 0,', '')
+open(p, 'w').write(s)
+PY
+if cmp -s "$EVALUATORS" "$WORK/evals.rs.orig"; then
+    echo "  [SKIP] M8 no aplico: el evaluador quedo byte-identico"
+    SKIP=$((SKIP + 1))
+else
+    OUT="$(run_guard)"
+    if printf '%s\n' "$OUT" | grep -q '\[FAIL\] las leyes sin medicion de sujeto'; then
+        if printf '%s\n' "$OUT" | grep -q '\[FAIL\] los stubs son exactamente'; then
+            echo "  [FAIL] M8 detectado, pero tapado por D2: un defecto cubierto por dos dientes"
+            FAIL=$((FAIL + 1))
+        else
+            echo "  [ok]   M8 detectado, por D5 y solo por D5"
+            PASS=$((PASS + 1))
+        fi
+    else
+        echo "  [FAIL] M8 NO detectado: un evaluador puede dejar de decir que mira"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+restore
+
 # ── M5: control de no-vacuidad ──────────────────────────────────────────────
 # El guard tiene que DETECTAR la brecha en HEAD, no solo saber contarla. Si
 # sobre HEAD saliera todo en verde, su PASS seria la afirmacion de que el gate
