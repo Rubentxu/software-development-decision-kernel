@@ -291,11 +291,22 @@ impl CogniCodeMcpAdapter {
         }
     }
 
-    /// Analysis basis for digest material. Currently consumed only by
-    /// `digest_result`; retained for future AnalysisBasis surfacing
-    /// (AIW-S2). Not dead code by intent.
-    #[allow(dead_code)]
-    fn basis(&self, scope: &str) -> AnalysisBasis {
+    /// Analysis basis for digest material, derived from what the provider
+    /// ACTUALLY announced during the handshake (C3m.3).
+    ///
+    /// `provider_build` reads `server_version`, which the adapter filled from
+    /// the server's own `serverInfo.version` in the `initialize` reply. That is
+    /// the whole point: the runtime never gets to name the provider, it only
+    /// gets to report who answered. Before this was public, the `verify` command
+    /// rebuilt the basis by hand with a literal, so two different providers
+    /// serving the same claim produced indistinguishable evidence — and the
+    /// literal name reached the evidence digest, because `digest_result` below
+    /// hashes `basis.provider_build` into the material it computes the digest
+    /// from, and that digest is what the CLI turns into the observation basis.
+    ///
+    /// Also consumed by `digest_result`; retained for AIW-S2 surfacing. Not dead
+    /// code by intent.
+    pub fn basis(&self, scope: &str) -> AnalysisBasis {
         AnalysisBasis {
             provider_build: format!("cognicode-mcp/{}", self.lock_state().server_version.clone()),
             protocol_major: 2025,

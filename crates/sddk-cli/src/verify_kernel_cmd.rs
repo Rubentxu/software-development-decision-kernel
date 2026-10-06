@@ -201,15 +201,20 @@ fn run_verify_static_provider(args: VerifyArgs) -> CommandOutput {
         .next()
         .unwrap_or(&subject_tag)
         .to_string();
-    let basis = sddk_engine::code_intelligence_port::AnalysisBasis {
-        provider_build: "cognicode-mcp/verify-cmd".to_string(),
-        protocol_major: 2025,
-        protocol_minor: 3,
-        capability_snapshot: provider.capabilities(),
-        analyzer_set_digest: provider.capabilities().analyzer_set_digest,
-        source_revision: "verify-cmd".to_string(),
-        request_scope: subject_tag.clone(),
-    };
+    // C3m.3: el basis lo construye el ADAPTER, no el comando. `provider.basis()`
+    // deriva `provider_build` del `serverInfo.version` que el servidor
+    // anuncio en el handshake, asi que lo que acaba en el digest de la
+    // evidencia es quien contesto de verdad.
+    //
+    // MEDIDO antes de cambiarlo: este bloque de aqui construia el basis entero
+    // a mano con `provider_build: "cognicode-mcp/verify-cmd".to_string()` mas
+    // cuatro campos fijos. `provider_build` entra en el digest de la evidencia
+    // (`code_intelligence_port_fake.rs`), luego dos proveedores distintos que
+    // satisfacen el mismo claim daban **evidencia indistinguible**, y el receipt
+    // afirmaba el nombre de un proveedor sin haberlo medido. El adapter ya
+    // tenia el metodo y ya derivaba la identidad de lo anunciado; el comando
+    // simplemente no preguntaba.
+    let basis = provider.basis(&subject_tag);
     let request = sddk_engine::code_intelligence_port::ScopeRequest {
         added_units: vec![],
         removed_units: vec![],
@@ -235,6 +240,36 @@ fn run_verify_static_provider(args: VerifyArgs) -> CommandOutput {
         // subject the claim names (unit:symbol:<name>).
         let unit_subject = SoftwareUnitRef::new(format!("symbol:{symbol}"));
         let unit_basis = ObservationBasis::for_provider_result("verify-cmd", &input_digest);
+        // C3m.3: aqui el nombre del proveedor SE QUEDA, y es deliberado.
+        //
+        // El locator y el `producer` nombran la FAMILIA del proveedor
+        // (`cognicode-mcp`), que es lo que este adapter es por construccion:
+        // habla el protocolo MCP de cognicode. Lo que NO puede ser una
+        // constante es el BUILD, y ese vive en `basis.provider_build`, que se
+        // deriva del `serverInfo.version` anunciado (bloque de arriba). Es la
+        // misma frontera que dibuja ADR-0155: el nombre vive en el adapter; lo
+        // que se afirma del build tiene que estar medido.
+        //
+        // MEDIDO: una primera version de este arreglo SI derivaba el locator
+        // del `provider_build` observado. Era incorrecta por tres motivos que
+        // solo aparecieron al medir, y ninguno era visible sin medir:
+        //
+        //   1. `provider_build` es `nombre/version`, luego como esquema de URI
+        //      produce `cognicode-mcp/0.4.1://find_usages/...`. Un esquema URI
+        //      no puede contener `/`: el resultado es un URI malformado que
+        //      parece observacion y no lo es.
+        //   2. El ciclo C2a dejo escrito que cambiar este URI exige ADR
+        //      (`c2a-msgfix/SCOPE-CONTRACT.md` F5, "requires an ADR"), y no lo
+        //      hay. Era un cambio de contrato de evidencia, no un bugfix.
+        //   3. No hacia falta. `digest_result` hashea `provider_build` PRIMERO
+        //      (`code_intelligence_port_mcp.rs:325`), luego la identidad
+        //      observada ya llega a `ObservationId::derive` por el `basis`. Meter
+        //      el dato tambien en el locator duplicaba el mismo hecho en dos
+        //      campos que se presume independientes, y por eso una divergencia
+        //      entre ambos no tendria a quien preguntarle por que.
+        //
+        // O sea: el cambio de este bloque no era neutralidad, era ruido con
+        // forma de neutralidad.
         let unit_evidence = EvidenceRef::new(
             sddk_engine::evidence_ref::EvidenceKind::Adhoc,
             format!(
