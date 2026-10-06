@@ -1,6 +1,9 @@
 # CL-release-version-source — RECEIPT del lote 3
 
-**Cycle:** `p-63676b11dc0ef88f/version-source`
+**Bloque:** `cl-release-version-source` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`version-source` (medido 2026-10-06). El encabezado declaraba antes un `cycle_id`
+completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Date:** 2026-10-02T15:50:00Z
 **Baseline:** `main@1c82e910`
 **Workspace:** 2.5.3 (declarada, no publicada; último tag remoto v2.5.2)

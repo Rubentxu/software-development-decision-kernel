@@ -1,6 +1,9 @@
 # RECEIPT — cl-vault-html-replica
 
-**Cycle:** `p-63676b11dc0ef88f/vault-html-replica`
+**Bloque:** `cl-vault-html-replica` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+este nombre (medido 2026-10-06). El encabezado declaraba antes un `cycle_id`
+completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Closed:** 2026-10-02T23:55:00Z
 **Workspace:** 2.5.3 (declarada, **no publicada**; último tag remoto `v2.5.2`)
 **Baseline:** `ce09a855` (`docs(roadmap): session-69h…`)

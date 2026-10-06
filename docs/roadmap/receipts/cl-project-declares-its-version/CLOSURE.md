@@ -1,7 +1,10 @@
 # Cierre de `cl-project-declares-its-version` (VA11)
 
 **Fecha:** 2026-10-05
-**Ciclo:** `p-63676b11dc0ef88f/version-coherence-071` · ADR-0165
+**Bloque:** `cl-project-declares-its-version` — bloque de roadmap, **no** es un ciclo del ledger · ADR-0165
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`version-coherence-071` (medido 2026-10-06). El encabezado declaraba antes un
+`cycle_id` completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Estado:** cerrado y publicado
 
 ---

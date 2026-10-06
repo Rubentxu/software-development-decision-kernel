@@ -1,6 +1,9 @@
 # RECEIPT — cl-ledger-declaration
 
-**Cycle:** `p-63676b11dc0ef88f/ledger-declaration`
+**Bloque:** `cl-ledger-declaration` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`ledger-declaration` (medido 2026-10-06). El encabezado declaraba antes un
+`cycle_id` completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Authority:** [INC-DEBT-060](../../../debt/INC-DEBT-060-NO-SURFACE-ENUMERATES-CYCLES-97-OF-179-ARE-NAMED-BY-NO-COMMAND.md) (`high`/`P1`, `open`), falsificador **F63**
 **SCOPE:** [SCOPE-CONTRACT.md](./SCOPE-CONTRACT.md) · **PRE-FLIGHT:** [PRE-FLIGHT.md](./PRE-FLIGHT.md) (`Readiness: READY`)
 **Workspace:** 2.5.3 (declarada, no publicada; último tag remoto `v2.5.2`)

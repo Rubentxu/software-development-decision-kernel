@@ -1,7 +1,7 @@
 ---
 id: INC-DEBT-063
 title: "Tres recibos declaran un cycle_id que SDDK nunca emitió: la documentación afirma un ciclo que la autoridad no tiene"
-status: open
+status: resolved
 severity: medium
 priority: P2
 revalidated_at: 2026-10-03
@@ -54,6 +54,68 @@ references:
 > no era más grave de lo que decía, era exactamente tan grave como decía.
 >
 > Evidencia: `docs/roadmap/receipts/c3m5-bounded-contexts/REVISION-VIGENCIA-R2.md` §0.1.
+
+> ## ✅ CIERRE (2026-10-06, sesión 89) — RESUELTA, y el título mentía por partida doble
+>
+> **Ejecutada la salida 1** (enmendar los encabezados), que es la que esta deuda
+> recomendaba y que quedó a la espera de decisión del operador. La autoridad no se
+> tocó: **no se creó ningún ciclo**, que es la línea que esta deuda trazaba.
+>
+> **LA CIFRA DEL TÍTULO ERA 3 Y LA MEDICIÓN DABA 13.** Dos veces mal contada, y por
+> dos motivos distintos que conviene no perder:
+>
+> 1. **No eran 3 recibos: eran 11 `cycle_id` completos inexistentes + 2 campos mal
+>    etiquetados**, todos en documentos que **afirman resultado**
+>    (`RECEIPT*.md`, `CLOSURE.md`):
+>
+>    | Bloque | Declaraba | Filas |
+>    |---|---|---|
+>    | `cl-ledger-declaration` | `…/ledger-declaration` | 0 |
+>    | `cl-vault-declaration` | `…/vault-declaration` | 0 |
+>    | `cl-vault-graph` | `…/vault-graph` | 0 |
+>    | `cl-vault-html-replica` | `…/vault-html-replica` | 0 |
+>    | `cl-vault-node-projection` | `…/vault-node-projection` | 0 |
+>    | `cl-adopt-alias-wiring` | `…/identity-alias` | 0 |
+>    | `cl-cycle-enumeration` | `…/cycle-enumeration` | 0 |
+>    | `cl-release-version-source` | `…/version-source` | 0 |
+>    | `cl-lockstep-gate-sees` | `…/version-coherence-070` | 0 |
+>    | `cl-project-declares-its-version` | `…/version-coherence-071` | 0 |
+>    | `cl-quien-responde-tambien-puede-preguntar` | `…/version-coherence-072` | 0 |
+>    | `c3h`, `c4-pre-flight` | `**Cycle:** C3h` / `C4` — un hito, no un id | — |
+>
+>    Y las `references:` del frontmatter de esta deuda citaban **una receipt
+>    válida**: `cl-ledger-watch-total` declara `version-coherence-068`, que
+>    **sí** existe en el ledger. Una referencia que sostiene la prueba de la
+>    deuda y que no la sostiene.
+>
+> 2. **Contar mal también fue el primer defecto del guard, en su propia primera
+>    ejecución.** Dos, de hecho: `STATE_BASE` sin exportar al probe, y los ids
+>    leídos de `stdin` cuando el heredoc ya ocupaba `stdin` — el guard se
+>    comprobaba a sí mismo y falló cerrado por su propia causa. Es la forma más
+>    barata de la que este repo avisa: un gate que se pone rojo a sí mismo antes
+>    de tener nada que decir.
+>
+> **LO QUE ESTE CIERRE NO DICE**
+>
+> - **No cierra la clase entera.** Los documentos de **intención** del mismo
+>   directorio (`PRE-FLIGHT.md`, `SCOPE-CONTRACT.md`) declaran el mismo tipo de
+>   ciclo inexistente: **16 + 11 ficheros** y **31** afirmaciones `**Cycle:** C3e`
+>   sin id. Quedan medidos y con seguimiento en
+>   [`INC-DEBT-063-FU-PLANNING-DOCUMENTS.md`](./INC-DEBT-063-FU-PLANNING-DOCUMENTS.md),
+>   y el guard **no** los cubre — lo dice en su cabecera con los números, para que
+>   el hueco sea visible y no heredado.
+> - **No corrige ni un número de producción de esta deuda** más allá del título y
+>   del estado. El cuerpo conserva sus «179 ciclos» porque ya está marcado como
+>   caduco arriba; y de las dos poblaciones que nombraba esa revisión, la real
+>   `p-63676b11dc0ef88f` contaba **108** ciclos en 2026-10-03.
+>
+> **GATES:** `tests/test_receipt_cycle_id_authority.sh` = `PASS=20 FAIL=0 SKIP=0`
+> sobre 20 afirmaciones de ciclo en el alcance corregido · autofalsación
+> `tests/test_receipt_cycle_id_authority_mutation.sh` = `PASS=4 FAIL=0 SKIP=0`
+> (id fabricado en el campo nuevo, campo `**Cycle:**` sin id, fail-closed sin
+> autoridad, control negativo) · `shellcheck` limpio en ambos.
+>
+> Evidencia: `docs/roadmap/receipts/cl-receipt-cycle-id-authority/RECEIPT.md`.
 
 ## Qué es
 

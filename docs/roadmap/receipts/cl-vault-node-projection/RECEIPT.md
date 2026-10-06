@@ -1,6 +1,9 @@
 # RECEIPT — cl-vault-node-projection
 
-**Cycle:** `p-63676b11dc0ef88f/vault-node-projection`
+**Bloque:** `cl-vault-node-projection` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+este nombre (medido 2026-10-06). El encabezado declaraba antes un `cycle_id`
+completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Closed:** 2026-10-03T01:05:00Z
 **Workspace:** 2.5.3 (declarada, **no publicada**; último tag remoto `v2.5.2`)
 **Baseline:** `4822ddd1` (`docs(roadmap): session-69j…`)

@@ -1,6 +1,9 @@
 # C3h RECEIPT — Supply-chain audit + remediation
 
-**Cycle:** C3h (Supply-chain audit, ROADMAP §C3 "secret-screen y dependencias/supply chain")
+**Sección ROADMAP:** C3h (Supply-chain audit, ROADMAP §C3 "secret-screen y dependencias/supply chain")
+**Ciclo SDDK:** ninguno. Este recibo es de una *sección* del roadmap, no de un
+ciclo del ledger; el campo se llamaba `**Cycle:**` y no contenía un ciclo.
+Renombrado por INC-DEBT-063.
 **Type:** Maintenance / Security
 **Status:** CLOSED — PASS
 

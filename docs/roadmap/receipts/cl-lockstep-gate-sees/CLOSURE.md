@@ -1,6 +1,9 @@
 # CLOSURE — VA10 `cl-lockstep-gate-sees`
 
-**Cycle:** `p-63676b11dc0ef88f/version-coherence-070`
+**Bloque:** `cl-lockstep-gate-sees` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`version-coherence-070` (medido 2026-10-06). El encabezado declaraba antes un
+`cycle_id` completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Fecha:** 2026-10-05
 **Commit de código:** `2387c579`
 **Cierra:** ADR-0164

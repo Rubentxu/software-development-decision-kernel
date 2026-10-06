@@ -1,7 +1,10 @@
 # Cierre de `cl-quien-responde-tambien-puede-preguntar` (VA12)
 
 **Fecha:** 2026-10-05
-**Ciclo:** `p-63676b11dc0ef88f/version-coherence-072` · ADR-0166
+**Bloque:** `cl-quien-responde-tambien-puede-preguntar` — bloque de roadmap, **no** es un ciclo del ledger · ADR-0166
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`version-coherence-072` (medido 2026-10-06). El encabezado declaraba antes un
+`cycle_id` completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Estado:** cerrado y publicado
 
 ---

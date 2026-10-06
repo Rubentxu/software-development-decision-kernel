@@ -1,6 +1,9 @@
 # C4 — RELEASE CUT PRE-FLIGHT (dry-run, operator-gated)
 
-**Cycle:** C4 (Release y certificación de producto, ROADMAP §C4)
+**Sección ROADMAP:** C4 (Release y certificación de producto, ROADMAP §C4)
+**Ciclo SDDK:** ninguno. Este recibo es de una *sección* del roadmap, no de un
+ciclo del ledger; el campo se llamaba `**Cycle:**` y no contenía un ciclo.
+Renombrado por INC-DEBT-063.
 **Status:** PRE-FLIGHT PASSED, **AWAITING OPERATOR** for actual `bash scripts/release.sh`
 **Date:** 2026-09-22T10:41:00Z
 **Workspace:** 1.169.152

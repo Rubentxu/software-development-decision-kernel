@@ -1,6 +1,9 @@
 # RECEIPT — INC-DEBT-059, lote 2 (el arreglo)
 
-**Cycle:** `p-63676b11dc0ef88f/identity-alias`
+**Bloque:** `cl-adopt-alias-wiring` — bloque de roadmap, **no** es un ciclo del ledger
+**Ciclo SDDK:** ninguno. El ledger de `p-63676b11dc0ef88f` da **0 filas** para
+`identity-alias` (medido 2026-10-06). El encabezado declaraba antes un `cycle_id`
+completo que la autoridad nunca emitió; corregido por INC-DEBT-063.
 **Deuda:** INC-DEBT-059 (high/P1)
 **Lote:** 2 de 2. El lote 1 (tests RED) es `07c3fd5c`.
 **Fecha:** 2026-10-02T20:40:00Z
