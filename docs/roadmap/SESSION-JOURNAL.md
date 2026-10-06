@@ -16555,7 +16555,23 @@ placeholder y **no se fabricar ninguna**. El orden inestable de `candidates` en
 la ambiguedad de ciclo (decision de producto). El catch-all de `recovery:` en
 `sddk-gateway` — el mismo patron que se corrigio en `sddk-engine` en
 session-84 bis 7, alli declarado y aqui tambien. 525 candados `/tmp/sddk-excl.*`
-(INC-DEBT-075). Los **212 ficheros de sesion del layout antiguo ya NO EXISTEN**
-en `~/.local/state/sddk`: no hay ni un `bindings/`, `deltas/` ni `capsules/` ahi.
-La PRE-FLIGHT que los contaba queda con ese dato caducado, y se anota porque un
-recuento que se cita sin volver a medir vuelve a tener autoridad por vecindad.
+(INC-DEBT-075). **CORRECCION DE ESTA MISMA ENTRADA, y es la cuarta vez de la clase
+que este bloque mide.** Escribi aqui que «los 212 ficheros de sesion del layout
+antiguo ya NO EXISTEN». **Es falso, y lo medi en el sitio equivocado**: los
+almacenes cuelgan de `data_home`, o sea `~/.local/share/sddk`, y yo medi
+`~/.local/state/sddk` — el `state_home`, donde vive `ledger.sqlite` y nada mas.
+Remedido en el directorio correcto: **92 bindings, 94 deltas, 27 capsules**, los
+tres en el layout viejo (`projects/<p>/context/`) y **0** en el nuevo. El
+recuento de la PRE-FLIGHT era 91/94/26, luego aqui hay **uno mas de cada uno de
+los dos primeros**, y el agregado 213 en vez de 212.
+
+**Lo que no cambia es la conclusion, y eso es lo que importa**: los ficheros
+existen, ninguno lleva `workspace_id`, y quedan inertes porque migrarlos
+exigiria inventar un `workspace_id`. El stop condition 1 del PRE-FLIGHT sigue
+satisfecho —no hay riesgo de perdida silenciosa porque no hay nada que perder—
+pero por el motivo que el PRE-FLIGHT daba, no por el que yo escribi. **Un
+`find` que no devuelve nada no es un resultado, es una ausencia de busqueda**:
+no distingue «no hay ficheros» de «no he mirado donde estan», y solo la segunda
+es lo que medi. El canario y sus pruebas fabrican sus fixtures en un temporal
+propio, luego ninguna medicion de este bloque cambio por el error; el dano es
+solo a lo que este journal afirma.

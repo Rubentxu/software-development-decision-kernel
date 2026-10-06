@@ -59,10 +59,24 @@ dientes sobre los 91 bindings reales que ya estaban en disco sin `workspace_id`.
 
 ## §3 — Lo que este bloque NO demuestra
 
-1. **No migra datos.** Hay ~212 ficheros en el layout viejo y ninguno lleva
+1. **No migra datos.** Hay ficheros en el layout viejo y ninguno lleva
    `workspace_id`. Migrarlos exigiría **inventar** un `workspace_id`, así que
    quedan inertes y recuperables, y el layout nuevo empieza limpio. Declarado, no
    disimulado.
+
+   REMEDIDO (session-86, contra este mismo §3): la cifra que abria este punto era
+   **~212**, y el sitio donde hay que medir es `data_home`
+   (`~/.local/share/sddk`), no `state_home` (`~/.local/state/sddk`, donde solo
+   vive `ledger.sqlite`). Medido en el sitio correcto: **92 bindings, 94 deltas,
+   27 capsules** — los tres en `projects/<p>/context/`, y **0** en el layout
+   nuevo. O sea **+1 binding y +1 capsule** sobre el recuento del `PRE-FLIGHT`, y
+   213 en agregado.
+
+   **La conclusion no cambia por el error**: los ficheros existen, ninguno lleva
+   `workspace_id`, y quedan inertes por el motivo que este punto daba. Lo que
+   cambia es la cifra, y se corrige aqui porque un recibo es la autoridad del
+   bloque: una fuente que se cita sin volver a medir vuelve a tener autoridad
+   por vecindad.
 2. **`PRE-FLIGHT.md` y `SCOPE-CONTRACT.md` no se tocaron**, y tampoco hace falta:
    declaran intención. El guard de recibos que nació en el bloque contiguo
    (`test_receipt_cycle_id_authority.sh`) tiene su alcance escrito por esa razón.
