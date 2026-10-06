@@ -187,6 +187,31 @@ release_diagnose_exit() {
 
 # --- P2: margen de recursos antes de gastar la suite -------------------------
 
+# release_resources_now — el HECHO, en una linea, del estado de recursos de este
+# instante. No decide nada y no falla: existe para poderlo incrustar en un
+# mensaje de `die` y que el fallo diga como estaba la maquina CUANDO fallo, que
+# es la unica pregunta que el fallo anterior no contestaba.
+#
+# MEDIDO (session-76, backlog P1 bl-bl-01M42JGYG4000388551BF9NZ40): el log del
+# release se corto exactamente en 122880 bytes, sin linea `EXIT=` ni trampa de
+# limpieza, y el paso 1 se presento como "no dice por que fallo". La maquina
+# tenia 2.4 GiB libres y el swap al 100 %, con ~313 clones de otro proyecto
+# sobre un tmpfs de 48 G. Ese estado estaba disponible y NADIE lo imprimio: el
+# diagnostico sabia nombrar un ENOSPC y una retencion de lock, y no tenia forma
+# de decir "la maquina no tenia memoria".
+release_resources_now() {
+    local avail_mb="?" free_mb="?" swap_mb="?"
+    if command -v free >/dev/null 2>&1; then
+        avail_mb="$(free -m 2>/dev/null | awk '/^Mem:/ {print $7}')"
+        swap_mb="$(free -m 2>/dev/null | awk '/^Swap:/ {print $3"/"$2" MiB usados/total"}')"
+    fi
+    if [ -n "${RELEASE_SCRATCH:-}" ] && [ -d "${RELEASE_SCRATCH:-}" ] && command -v df >/dev/null 2>&1; then
+        free_mb="$(df -Pm "$RELEASE_SCRATCH" 2>/dev/null | awk 'NR==2 {print $4}')"
+    fi
+    printf 'memoria disponible=%s MiB (min %s) · swap=%s · disco libre en scratch=%s MiB (min %s)' \
+        "${avail_mb:-?}" "$SDDK_RELEASE_MIN_AVAIL_MB" "${swap_mb:-?}" "${free_mb:-?}" "$SDDK_RELEASE_MIN_FREE_MB"
+}
+
 # SDDK_RELEASE_MIN_FREE_MB — margen minimo en el filesystem del scratch.
 # 2048 MB: el release construye un binario musl de ~32 MB, un tarball de
 # ~12 MB, assets, y la suite completa escribe mas de un GiB en temporales.

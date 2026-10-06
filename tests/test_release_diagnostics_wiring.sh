@@ -755,6 +755,64 @@ asert "E8: una muerte por senal que NO pasa por die conserva su codigo; el 1 es 
     "$([ "$E8_RC_KO" = "137" ] && echo 1 || echo 0)" "rc real: '$E8_RC_KO'"
 caso_termina E8
 
+# --- E9: los recursos se miden DONDE se consumen, y el fallo los nombra --------
+# El P1 del backlog (bl-bl-01M42JGYG4000388551BF9NZ40) NO era "falta una
+# comprobacion": `release_check_resources` ya existia y ya era fail-closed, y el
+# release ya la llamaba en el paso 0. Lo que no existia era medirlos en el paso
+# 1, que es el pico de consumo de la operacion entera. Entre el preflight y aqui
+# la maquina la carga lo que sea, y MEDIDO fue justo ahi donde fallo: el log se
+# corto en 122880 bytes sin linea `EXIT=`, con 2.4 GiB libres y el swap al 100 %
+# mientras corrian ~313 clones de otro proyecto.
+#
+# Aserciones sobre la PROPIEDAD —posicion relativa dentro del bloque, y
+# cobertura de todos sus `die`— y no sobre cadenas literales, por el motivo que
+# la cabecera de este mismo fichero ya dejo escrito en E0: un aserto que mide
+# la puntuacion literal de una linea mide lo que uno escribio.
+caso_empieza
+
+STEP1="$(awk '/step "1\/15/{f=1} f{print} /ok "workspace green"/{exit}' "$RELEASE")"
+
+asert "E9: el bloque del paso 1 existe y se ha ableido" \
+    "$([ -n "$STEP1" ] && echo 1 || echo 0)"
+
+# `release_resources_now` tiene que EXISTIR y DAR UN HECHO. Se ejerce, no se
+# comprueba con grep: una funcion que existe y no imprime nada deja el mensaje
+# de fallo tan mudo como estaba antes, que es el defecto que este caso cierra.
+E9_HECHO="$(bash -c '. "$1"; release_resources_now' _ "$LIB" 2>/dev/null)"
+asert "E9: release_resources_now existe y devuelve un hecho no vacio" \
+    "$([ -n "$E9_HECHO" ] && echo 1 || echo 0)" "hecho: '$E9_HECHO'"
+asert "E9: ese hecho nombra la memoria disponible y su minimo" \
+    "$(printf '%s' "$E9_HECHO" | grep -q 'memoria disponible=' && echo 1 || echo 0)"
+asert "E9: y nombra el swap, que MEDIDO estaba al 100 % en el fallo" \
+    "$(printf '%s' "$E9_HECHO" | grep -q 'swap=' && echo 1 || echo 0)"
+
+asert "E9: el paso 1 VUELVE a medir los recursos; el paso 0 solo no basta" \
+    "$(printf '%s\n' "$STEP1" | grep -q 'release_check_resources' && echo 1 || echo 0)"
+
+# Y lo mide ANTES de gastar. Una comprobacion DESPUES del cargo que consume es
+# decoracion: llega tarde para impedir nada.
+#
+# MEDIDO en su propia primera ejecucion: buscar `cargo ` sin mas daba la linea 1
+# del bloque, porque el TITULO del paso es "1/15 - cargo fmt + clippy + test".
+# La asercion comparaba la comprobacion contra el titulo y caia, y el fallo
+# parecia del codigo cuando era de buscar la palabra donde se invoca y no donde
+# se nombra. De ahi el ancla de inicio de linea.
+E9_POS_CHECK="$(printf '%s\n' "$STEP1" | grep -nE '^[[:space:]]*release_check_resources|^[[:space:]]*if ! release_check_resources' | head -1 | cut -d: -f1)"
+E9_POS_CARGO="$(printf '%s\n' "$STEP1" | grep -nE '^[[:space:]]*cargo ' | head -1 | cut -d: -f1)"
+asert "E9: la comprobacion va ANTES del primer cargo del bloque" \
+    "$([ -n "$E9_POS_CHECK" ] && [ -n "$E9_POS_CARGO" ] && [ "$E9_POS_CHECK" -lt "$E9_POS_CARGO" ] \
+        && echo 1 || echo 0)" "check en linea $E9_POS_CHECK, primer cargo en linea $E9_POS_CARGO"
+
+# Y TODOS los `die` del bloque nombran el estado de ese instante. La propiedad es
+# de COBERTURA, no de forma: un `die` sin el hecho es exactamente lo que dejo el
+# log de session-76 mudo, y cuenta igual este o no tiene la misma redaccion.
+E9_DIES="$(printf '%s\n' "$STEP1" | grep -cE '(^|[^_[:alnum:]])die[[:space:]]' || true)"
+E9_CON_HECHO="$(printf '%s\n' "$STEP1" | grep -c 'release_resources_now' || true)"
+asert "E9: NINGUN die del paso 1 queda sin nombrar los recursos de ese instante" \
+    "$([ "$E9_DIES" -gt 0 ] && [ "$E9_DIES" -eq "$E9_CON_HECHO" ] && echo 1 || echo 0)" \
+    "die=$E9_DIES, con el hecho=$E9_CON_HECHO"
+caso_termina E9
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then

@@ -442,6 +442,72 @@ s = s.replace(viejo, nuevo, 1)
 open(p, "w").write(s)
 '
 
+# --- M21..M24: E9, los recursos en el punto donde se consumen ----------------
+# E9 es el caso que cierra el P1 bl-bl-01M42JGYG4000388551BF9NZ40, y tiene tres
+# dientes que se pueden quitar por separado: que se mida, que se mida ANTES de
+# gastar, y que el fallo lo nombre. Cada mutacion quita UNO y exige que caiga el
+# caso.
+
+mutar "M25 el paso 1 deja de medir los recursos (la del paso 0 no basta)" \
+    "$RELEASE" "$WIRE" E9 \
+    'la comprobacion desaparece del paso 1: queda solo la del paso 0, que es exactamente el defecto que el P1 describe.' \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+v = "    if ! release_check_resources \"$RELEASE_SCRATCH\"; then"
+n = "    if ! false; then  # mutacion M25: la comprobacion ya no esta"
+assert v in s, "el paso 1 no tiene la forma que esta mutacion supone"
+open(p, "w").write(s.replace(v, n, 1))
+'
+
+mutar "M26 un die del paso 1 vuelve a no nombrar los recursos" \
+    "$RELEASE" "$WIRE" E9 \
+    'es el defecto original del log de session-76 reintroducido en uno solo de los cuatro fallos: la cobertura, no la redaccion.' \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+v = "die \"cargo fmt failed. recursos en el momento del fallo: $(release_resources_now)\""
+n = "die \"cargo fmt failed\""
+assert v in s, "el die de cargo fmt no tiene la forma que esta mutacion supone"
+open(p, "w").write(s.replace(v, n, 1))
+'
+
+mutar "M27 release_resources_now deja de devolver el hecho" \
+    "$LIB" "$WIRE" E9 \
+    'una funcion que existe y no imprime nada deja el mensaje tan mudo como antes del arreglo: es el caso degenerado del que el guard tiene que acordarse.' \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+v = "release_resources_now() {\n    local avail_mb=\"?\""
+n = "release_resources_now() {\n    return 0  # mutacion M27: el hecho se calla\n    local avail_mb=\"?\""
+assert v in s, "la funcion no tiene la forma que esta mutacion supone"
+open(p, "w").write(s.replace(v, n, 1))
+'
+
+mutar "M28 la comprobacion se mueve DETRAS del primer cargo" \
+    "$RELEASE" "$WIRE" E9 \
+    'medir despues de gastar no impide nada: llega tarde. Es la comprobacion como decoracion, que es la forma que tiene un gate de no hacer nada.' \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+bloque = """    if ! release_check_resources "$RELEASE_SCRATCH"; then
+        die "recursos insuficientes justo antes de gastar la suite:"""
+i = s.index(bloque)
+j = s.index("    fi\n", i) + len("    fi\n")
+s = s[:i] + s[j:]
+# El ancla es la sentencia COMPLETA del cargo fmt, con su continuacion. Insertar
+# entre la primera linea y su `|| die` partia el `\` y dejaba el fichero sin
+# sintaxis. MEDIDO: el falsador lo conto como SKIP --"mide que no arranca, no la
+# propiedad"—, que es lo que tiene que hacer un parche degenerado, y no como una
+# deteccion.
+sentencia = """    cargo fmt --all -- --check \\
+        || die "cargo fmt failed. recursos en el momento del fallo: $(release_resources_now)"
+"""
+assert sentencia in s, "la sentencia de cargo fmt no tiene la forma que esta mutacion supone"
+s = s.replace(sentencia, sentencia + "    release_check_resources \"$RELEASE_SCRATCH\" || true  # mutacion M28: medir tarde\n", 1)
+open(p, "w").write(s)
+'
+
 # --- resumen -----------------------------------------------------------------
 
 printf '\n----------------------------------------\n'

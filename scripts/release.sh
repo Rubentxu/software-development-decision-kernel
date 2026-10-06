@@ -387,11 +387,35 @@ ok "on main, clean tree, release admission: $ADMISSION"
 
 if [ "$SKIP_TESTS" = "0" ]; then
     step "1/15 — cargo fmt + clippy + test (workspace)"
-    cargo fmt --all -- --check || die "cargo fmt failed"
+    # MEDIDO (session-76; backlog P1 bl-bl-01M42JGYG4000388551BF9NZ40): el
+    # paso 0 ya mide los recursos y es fail-closed, y aun asi el paso 1 mato al
+    # release sin que nadie supiera por que. No es que la comprobacion faltara:
+    # es que mide la maquina ANTES, y este paso es el pico de consumo. Entre uno
+    # y otro la maquina la carga lo que sea —aquel dia, ~313 clones de otro
+    # proyecto sobre un tmpfs de 48 G y el CI de otro mas— y el unico sitio
+    # donde la suite completa se gasta es aqui.
+    #
+    # El umbral NO se toca a proposito: el fallo ocurrio con 2.4 GiB libres y el
+    # umbral declarado son 2048 MB, luego subirlo seria adivinar el pico de
+    # `cargo test --workspace`, que nadie ha medido. Lo que estaba mal medido es
+    # el MOMENTO, y eso si tiene arreglo sin inventar cifras.
+    if ! release_check_resources "$RELEASE_SCRATCH"; then
+        die "recursos insuficientes justo antes de gastar la suite:
+         $(release_resources_now).
+         El paso 0 los midio y pasaron; lo que fallo es que la maquina cambio
+         entre el preflight y aqui. Por eso se vuelve a medir EN ESTE PUNTO y
+         no se sube el umbral, que mediria una magnitud que nadie ha medido."
+    fi
+    cargo fmt --all -- --check \
+        || die "cargo fmt failed. recursos en el momento del fallo: $(release_resources_now)"
     cargo clippy --workspace --offline --all-targets -- -D warnings \
-        || die "cargo clippy failed"
+        || die "cargo clippy failed. recursos en el momento del fallo: $(release_resources_now)"
     cargo test --workspace --offline \
-        || die "cargo test --workspace failed"
+        || die "cargo test --workspace failed. recursos en el momento del fallo:
+         $(release_resources_now).
+         Si la memoria estaba en el minimo o por debajo, la causa es la maquina y
+         no la suite. Hasta ahora el release no podia distinguir una cosa de la
+         otra porque este hecho no se imprimia nunca."
     ok "workspace green"
 
     step "1b/15 — shell contract tests (tests/test_*.sh)"
