@@ -16700,3 +16700,67 @@ el changelog ya describe— y el paso 3p ya sabe distinguir INTERFERENCIA porque
 Registrado como deuda tangencial, **no arreglado aqui**: abrirlo seria otro
 frente y el arreglo pertenece a la superficie del release, no a C3m.3.
 
+---
+
+**REL-2.14.0, INTENTO 1: MURIO EN EL 1b, Y EL MOTIVO ERA MIO.** El paso 1b
+mato en `tests/test_release_state_pointer.sh`:
+
+```
+[FAIL] el puntero va 8 commit(s) por DETRAS de main (tolerancia 3):
+       alguien movio el trunk sin reconciliar STATE.yaml
+RESULT: FAIL — STATE.yaml miente sobre el estado del repo.
+```
+
+`docs/roadmap/STATE.yaml` apuntaba a `79646805` / 2.14.0 mientras `main` estaba
+en `b860f3d9`. Los 8 commits de retraso son **los 8 del bloque C5** que publique
+(`23111da8`..`b860f3d9`): empuje sin reconciliar el puntero. No fue una
+regresion de nadie ni un fallo de la maquinaria; fue deriva mia de proceso, y el
+guard existe precisamente para cazarla.
+
+**LO QUE EL GUARD HIZO BIEN, Y ES LO QUE HACE UN GUARD VALIOSO.** No dijo solo
+"FAIL": dijo **que** comprobacion fallo y **con que numero** (`8 commit(s)`,
+tolerancia `3`). Con eso la reparacion es determinista y no hace falta reconstruir
+nada. Y fallo en el **1b**, antes de compilar, empaquetar ni publicar: no dejo
+artefacto a medias ni tag a medias. Coste de la muerte: **26 minutos** de 1b y
+nada publicado. Prefiero eso a un tag publicado sobre un puntero que miente.
+
+**POR QUE SE REPITE, Y POR QUE AQUI NO APLICA LA EXCUSA.** El propio
+`reconcile_state_pointer.sh` explica el patron estructural: el pre-push hook exige
+que el bump viaje en un commit `chore(release): bump version` **propio** y
+posterior al commit de trabajo, y `STATE.yaml` **es un fichero**, luego no puede
+contener el commit que lo escribe. Por eso existe la tolerancia de 3: para que el
+puntero pueda quedar legtimamente 1-2 commits atras.
+
+**La tolerancia de 3 es un techo, no un permiso.** Yo iba 8. Publicar un bloque de
+8 commits reconciliando el puntero al final habria sido la via normal; lo que no
+es normal es cerrar **el release entero** sin reconciliar, y eso es exactamente lo
+que paso: la deriva no la causo el push, la causo **no mirar el puntero antes de
+lanzar el release**. El guard habria pedido lo mismo con 4 commits.
+
+**ORDENACION, QUE NO ESTA ARREGLADA Y QUEDA DECLARADA.** El guard va **41 de 52**
+en la lista del 1b, y cuesta **0,12 s** (`/usr/bin/time`, medido). Delante suyo
+corrieron **40 tests**, entre ellos `test_release_diagnostics_wiring.sh`, que solo
+en esta corrida tardo **5 min 11 s**. Es decir: la comprobacion mas barata del
+paso —dos campos de un YAML contrastados con `git`— corrio **despues** de la mas
+cara, por una lista escrita a mano y no ordenada por coste. El fallo que produjo
+no era de codigo sino **de proceso**, y el proceso es justo lo que este guard mide,
+ luego es el candidato natural a correr primero. **NO se ha tocado aqui**: moverlo
+cambia el orden del pipeline y eso merece su propia medicion (cuanto cuesta de
+verdad moverlo al frente, y si algun test depende del orden), no un cambio colado
+dentro de la reparacion de una release.
+
+**REPARACION, Y LO QUE NO SE TOCO.** `bash scripts/reconcile_state_pointer.sh`
+llevo el puntero de `79646805` a `b860f3d9` (que es exactamente `origin/main`, con
+0 commits sin pushear, luego el objetivo era legitimo y no una punta inventada).
+`workspace_version_at_current` **ya estaba alineado** en 2.14.0 y el script no lo
+movio. `superseded_pointer` se preservo tal cual, con su nota manual. El script
+aviso de que `b860f3d9` no es un commit de bump, y el aviso es correcto pero
+**no aplica**: el check 3c del guard toma la rama `else` ("subject del puntero no
+es un bump") cuando el subject no casa con el patron de bump, luego no hay
+verificacion semantica que performar. Guard re-ejecutado despues de reparar:
+**PASS**, con los nueve checks en verde.
+
+Lo que **NO** se ha hecho, y se deja dicho porque es la parte que el script
+delega explicitamente en el humano: **el juicio sobre que significa este estado**.
+El puntero ahora dice "estamos en `b860f3d9`, 2.14.0"; no dice si el bloque C5
+queda cerrado, porque eso no lo decide un SHA.
