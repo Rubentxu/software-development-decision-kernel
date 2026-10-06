@@ -114,10 +114,18 @@ else
     #
     # El `awk` de abajo separa el contenido del prefijo antes de mirar si es
     # comentario, que es lo que la comprobacion queria decir.
-    if grep -rn --include='*.rs' 'cognicode-mcp/verify-cmd' crates/*/src/ 2>/dev/null \
-        | awk '{ c = $0; sub(/^[^:]*:[0-9]+:/, "", c); if (c !~ /^[[:space:]]*(\/\/|\/\*|\*)/) print }' \
-        | grep -q .; then
+    #
+    # Y la salida se captura ANTES de comprobar si esta vacia. Encadenar
+    # `... | grep -q .` aqui era el patron que INC-DEBT-071 midio: el `grep -q`
+    # sale en cuanto encuentra la primera linea, el `awk` recibe SIGPIPE y con
+    # `pipefail` la tuberia devuelve 141, luego el `if` tomaba la rama de "no
+    # reaparece" EXACTAMENTE cuando mas reaparece. Un guard que se pone verde
+    # con el defecto presente no mide: se apaga.
+    reapariciones="$(grep -rn --include='*.rs' 'cognicode-mcp/verify-cmd' crates/*/src/ 2>/dev/null \
+        | awk '{ c = $0; sub(/^[^:]*:[0-9]+:/, "", c); if (c !~ /^[[:space:]]*(\/\/|\/\*|\*)/) print }' || true)"
+    if [ -n "$reapariciones" ]; then
         ko "A el literal de build no medido reaparece en otro modulo de src/"
+        printf '%s\n' "$reapariciones" | sed 's/^/       /'
     else
         ok "A el literal de build no medido no reaparece en ningun modulo de src/"
     fi
@@ -139,11 +147,22 @@ else
     # satisfacia el DOC de `basis()`, que lo cita al explicar que de donde sale
     # la identidad: el check daba verde con el handshake desconectado. Un check
     # que lee su propia documentacion como si fuera codigo medira la prosa.
-    if sin_comentarios "$ADAPTER" | grep -q 'serverInfo'; then
+    #
+    # `sin_comentarios "$ADAPTER" | grep -q 'serverInfo'` era el mismo patron:
+    # el `grep -q` sale al primer match, `sin_comentarios` recibe SIGPIPE y el
+    # `pipefail` convierte eso en "server_version NO viene del handshake" — el
+    # fallo que este check existe para cazar, anunciado por el propio check.
+    # A fichero primero: sin tuberia no hay SIGPIPE que confundir con veredicto.
+    # `WORK` no existe en este script y `set -u` esta activo, luego el fichero
+    # temporal se crea aqui: una referencia a una variable que el script no
+    # declara es un fallo distinto del que el check persigue.
+    _clean="$(mktemp)"
+    if sin_comentarios "$ADAPTER" > "$_clean" 2>/dev/null && grep -q 'serverInfo' "$_clean"; then
         ok "B server_version se lee del announce del servidor (serverInfo)"
     else
         ko "B server_version no viene del handshake: la identidad no esta observada"
     fi
+    rm -f "$_clean"
 
     # basis() tiene que ser alcanzable desde el comando, o el arreglo seria
     # codigo muerto y el comando seguiria sin identidad.
