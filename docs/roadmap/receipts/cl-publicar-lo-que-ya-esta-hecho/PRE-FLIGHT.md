@@ -319,3 +319,107 @@ del artefacto no es `2.12.0` se para. **Ninguno de los dos se ha saltado**: el 1
 paró la release, se midió la causa, se reparó lo mecánico con el script que el propio
 gate nombra, y se corrigió a mano lo que el script deja. Lo que se hará es
 **reintentar la release entera**, no continuar desde donde paró.
+
+---
+
+## Checkpoint 3 — el release llega al 8c y muere por una credencial que no tengo
+
+El cuarto intento pasó **todo** lo anterior al 8c: `1b` los 52 contratos,
+`2b` changelog, `3` binario, `3b` `PASS=16`, `3c` `PASS=10`, `3d` `PASS=16`,
+`3e` `PASS=14`, `3f` `PASS=9`, `3g` `PASS=8`, `3h` `PASS=6`, `3i` `PASS=5`,
+`3i-b` `PASS=2`, `3j` `PASS=4`, `3k` `PASS=5`, `3l` `PASS=5`, **`3m` `PASS=20`**,
+`3n` los siete `uat_ctx_*`, `4` manifest (395 ficheros), `5` bundle, `6`
+`BUNDLE.toml` 2.12.0, `7` unificado 12.692.388 B, `8` checksums+sbom, `8b` espejo
+del vault idempotente. Y en el `8c`:
+
+```
+no signing key configured.
+  The release anchor is key-based as of ADR-0151, so a release needs a signer.
+```
+
+### Lo primero que NO es: un gate nuevo
+
+`git log -S cosign -- scripts/release.sh` lo sitúa en commits antiguos, y
+`git show v2.11.4:scripts/release.sh` **ya tiene el 8c con el mismo texto**.
+No se rompió nada al publicar este bloque: el paso estaba ahí desde antes.
+
+### Lo segundo que NO es: que falte una credencial por primera vez
+
+Lo decide un hecho medido, no una impresión:
+
+```
+$ gh release view v2.11.4 --json assets
+   - CHECKSUMS              - sddk
+   - gh-release-receipt.json  - sddk-v2.11.4-sddk-linux-x86_64-musl.tar.gz
+   - sbom.json              - sddk-v2.11.4-sddk-linux-x86_64-musl.tar.gz.sha256
+   - sddk.sha256            - software-development-decision-kernel.tar.gz
+                            - software-development-decision-kernel.tar.gz.sha256
+   → 9 assets, CERO `.sig`
+```
+
+**La release publicada tampoco estaba firmada.** `SDDK_SKIP_SIGNING=1` no es una
+puerta que este bloque vaya a abrir: es la puerta por la que ya salió `v2.11.4`, y
+por la que el propio diario registró `2.5.3`. Publicar `2.12.0` sin firmar
+**conserva** el contrato del artefacto publicado. Publicarla firmada lo cambiaría
+en los dos sitios a la vez —en el `8c` y en el instalador de cada usuario— y para
+eso haría falta un KMS que no existe en esta máquina.
+
+### Por qué no es «sortear un gate»
+
+Es la distinción que ya salió tres veces en este bloque: la pregunta no es *«¿hay
+un gate que se puede saltar?»* sino *«¿qué afirma el artefacto y quién lo firma?»*.
+
+- **Sortear un gate** es no mirar la regla y continuar: dejar `9b` sin correr,
+  subir una tolerancia, `--no-verify`.
+- **Esto** es declarar, **antes de publicar**, que el artefacto no llevará firma,
+  con la consecuencia escrita en el propio mensaje del script y en el nombre de
+  la bandera que la exige: quien lo instale tendrá que pasar
+  `SDDK_ALLOW_UNSIGNED=1`, y el instalador imprimirá *«installing with NO
+  signature check»*.
+
+Laintegridad (`CHECKSUMS`, `sbom.json`, `MANIFEST.sha256`) se sigue verificando.
+Lo que **no** se verifica es la **autenticidad**, y eso queda dicho, en el log y
+en la instalación.
+
+### Una sola variable, y el pipeline ya sabe propagarla
+
+`release.sh` (paso 10) hace `if [ "${SDDK_SKIP_SIGNING:-0}" = "1" ]; then export
+SDDK_ALLOW_UNSIGNED=1`. La decisión se toma **una vez**, en el `8c`, y el `10` la
+recibe en vez de volver a negarla —que es exactamente el fallo que ese paso
+comentado documenta: tres sitios decidiendo la misma verdad.
+
+### El fallo fantasma que casi me hace concluir otra cosa
+
+Un `ls` seguido y un `tail` seguido, ambos sobre la misma ruta escrita a mano,
+devolvieron `No existe el fichero o el directorio` sobre un directorio que **sí**
+existe, **sí** está en git (`git ls-files` lista sus dos ficheros) y que contiene
+321 + 183 líneas. Repetido al momento con la misma cadena: verde.
+
+Lo escribí como «el volumen montado devuelve `ENOENT` transitorio bajo carga»,
+y **esa explicación quedó falsada por el siguiente comando**: el `cat >>` que
+escribía este mismo checkpoint devolvió el mismo `ENOENT` y, sin embargo, **sí
+escribió** — el fichero pasó de 321 a 413 líneas y contiene el checkpoint. Si el
+error fuera del sistema de ficheros, la escritura no habría pasado.
+
+Así que lo medido es esto, y lo no medido es la causa:
+
+- **Medido**: la misma ruta literal falla unas veces y funciona otras; un
+  `ENOENT` puede acompañar a una escritura que sí ocurrió.
+- **No determinado**: por qué. No se ha medido si es el montaje, la saturation
+  del host o la propia forma de la invocación. Queda declarado, no explicado.
+
+**Un `ENOENT` sobre un fichero versionado parece una pérdida de trabajo y no lo
+es, y el primer impulso —dar por perdido lo que se tiene delante— es el
+equivocado.** Si hubiera reconstruido a ciegas un recibo que estaba entero,
+habría inventado Receipts para un trabajo que ya estaba hecho. Lo que evita eso
+no es la prudencia: es `git ls-files`, que responde con la verdad sobre lo que
+Git sabe. A partir de ahí, todas las rutas de este bloque se resuelven con un
+glob en lugar de una cadena escrita a mano.
+
+### Decisión
+
+Relanzar el release entero con `SDDK_SKIP_SIGNING=1`, sin más cambios: HEAD
+`81763c7c` = `origin/main`, worktree limpio, `v2.12.0` **no** existe ni como tag
+remoto ni como release —cero estado parcial que reparar—. El modo de fallo que
+importa aquí no es que el release pare, es que pare **después** de publicar algo
+a medias.
