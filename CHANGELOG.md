@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file.
 
 
+## [2.14.0] - 2026-10-06
+
+### Features
+  - feat(rules): ARCH004 y ARCH005 median, y sus motivos eran falsos
+
+### Fixes
+  - fix(rules): el pack declaraba una dependencia dura que no existe, y no la que usa
+
 ## [2.13.0] - 2026-10-06
 
 ### Features
