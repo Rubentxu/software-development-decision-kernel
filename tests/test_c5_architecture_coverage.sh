@@ -190,7 +190,10 @@ echo "== D4: ninguna ley que el gate mide puede quedar en FAIL sin declararse ==
 # El juez es `scripts/check_binary_freshness.sh` y no este script: un artefacto
 # no puede declarar su propia antigüedad (INC-DEBT-064).
 SDDK_BIN_PATH="${SDDK_BIN:-sddk}"
-FRESHNESS="$(bash "$ROOT/scripts/check_binary_freshness.sh" --format json 2>/dev/null || echo '{"verdict":"unknown"}')"
+# La ruta se PASA al juez. Sin ella mide el binario INSTALADO, que en el
+# pipeline es el de la release anterior: en un entorno sano seria siempre
+# `behind` y D4 no podria pasar nunca, un gate que solo puede decir que no.
+FRESHNESS="$(bash "$ROOT/scripts/check_binary_freshness.sh" "$SDDK_BIN_PATH" --format json 2>/dev/null || echo '{"relation":"unknown"}')"
 BIN_RELATION="$(printf '%s' "$FRESHNESS" | sed -n 's/.*"relation"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p')"
 FAILING_IDS="$(cd "$ROOT" && timeout 300 "$SDDK_BIN_PATH" dev check-architecture --root . 2>/dev/null | awk '$1 ~ /^ARCH/ && $2 == "FAIL" {print $1}' | sort | tr '\n' ' ' | sed 's/ *$//')"
 
