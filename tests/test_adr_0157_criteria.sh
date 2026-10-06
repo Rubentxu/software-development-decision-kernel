@@ -103,15 +103,33 @@ echo "=== criterios de aceptacion de ADR-0157 ==="
 # el modelo puro del dominio y la regla del motor. Estructural a proposito: un
 # provider que hardcodeara una preferencia se comporta igual en todos los
 # fixtures, luego ningun test de comportamiento lo veria.
+#
+# MEDIDO (session-89, al morirse REL-2.12.1 con RELEASE_RC=1 en este mismo
+# gate): estos dos criterios de `sddk-domain` nombraban tests que NO EXISTEN, y
+# por eso salian NOT_APPLIED —`FAIL=0` y el gate en rojo, que es lo unico
+# honesto: un criterio que no se ejecuto no esta cumplido, no se sabe—. La causa
+# es UNA sola: `e60dae75` ("la ley de pureza del nucleo se vigila en los
+# cuarenta y seis modulos, no en uno") consolido los dos tests de pureza del
+# dominio y nadie repunto el ADR.
+#
+# Se repunta a los tests que miden LO MISMO o mas —la pureza ahora se vigila en
+# 46 modulos, no en uno—, nunca a uno mas estrecho. Es el mismo criterio que C4
+# dejo escrito mas abajo, y con el mismo motivo: repuntar a un test que dijera lo
+# contrario seria dejar el gate verde sobre una ley que ya no existe.
 criterion 1 "el modulo que decide no nombra tecnologia concreta" sddk-domain \
-  the_decision_module_names_no_concrete_technology
+  el_nucleo_no_nombra_tecnologia_concreta
 criterion 1 "el motor tampoco, y su convencion esta escrita" sddk-engine \
   the_version_resolution_module_names_no_concrete_technology
 
 # C2. El escaner puede ver un nombre, y su unica excepcion no puede crecer.
 # Sin esto, C1 y su equivalente son un guard que no puede fallar.
+#
+# MEDIDO (session-89, misma corrida): el contrapeso de dominio tambien habia
+# cambiado de nombre con `e60dae75`. `el_guard_cubre_todos_los_modulos_del_dominio`
+# es su sucesor y mide mas: que el guard mire los 46 modulos y no un `include_str!`
+# de uno solo, que era exactamente el riesgo que el control viejo tapaba.
 criterion 2 "el fitness puede ver un nombre y su excepcion no crece" sddk-domain \
-  the_fitness_scanner_can_actually_see_a_name
+  el_guard_cubre_todos_los_modulos_del_dominio
 criterion 2 "el fitness del motor tambien, y su excepcion esta acotada" sddk-engine \
   the_fitness_scanner_can_actually_see_a_name \
   la_excepcion_no_puede_crecer_hasta_ser_un_agujero
