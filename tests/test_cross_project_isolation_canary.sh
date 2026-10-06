@@ -75,9 +75,28 @@ mk_repo() { # $1=directorio  $2=remote (vacio = sin remote)
     git -C "$dir" commit -qm init
 }
 
+# El fichero donde rustc coloca el primer error.
+#
+# MEDIDO (session-90): el release de 2.13.0 murio en el canario HERMANO
+# (worktree_isolation) con "el parche dejo el codigo sin compilar" y
+# `PASS=3 FAIL=0 SKIP=1`, y el error real estaba en un fichero que la mutacion
+# no tocaba: otra sesion editaba el workspace mientras compilaba. Este canario
+# tenia el mismo defecto y habria cerrado la sesion siguiente con el mismo
+# diagnostico falso.
+#
+# La forma correcta YA existe en el repo, en
+# `test_kernel_purity_fitness_mutation.sh`: un parche degenerado es SKIP con su
+# motivo, y la razon distingue "mi parche rompio el codigo" de "caeria mas
+# control de pie del que deberia". Faltaba el caso deFiles: cuando el error no
+# esta siquiera en el fichero que el parche toco, la causa no es el parche.
+build_error_file() {
+    grep -oE '^ *--> [^: ]+' "$WORK/build.log" 2>/dev/null \
+        | head -1 | sed 's|.*--> *||' | tr -d ' '
+}
+
 build() {
     if ! cargo build -p sddk-cli --bin sddk > "$WORK/build.log" 2>&1; then
-        printf 'ERROR: la compilacion fallo\n'
+        printf 'ERROR: la compilacion fallo en %s\n' "$(build_error_file)"
         tail -20 "$WORK/build.log"
         return 1
     fi
@@ -315,7 +334,12 @@ mutar() { # $1=etiqueta  $2=fichero  $3=esperado(ROJO|SKIP)  $4=porque  $5=pycod
     fi
 
     if ! build; then
-        skip "$etiqueta" "el parche dejo el codigo sin compilar: mide que no arranca, no la propiedad"
+        err_file="$(build_error_file)"
+        if [ -n "$err_file" ] && [ "$err_file" != "$fichero" ]; then
+            skip "$etiqueta" "INTERFERENCIA: la compilacion fallo en $err_file y esta mutacion solo toca $fichero; no es una falsacion muerta de esta comprobacion"
+        else
+            skip "$etiqueta" "el parche dejo el codigo sin compilar: mide que no arranca, no la propiedad"
+        fi
         cp "$WORK/mut.bak" "$fichero"; build >/dev/null 2>&1; return
     fi
 
