@@ -9,7 +9,7 @@
 
 ## §1 — Lo que pasó, medido
 
-`REL-2.12.1` (la释放 que lanzó la otra sesión) murió en el paso `1b/15` con
+`REL-2.12.1` (la release que lanzó la otra sesión) murió en el paso `1b/15` con
 `RELEASE_RC=1`:
 
 ```
