@@ -16,6 +16,7 @@
 //! fail-closed contract instead, and they are mutation-tested — relaxing
 //! `load_run_state_view` back to a fabricated view turns all four RED.
 
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Exit code the CLI uses for a typed, fail-closed refusal.
@@ -27,14 +28,24 @@ const EXIT_SOURCE_UNAVAILABLE: i32 = 4;
 const MARKER_SOURCE_UNAVAILABLE: &str = "RUN_STATE_SOURCE_UNAVAILABLE";
 
 /// Locate the compiled `sddk` binary.
+///
+/// `CARGO_BIN_EXE_sddk` es lo que cargo garantiza para un test de
+/// integracion del paquete que DEFINE el binario, y — esto es lo que
+/// importa — lo respeta dondequiera que este el target dir.
+///
+/// MEDIDO en session-90: esto buscava a mano
+/// `/home/rubentxu/cargo-targets/debug/sddk`, una ruta ABSOLUTA de una
+/// maquina, y si no existia caia a `./target/debug/sddk` — relativa al
+/// directorio del PAQUETE, no del workspace, luego ese segundo camino no
+/// ha existido nunca. Con `CARGO_TARGET_DIR` en otro sitio las dos rutas
+/// fallaban y los cuatro tests de este fichero morian con
+/// `sddk binary must run: NotFound`. No era un defecto del contrato que
+/// estos tests certifican: era que noybavian a ejecutar.
+///
+/// La forma correcta no es una opinion mia: la usa su hermana
+/// `check_architecture_gate.rs`, un fichero mas alla.
 fn sddk_bin() -> std::path::PathBuf {
-    // The CI/release build lives under cargo-targets; fallback to debug.
-    let release = std::path::PathBuf::from("/home/rubentxu/cargo-targets/debug/sddk");
-    if release.exists() {
-        release
-    } else {
-        std::path::PathBuf::from("./target/debug/sddk")
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_sddk"))
 }
 
 fn run(args: &[&str]) -> (i32, String, String) {
