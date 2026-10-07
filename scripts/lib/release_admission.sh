@@ -222,7 +222,7 @@ _tags_fingerprint() {
 
 last_published_version() {
     local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
-    local attempt="${SDDK_RELEASE_ADMISSION_ATTEMPTS:-3}" outcome="query_failed:no-attempt" n
+    local attempt="${SDDK_RELEASE_ADMISSION_ATTEMPTS:-5}" outcome="query_failed:no-attempt" n
     # Reintentos, y lo que NO son.
     #
     # MEDIDO: con el crosscheck ya puesto, el fallo por trunco paso de "el 30%
@@ -239,9 +239,16 @@ last_published_version() {
     # bajan eso a menos de 1 entre 10^5; seguir PRODUCTO y con ruido de red no
     # es un plan de entrega.
     #
-    # El motivo que se devuelve al fallar es el de la ULTIMA ronda, no el
-    # primero: el motivo de la ultima es el estado en el que se ha quedado, y
-    # el de la primera puede ser un corte que ya se resolvio.
+    # EL DESCANSO ENTRE RONDAS NO ES DECORATIVO, Y ESTA MEDIDO.
+    # La tasa de trunco no es una constante de este remoto: en la misma sesion
+    # se midio 3 de 50 lecturas truncadas (6%) en una ventana y 0 de 20 en
+    # otra, con el mismo repositorio y el mismo comando. Es una propiedad del
+    # INSTANTE de red. Tres rondas seguidas se ejecutan en menos de dos
+    # segundos, luego caen de vuelta dentro de la misma ventana de corte y
+    # repiten el mismo fallo — medido: una ronda de 3 intentos fallo con
+    # `ls-remote=224|2.9.1` mientras 20 lecturas seguidas SPS sale completas.
+    # Reintentar sin esperar no es reintentar: es preguntar tres veces al mismo
+    # corte.
     for ((n = 1; n <= attempt; n++)); do
         # Se llama SIN captura de stdout a proposito. `$(...)` pondria la ronda
         # en un subshell, y `LAST_PUB_OUTCOME` —lo unico que dice si esta
@@ -255,6 +262,11 @@ last_published_version() {
             return 0
         fi
         outcome="$LAST_PUB_OUTCOME"
+        # Descanso entre rondas, nunca despues de la ultima: esperar antes de
+        # rendirse no cambia nada y hace el push mas lento para todos.
+        if (( n < attempt )); then
+            sleep "${SDDK_RELEASE_ADMISSION_BACKOFF:-1}"
+        fi
     done
     LAST_PUB_OUTCOME="$outcome"
     return 1
