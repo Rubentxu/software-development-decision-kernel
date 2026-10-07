@@ -16764,3 +16764,54 @@ Lo que **NO** se ha hecho, y se deja dicho porque es la parte que el script
 delega explicitamente en el humano: **el juicio sobre que significa este estado**.
 El puntero ahora dice "estamos en `b860f3d9`, 2.14.0"; no dice si el bloque C5
 queda cerrado, porque eso no lo decide un SHA.
+
+---
+
+**REL-2.14.0, INTENTOS 4 Y 5: UNO POR DEFECTO REAL, Y UNO POR UN ERROR MIO QUE
+UN GUARD YA EXISTIA PARA CAZAR.**
+
+**EL INTENTO 4 MURIO EN EL PASO 1, Y NO EN EL 1B — y por cuatro tests que no
+llegaban a ejecutarse.** `crates/sddk-cli/tests/run_view_cli.rs` resolvia el
+binario con `/home/rubentxu/cargo-targets/debug/sddk` — **ruta absoluta de una
+maquina** — y si no existia, `./target/debug/sddk`, que es **relativa al
+directorio del PAQUETE**, luego ese segundo camino no ha existido nunca.
+`cargo test --workspace` dio `0 passed; 4 failed` en `0.00s`.
+
+**LO QUE ESTO ENSEÑA SOBRE EL AMBIENTE, Y POR QUE LO VIO ESTA SESION.** El
+defecto estaba latente porque el target dir de esta maquina ES esa ruta. Se
+manifesto al mover el build a un `CARGO_TARGET_DIR` aislado — que es justo lo
+que se hizo para no competir por el lock con otra sesion. **Una decision de
+entorno, no una decision de codigo, fue la que destapo una clase de codigo.**
+La forma correcta ya era la mayoritaria del repo: de los 67 tests de `sddk-cli`,
+**47 usan `CARGO_BIN_EXE`** y solo 2 usaban ruta de maquina. O sea que el
+problema eran 2 ficheros, no 67 — un descuido, no un patron. Y el hermano
+`check_architecture_gate.rs`, un fichero mas alla, ya usaba la forma correcta:
+**la respuesta estaba en el mismo directorio.**
+
+**EL INTENTO 5 MURIO EN EL 1b, Y EL CULABLE FUI YO.** `test_release_unsigned_
+propagation.sh` dio `PASS=4 FAIL=2`, y **reproducido standalone antes de tocar
+nada**: `SDDK_ALLOW_UNSIGNED=1 bash tests/test_release_unsigned_propagation.sh`
+da exactamente `PASS=4 FAIL=2` con los mismos dos checks en rojo. La causa es
+que lance el release con
+
+    export CARGO_TARGET_DIR=... SDDK_SKIP_SIGNING=1 SDDK_ALLOW_UNSIGNED=1
+
+y **`SDDK_ALLOW_UNSIGNED` es lo que el pipeline DERIVA**, no lo que el operador
+declara: `release.sh:2591` la exporta el mismo a partir de `SDDK_SKIP_SIGNING`.
+Exportarlayo preempTa esa decision, y el instalador deja de negarse por si
+mismo — que es exactamente lo que el check S1 llama «BYPASS UNIVERSAL de la
+verificacion de supply-chain». El control de no-vacuidad tambien cayo, y por el
+mismo motivo: con la bandera ya en el entorno, la entrada y la salida dan lo
+mismo.
+
+**LO QUE HACE ESTE FALLO MAS BARATO DE LO QUE PARECE, Y MAS CARO.** El guard
+existia, funcionaba, y su mensaje era preciso. Lo que fallo fue **WHEN**: esta
+correccion cuesta 3 segundos, y la descubri **despues de dos Corridas largas
+del 1b** porque el guard que la caza va tarde en una lista escrita a mano. Es la
+**SEGUNDA vez que esta sesion topa con lo mismo**: el guard del puntero va 43 de
+88 y cuesta 0,12 s mientras por delante corren falsadores de ~5 min. **Una lista
+de gates escrita a mano y no ordenada por coste convierte un error de tres
+segundos en media hora de pipeline, y ademas lo disfraza de fallo de release.**
+Ordenar el 1b por coste es un bloque con su propia medicion (cuanto cuesta de
+verdad moverlo al frente, y si algun test depende del orden). **No se ha tocado
+aqui**, igual que no se toco entonces.
