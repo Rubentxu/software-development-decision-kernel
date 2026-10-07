@@ -15970,7 +15970,7 @@ shell de la propia libreria, por un `cargo` que murio entre que `ps` lo listo
 y que se leyera su `cmdline`.
 
 Y la causa no era la que se leia en el codigo: la linea era
-`tr ' ' ' ' < /proc/$pid/cmdline 2>/dev/null`, y **ese `2>/dev/null` no
+`tr '\x00' ' ' < /proc/$pid/cmdline 2>/dev/null`, y **ese `2>/dev/null` no
 hacia nada**. MEDIDO con las tres formas, porque el patron de bash no es el que
 se supone:
 
@@ -16815,3 +16815,46 @@ segundos en media hora de pipeline, y ademas lo disfraza de fallo de release.**
 Ordenar el 1b por coste es un bloque con su propia medicion (cuanto cuesta de
 verdad moverlo al frente, y si algun test depende del orden). **No se ha tocado
 aqui**, igual que no se toco entonces.
+
+**UN BYTE NUL EN EL DIARIO, Y LO QUE ERA CAPAZ DE HACER EN SILENCIO.** Al
+re-ejecutar `tests/test_build_identity_policy.sh` standalone dio `PASS=8 FAIL=0`
+— el test **pasa**. Dentro del pipeline dio `PASS=7 FAIL=1`. La diferencia no
+era el codigo del test sino una linea de `grep` que no habia leido:
+
+    grep: (entrada estándar): coincidencia en fichero binario
+
+`docs/roadmap/SESSION-JOURNAL.md` tenia **un byte NUL**, en la linea 15973, y
+**ya estaba en `603bdf98`** — no lo introdujo esta sesion. Venia de una entrada
+anterior que documentaba el comando `tr '\x00' ' ' < /proc/$pid/cmdline`: el
+escape `\x00` se escribio como byte real en vez de como texto.
+
+**POR QUE ES PEOR DE LO QUE PARECE, Y NO ES UN DETALLE DE HIGIENE.** Un NUL
+hace que `grep` trate el fichero como BINARIO, y en ese modo **deja de emitir
+coincidencias** en vez de dar un error. Este repo sostiene buena parte de sus
+gates en `grep` sobre el arbol, luego un solo byte deja esos guards en silencio:
+no rojo, no aviso, **nada**. Es la clase de fallo que el commit 922937c4 ya
+registro para el SIGPIPE — un veredicto que se decide por un efecto colateral
+en vez de por su comprobacion — pero aqui el efecto colateral esta en la
+*entrada* de la comprobacion, no en su salida.
+
+Corregido restituyendo el texto literal `\x00`. Verificado: `file` lo declara
+`UTF-8 text` y `grep -c cmdline` responde 3 en vez de suppressirse.
+
+**Y POR QUE ESTO MATO AL RELEASE, QUE ES LO INTERESANTE.** `test_build_identity_
+policy.sh` calcula su alcance sobre `git diff --name-only "$BASE"..HEAD` con
+`BASE=dc69e6f2`, y filtra las lineas anadidas con `grep`. Con el diario
+clasificado como binario, ese `grep` **no encuentra nada** y el check de
+redaccion se evalua sobre un conjunto mas pequeno del real — un gate que ve de
+menos, que es indistinguible de uno que no mira. El escaner que el test invoca
+(`sddk dev ... --delta`) si llego a correr y dijo `CLEAN en las lineas anadidas
+(294 ficheros con delta)`, luego el dano esta en la capa de arriba: el
+`grep` que decide **que** lineas van a ese escaner.
+
+**LA CLASE, MEDIDA Y NO SUPUESTA.** Recorrido con `grep -qP '\x00'` sobre los
+`*.md`, `*.sh`, `*.rs`, `*.yaml`, `*.yml` y `*.toml` que git rastrea: **0
+ficheros con NUL** despues de corregir este. O sea que la clase era **exactamente
+un fichero**, no un patron — lo que cambia lo que procede: no hace falta un
+guard nuevo todavia, pero si un **censo** que diga que sigue en 0, porque un
+NUL en cualquier `.sh` o `.rs` del arbol convertiria en zona muda a todo `grep`
+que lo lea, y ninguno de esos guards avisa. Ese censo es el bloque siguiente, y
+esta sesion no lo abre.
