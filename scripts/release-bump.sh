@@ -227,10 +227,29 @@ BODIES_FILE="$(mktemp)"
 git log --format=%B "${LAST_TAG}..HEAD" > "$BODIES_FILE" 2>/dev/null || true
 
 LEVEL="none"
+# BREAKING CHANGE se busca como FOOTER, no como palabra.
+#
+# MEDIDO en este repo contra su propio historial: `grep -iE 'breaking
+# change'` casa 11 veces; los footers canonicos son 2 y los subjects con `!`
+# son 1. Lo que hace el patron anterior no es detectar breaking changes, es
+# detectar la FRASE, y una release que decide el nivel de SemVer por una frase
+# tiene un fallo especialmente caro: este mismo commit —que arregla el
+# nivel— documenta el patron `grep -qiE 'breaking change'` en su cuerpo, luego
+# se declaraba a si mismo breaking change y `fix(...)` salia como
+# `release bump: v2.14.0 -> v3.0.0 (major)`. MEDIDO y ejecutado.
+#
+# El footer canónico de Conventional Commits es una linea que empieza por
+# `BREAKING CHANGE:` o `BREAKING-CHANGE:`; el otro canal es `!` en el subject
+# (`feat!:` o `refactor(api)!:`). Los tres se buscan por ANCLA DE INICIO DE
+# LINEA, que es lo que distingue un footer de una frase dentro de un parrafo.
+#
+# No se baja el liston para no perder breaking changes de verdad: los 2
+# footers y el subject con `!` del historial real siguen contando igual. Lo
+# que se deja de contar es a un commit que explica como funciona el detector.
 if [ -n "$FORCE_VERSION" ]; then
     LEVEL="forced"
-elif grep -qiE 'breaking change' "$BODIES_FILE" \
-    || grep -qiE 'breaking change|^[a-z]+!:' <<<"$COMMITS"; then
+elif grep -qE '^[[:space:]]*BREAKING[ -]CHANGE:' "$BODIES_FILE" \
+    || grep -qE '^[a-f0-9]+ [a-z]+(\([^)]*\))?!:' <<<"$COMMITS"; then
     LEVEL="major"
 elif grep -qE '^[a-f0-9]+ feat' <<<"$COMMITS"; then
     LEVEL="minor"

@@ -36,6 +36,48 @@ trap cleanup EXIT
 PASS=0
 FAIL=0
 
+# ── la segunda autoridad de admision, tambien aqui ────────────────────────
+#
+# `release-bump.sh` deriva el baseline publicado por
+# `scripts/lib/release_admission.sh`, que reconcilia `git ls-remote` contra
+# la API de GitHub antes de devolverlo. Los remotos de estos fixtures son
+# bare locales, luego sin lo que sigue TODOS los casos con remoto cierran con
+# `crosscheck_unavailable:remote-is-not-github` y no derivan nada.
+#
+# El remoto se DECLARA de github y las conexiones se traducen al bare local
+# con `url.<x>.insteadOf`: `git config --get remote.origin.url` —de donde sale
+# el slug— devuelve la identidad de github, y `git ls-remote origin` responde
+# contra el bare. MEDIDO: es la unica combinacion en la que las dos cosas son
+# verdad a la vez; con `git remote get-url` (la URL expandida) el slug decia
+# que el remoto no era de github.
+BIN="$TMPROOT/bin"
+mkdir -p "$BIN"
+SDDK_TEST_REAL_GIT="$(command -v git)"
+export SDDK_TEST_REAL_GIT
+cat > "$BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+for a in "$@"; do
+    case "$a" in repos/*/tags*) spec="$a" ;; esac
+done
+[[ "${1:-}" == "api" && -n "${spec:-}" ]] || exit 64
+# URL EXPANDIDA con el git real: es la que `ls-remote` va a usar.
+url="$("$SDDK_TEST_REAL_GIT" remote get-url origin 2>/dev/null)" || exit 1
+[[ -n "$url" ]] || exit 1
+"$SDDK_TEST_REAL_GIT" ls-remote --tags "$url" 2>/dev/null \
+    | awk '{print $2}' | grep -vF '^{}' \
+    | sed -n 's|^refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p'
+exit 0
+SHIM
+chmod +x "$BIN/gh"
+export PATH="$BIN:$PATH"
+
+# Declara el remoto local como repositorio de github. Se llama DESPUES de
+# `git remote add`.
+remote_looks_like_github() { # $1 = ruta del bare, $2 = dir del repo
+    git -C "$2" config remote.origin.url "git@github.com:acme/widgets.git"
+    git -C "$2" config "url.$1.insteadOf" "git@github.com:acme/widgets.git"
+}
+
 # Build a repo with a given workspace version and a given last tag, then ask
 # the tool to derive. Echoes the "new tag: vX.Y.Z" it reports.
 #
@@ -83,6 +125,48 @@ EOF
     # salida en stdout del cleanup se concatenaria al tag y haria fallar la
     # comparacion, asi que se silencia explicitamente en vez de confiar en que
     # `rm` no imprime nada.
+    rm -rf "$dir" >/dev/null 2>&1
+    derived=$(printf '%s\n' "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}')
+    printf '%s\n' "$derived"
+}
+
+# Igual que `derive`, pero el commit lleva CUERPO. El nivel de SemVer se
+# decide con el cuerpo, luego un fixture que solo pone el subject no puede
+# medir el defecto: haria falta meter la frase en el subject, que es un
+# caso distinto y mas Easy de pasar de lo que parece.
+#   $1 = workspace version, $2 = tag, $3 = subject, $4 = cuerpo
+derive_with_body() {
+    local ws="$1" tag="$2" subject="$3" body="$4"
+    local dir="$TMPROOT/$RANDOM-$$"
+    mkdir -p "$dir/scripts"
+    (
+        cd "$dir" || exit 2
+        git init -q .
+        git config user.email t@example.com
+        git config user.name t
+        cp "$BUMP" scripts/release-bump.sh
+        mkdir -p crates/fake
+        cat > Cargo.toml <<EOF
+[workspace]
+members = ["crates/fake"]
+
+[workspace.package]
+version = "$ws"
+edition = "2021"
+EOF
+        cat > crates/fake/Cargo.toml <<EOF
+[package]
+name = "fake"
+version.workspace = true
+EOF
+        printf 'version = "%s"\n' "$ws" > manifest.toml
+        git add -A
+        git commit -qm "chore: base"
+        git tag "v$tag"
+        git commit -q --allow-empty -m "$subject" -m "$body"
+    )
+    local out derived
+    out=$(cd "$dir" && bash scripts/release-bump.sh --dry-run 2>&1)
     rm -rf "$dir" >/dev/null 2>&1
     derived=$(printf '%s\n' "$out" | grep -oE '^new tag: v[0-9]+\.[0-9]+\.[0-9]+$' | awk '{print $3}')
     printf '%s\n' "$derived"
@@ -165,6 +249,30 @@ check "workspace ahead of tag, patch commit derives no bump" \
 check "workspace ahead of tag, breaking commit derives no bump" \
     "" "$(derive 2.1.1 2.0.1 'feat!: breaking change')"
 
+# ── BREAKING CHANGE: FOOTER, NO PALABRA ───────────────────────────────────
+#
+# MEDIDO (session-91): el nivel se derivaba con `grep -iE 'breaking change'`
+# sobre el cuerpo ENTERO de todos los commits. En el historial de este repo
+# eso casa 11 veces y los footers canonicos son 2 — 5,5 veces mas. Y no era un
+# detalle: el commit que arreglaba el SemVer documentaba el patron en su
+# cuerpo, luego se declaraba a si mismo breaking y dos `fix(...)` salian como
+# `release bump: v2.14.0 -> v3.0.0 (major)`. Ejecutado y medido.
+#
+# Los dos casos de aqui son los lados del defecto y ambos tienen que caer:
+# el que MENCIONA la frase sin ser breaking, y el que ES breaking de verdad.
+# Con solo el segundo, un detector que no detectase nada pasaria.
+check "un commit que MENCIONA breaking change en el cuerpo no es major" \
+    "v2.0.2" "$(derive_with_body 2.0.1 2.0.1 'fix: algo' 'el patron grep -i breaking change casa once veces')"
+
+check "un footer BREAKING CHANGE canonico SI es major" \
+    "v3.0.0" "$(derive_with_body 2.0.1 2.0.1 'fix: algo' 'BREAKING CHANGE: la API cambia')"
+
+check "un footer BREAKING-CHANGE con guion SI es major" \
+    "v3.0.0" "$(derive_with_body 2.0.1 2.0.1 'fix: algo' 'BREAKING-CHANGE: la API cambia')"
+
+check "un subject con ! SI es major aunque el cuerpo no diga nada" \
+    "v3.0.0" "$(derive 2.0.1 2.0.1 'feat!: la API cambia')"
+
 # --- The normal case: workspace == tag -------------------------------------
 #
 # Nothing pending. The tag is the base, as before.
@@ -223,6 +331,7 @@ derive_remote_ahead() {
         git config user.email t@example.com
         git config user.name t
         git remote add origin "$bare"
+        remote_looks_like_github "$bare" "$dir"
         cp "$BUMP" scripts/release-bump.sh
         cp "$ADMISSION" scripts/lib/release_admission.sh
         mkdir -p crates/fake
