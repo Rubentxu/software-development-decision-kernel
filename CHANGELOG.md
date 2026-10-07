@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 
 
+## [2.14.1] - 2026-10-07
+
+### Fixes
+  - fix(release): reintentar sin esperar es preguntar tres veces al mismo corte
+  - fix(release): el nivel SemVer lo decidia la frase "breaking change", no el footer
+  - fix(pre-push): el hook tenia su propia copia de una consulta que el guard declaraba alineada
+  - fix(release): la admision daba el baseline equivocado el 30% de las veces
+  - fix(release): el preflight daba verde con el filesystem sin inodos
+  - fix(rules): el guard que barre el repo declaraba exentos los sitios que matan
+
+### Other
+  - test(rules): el docstring del guard declaraba un reparto que no se puede reproducir
+
 ## [2.14.0] - 2026-10-06
 
 El gate de arquitectura declaraba quince leyes y medía doce. Esta versión lo deja en catorce de quince —y lo que queda declarado como stub, no como verde. El veredicto NO cambia: sigue siendo `OPEN_DEBT` por ARCH010. Lo que cambia es que ahora dice la verdad sobre lo que ha mirado.
