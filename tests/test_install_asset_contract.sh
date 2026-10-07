@@ -125,7 +125,12 @@ fi
 # A behavioural check: a fake "binary" that prints garbage must make the
 # probe fail rather than return the garbage.
 probe_body="$(sed -n '/^probe_binary_version()/,/^}/p' "$INSTALL_SH")"
-if printf '%s' "$probe_body" | grep -q 'grep -qE .*0-9'; then
+# Mismo motivo que el extractor de release.sh: el lector del probe cambio de
+# `grep -qE` a `grep -cE` con el arreglo INC-DEBT-071, y este caso se rompio
+# por la forma. Lo que vigila es que el probe RECHAZE un resultado que no sea
+# semver, y eso lo dice el `-ge 0` / `-eq 0` sobre el conteo igual que lo
+# decía el codigo de salida.
+if printf '%s' "$probe_body" | grep -q 'grep -cE .*0-9'; then
     ok "probe_binary_version validates the version format"
 else
     fail "probe_binary_version does not validate the version format"

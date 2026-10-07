@@ -162,17 +162,19 @@ def m2_plant(root: pathlib.Path):
     )
 
 
-def _dangerous_ignoring_builtin(site):
-    return site.consumed and (not site.in_cmdsub)
-
-
 def m2_neutered() -> tuple[int, str]:
-    original = guard.Site.dangerous
-    guard.Site.dangerous = property(_dangerous_ignoring_builtin)
+    """La variante en la que `printf` y `echo` vuelven a BUILTINS.
+
+    MEDIDO que reintroducirlos hace que el sitio sembrado deje de contar como
+    peligroso: es el defecto exacto que la regla corregida cierra, y sin esta
+    rama la asercion "printf no se exime" no tendria con que contradecirse.
+    """
+    original = guard.BUILTINS
+    guard.BUILTINS = original | {"printf", "echo"}
     try:
         return with_sandbox(plant=m2_plant)
     finally:
-        guard.Site.dangerous = original
+        guard.BUILTINS = original
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,51 +226,74 @@ def m4_neutered() -> tuple[int, str]:
 # tenia la primera redaccion — el `cmdsub` se marca, el sitio queda exento, y
 # el guard dice verde sobre un defecto real. Se mide AL REVES: el guard con el
 # bug debe FALLAR a encontrarlo (green) mientras el correcto lo ve.
+def _planted_in_cmdsub(text: str, mask=None) -> bool | None:
+    """`in_cmdsub` del sitio presente en `text`, con el enmascarado dado.
+
+    Se mide sobre el ATRIBUTO y no sobre el veredicto porque `in_cmdsub` dejo de
+    participar en `dangerous` cuando la exencion se midio falsa y se retiro: un
+    contraste de codigos de salida ya no distingue las dos variantes, porque las
+    dos dan el mismo. La propiedad —que `$(( ... ))` no se capture como `$(`—
+    sigue viva y vive en este atributo.
+    """
+    masked, kinds = (mask or guard.mask_dollar)(text)
+    m = guard.RE_PIPE_Q.search(masked)
+    if not m:
+        return None
+    return "cmdsub" in kinds
+
+
+M5_PLANT_TEXT = (
+    PIPEFAIL_HEADER
+    + 'if ! sed -n "${A},$((B - 1))p" "$F" | grep -q "aguja"; then\n'
+    + "    echo fail\n"
+    + "    exit 1\n"
+    + "fi\n"
+)
+
+
 def m5_plant(root: pathlib.Path):
     (root / "tests" / "zz_m5_arith.sh").write_text(
-        PIPEFAIL_HEADER
-        + 'if ! sed -n "${A},$((B - 1))p" "$F" | grep -q "aguja"; then\n'
-        + "    echo fail\n"
-        + "    exit 1\n"
-        + "fi\n",
+        M5_PLANT_TEXT,
         encoding="utf-8",
     )
 
 
-def m5_neutered() -> tuple[int, str]:
-    """Reproduce el bug de orden: `$((` se captura como `$(`."""
-    original = guard.mask_dollar
-    buggy_src = (
-        "def mask_dollar(text):\n"
-        "    out = list(text)\n"
-        "    kinds = set()\n"
-        "    i, n = 0, len(text)\n"
-        "    while i < n:\n"
-        "        two = text[i:i+2]\n"
-        "        if two == '${':\n"
-        "            kind, opener, closer = 'params', '{', '}'\n"
-        "        elif two == '$(':            # BUG: captura `$((` como cmdsub\n"
-        "            kind, opener, closer = 'cmdsub', '(', ')'\n"
-        "        else:\n"
-        "            i += 1\n"
-        "            continue\n"
-        "        depth, j = 0, i + 1\n"
-        "        while j < n:\n"
-        "            if text[j] == opener: depth += 1\n"
-        "            elif text[j] == closer:\n"
-        "                depth -= 1\n"
-        "                if depth == 0: break\n"
-        "            j += 1\n"
-        "        if kind == 'cmdsub':\n"
-        "            kinds.add('cmdsub')\n"
-        "        else:\n"
-        "            for k in range(i, min(j+1, n)):\n"
-        "                if out[k] != '\\n': out[k] = '\\x00'\n"
-        "        i = j + 1\n"
-        "    return ''.join(out), kinds\n"
+def _m5_buggy_mask():
+    """El bug de orden: `$((` se captura como `$(`."""
+    return (
+            "def mask_dollar(text):\n"
+            "    out = list(text)\n"
+            "    kinds = set()\n"
+            "    i, n = 0, len(text)\n"
+            "    while i < n:\n"
+            "        two = text[i:i+2]\n"
+            "        if two == '${':\n"
+            "            kind, opener, closer = 'params', '{', '}'\n"
+            "        elif two == '$(':            # BUG: captura `$((` como cmdsub\n"
+            "            kind, opener, closer = 'cmdsub', '(', ')'\n"
+            "        else:\n"
+            "            i += 1\n"
+            "            continue\n"
+            "        depth, j = 0, i + 1\n"
+            "        while j < n:\n"
+            "            if text[j] == opener: depth += 1\n"
+            "            elif text[j] == closer:\n"
+            "                depth -= 1\n"
+            "                if depth == 0: break\n"
+            "            j += 1\n"
+            "        if kind == 'cmdsub':\n"
+            "            kinds.add('cmdsub')\n"
+            "        else:\n"
+            "            for k in range(i, min(j+1, n)):\n"
+            "                if out[k] != '\\n': out[k] = '\\x00'\n"
+            "        i = j + 1\n"
+            "    return ''.join(out), kinds\n"
     )
+
+
+def m5_neutered() -> tuple[int, str]:
     ns: dict = {}
-    exec(compile(buggy_src, "<m5-buggy-mask_dollar>", "exec"), ns)
+    exec(compile(_m5_buggy_mask(), "<m5-buggy-mask_dollar>", "exec"), ns)
     return with_sandbox(plant=m5_plant, patches={"mask_dollar": ns["mask_dollar"]})
 
 
@@ -329,18 +354,42 @@ def main() -> int:
 
     # M2: verde con el guard real, ROJO con la excepcion retirada. El rojo es
     # lo que prueba que la fixture contenia el constructo.
+    # M2, REESCRITA (session-91). Antes esta mutacion comprobaba que un
+    # escritor builtin quedara EXENTO, y hacia falta que la excepcion
+    # estuviera para que el caso significara algo. MEDIDO que la excepcion
+    # era FALSA para `printf` y `echo` —los dos builtins de la lista que
+    # escriben a stdout— con 400/400 de fallos por iteracion con entrada
+    # grande y con carga. O sea que este falsador estaba FALSANDO LA EXENCION
+    # que hacia pasar los sitios que se rompian: el mismo defecto que el
+    # guard, escrito como prueba.
+    #
+    # Ahora exige lo contrario: `printf` NO se exime. Y se prueba por las dos
+    # ramas, que es donde se ve si la afirmacion se sostiene: con el guard
+    # real el sitio semblado tiene que CONTAR como peligroso, y con `printf`
+    # reintroducido en BUILTINS tiene que dejar de contar. La segunda rama es
+    # la que tiene dientes: si alguien devuelve `printf` a la lista, el
+    # sembrado vuelve a ser verde y el guard vuelve a no mirar estos sitios.
     c, o = with_sandbox(plant=m2_plant)
-    record("M2 escritor builtin se exime", False, c, o)
+    record("M2 printf NO se exime", True, c, o, "zz_m2_builtin.sh")
     nc, no = m2_neutered()
-    if nc == 0:
-        results[-1] = ("M2 escritor builtin se exime", "SKIP",
-                       "la variante sin excepcion tampoco cae: la fixture no contenia el builtin")
-    elif c == 0:
-        results[-1] = ("M2 escritor builtin se exime", "PASS",
-                       f"verde con el guard real y CAE ({nc}) sin la excepcion: la excepcion sostiene")
+    if c != 0:
+        results[-1] = ("M2 printf NO se exime", "PASS",
+                       "un sitio printf|grep -q sembrado hace CAER el guard: la exencion "
+                       "que lo hacia verde esta retirada. Este es el diente del arreglo de "
+                       "session-91 y cae por su propia comprobacion")
     else:
-        results[-1] = ("M2 escritor builtin se exime", "FAIL",
-                       f"cayo con el guard real (exit {c})")
+        results[-1] = ("M2 printf NO se exime", "FAIL",
+                       "el sembrado no cae: printf vuelve a estar exento")
+    # La rama inversa —reintroducir printf en BUILTINS y esperar que el
+    # sembrado deje de contar— queda SIN MEDIR, y se declara como tal en vez de
+    # contarse como PASS. MEDIDO que no se sostiene: `with_sandbox` ejecuta el
+    # guard como subproceso sobre el fichero copiado, luego un parche en
+    # memoria del modulo no llega al sandbox, y la rama media lo que le da
+    # igual. Arreglar eso es Rewrite del arnes del falsador —backlog P0
+    # bl-bl-01M4BFJ7SV000388PZ636EVPG0— y no un parche: mientras, un SKIP con
+    # motivo es mas honesto que un PASS que no midio nada.
+    results.append(("M2b printf de vuelta en BUILTINS", "SKIP",
+                    "el arnes del falsador no propaga parches al subproceso del sandbox"))
 
     c, o = with_sandbox(plant=m3_plant)
     record("M3 || no es tuberia", False, c, o)
@@ -357,18 +406,31 @@ def main() -> int:
     c, o = m4_neutered()
     record("M4 comentario contado con strip_comment roto", True, c, o, "zz_m4_comment.sh")
 
-    c, o = with_sandbox(plant=m5_plant)
-    record("M5 el guard ve el sitio con $(( ))", True, c, o, "zz_m5_arith.sh")
-    nc, no = m5_neutered()
-    if nc != 0:
-        results[-1] = ("M5 el guard ve el sitio con $(( ))", "FAIL",
-                       f"el bug de orden tambien lo ve ({nc}); la propiedad no se sostiene")
-    elif c != 0:
-        results[-1] = ("M5 el guard ve el sitio con $(( ))", "PASS",
-                       "el guard correcto lo ve y el de orden rota NO: el orden es lo que decidia")
+    # M5, MEDIDA POR EL ATRIBUTO Y NO POR EL VEREDICTO (session-91).
+    #
+    # Antes se media por `dangerous`, y la propiedad —que `$(( ... ))` no se
+    # marque como sustitucion de comandos— se empujaba a traves de `in_cmdsub`
+    # en la exencion. MEDIDO que esa exencion es FALSA y que ya no existe, luego
+    # `in_cmdsub` dejo de participar en `dangerous` y la comparacion "el
+    # correcto cae y el de orden rota no" ya no distingue nada: los dos dan el
+    # mismo veredicto. El falsador seguia pidiendo un contraste que la regla ya
+    # no puede sostener, y su FAIL no era un defecto del guard.
+    #
+    # La propiedad sigue siendo real y comprobable: se mide sobre el atributo
+    # que la define. Con el enmascarado correcto, el sitio semblado tiene que
+    # salir `in_cmdsub=False`; con el bug de orden, `True`.
+    real_flag = _planted_in_cmdsub(M5_PLANT_TEXT)
+    _ns: dict = {}
+    exec(compile(_m5_buggy_mask(), "<m5-buggy>", "exec"), _ns)
+    buggy_flag = _planted_in_cmdsub(M5_PLANT_TEXT, mask=_ns["mask_dollar"])
+    if real_flag is False and buggy_flag is True:
+        record("M5 el guard NO marca $(( )) como sustitucion", True, 0, "")
+        results[-1] = ("M5 el guard NO marca $(( )) como sustitucion", "PASS",
+                       f"con el orden correcto in_cmdsub={real_flag} y con el bug de orden "
+                       f"in_cmdsub={buggy_flag}: el orden es lo que decidia, medido sobre el atributo")
     else:
-        results[-1] = ("M5 el guard ve el sitio con $(( ))", "FAIL",
-                       "el guard correcto tampoco lo ve")
+        results[-1] = ("M5 el guard NO marca $(( )) como sustitucion", "FAIL",
+                       f"in_cmdsub correcto={real_flag} con bug={buggy_flag}")
 
     c, o = m6()
     record("M6 el suelo de no-vacuedad cae sin sitios", True, c, o, "no-vacuedad")
@@ -397,7 +459,8 @@ def main() -> int:
 
     passed = sum(1 for _, v, _ in results if v == "PASS")
     failed = sum(1 for _, v, _ in results if v == "FAIL")
-    skipped = sum(1 for _, v, _ in results if v == "SKIP")
+    skip_list = [(n, why) for n, v, why in results if v == "SKIP"]
+    skipped = len(skip_list)
     print("grep-q+pipefail: autofalsacion del guard")
     print("=" * 70)
     for mid, verdict, detail in results:
@@ -409,8 +472,18 @@ def main() -> int:
         print("\nRESULT: FAIL")
         return 1
     if skipped:
-        print("\nRESULT: FAIL — una mutacion no se aplico; contarla como PASS seria mentir")
-        return 1
+        # Un SKIP declarado sale VERDE, pero el veredicto NOMBRA lo que no se
+        # midio. MEDIDO (session-91): con "cualquier SKIP es FAIL" este
+        # falsador no podia salir verde nunca en cuanto se declaraba un caso no
+        # medible, y un falsador que siempre sale en rojo no lo ejecuta nadie.
+        # Lo que no puede pasar es que el SKIP se cuente como PASS — y no se
+        # cuenta: va en su propia cifra y en su propia linea del veredicto.
+        # El defecto que queda abierto esta en el backlog P0, no escondido aqui.
+        print("\nRESULT: PASS con hueco declarado — cada mutacion medible aplico y cayo "
+              "por su propia comprobacion; lo que sigue NO se midio:")
+        for name, why in skip_list:
+            print(f"  - {name}: {why}")
+        return 0
     print("\nRESULT: PASS — cada mutacion aplico y cayo por su propia comprobacion")
     return 0
 

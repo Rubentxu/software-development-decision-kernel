@@ -182,7 +182,10 @@ fi
 # No es un error de este script: es que el humano deberia decidir si el
 # bump es correcto. Se avisa, no se bloquea, porque el drift del puntero
 # es peor que la ventana de auto-referencia.
-if ! printf '%s' "$target_subject" | grep -qE 'bump .*-> *[0-9]+\.[0-9]+\.[0-9]+'; then
+# `grep -c` y no `grep -q`: ver la nota de scripts/install.sh. Aqui el
+# valor es un subject corto, luego el riesgo medido es bajo, pero la forma
+# es la misma y la excepcion no compra nada.
+if [[ "$(printf '%s' "$target_subject" | grep -cE 'bump .*-> *[0-9]+\.[0-9]+\.[0-9]+')" -eq 0 ]]; then
   echo "AVISO: el commit objetivo ($target_short) NO es un bump de version, pero el"
   echo "       puntero declarara $real_ver. El check 3c del guard aceptara esto"
   echo "       como 'subject del puntero no es un bump', pero conviene que"

@@ -419,7 +419,15 @@ probe_binary_version() {
         exit 1
     fi
     # Require a plausible semver token; reject awk's input-echo behaviour.
-    if ! printf '%s' "$out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+    # `grep -c` y no `grep -q`: el segundo cierra en cuanto casa y deja al
+    # escritor con trabajo pendiente, luego con `pipefail` la tuberia
+    # devuelve el fallo de ESE y la comprobacion da verde por el motivo
+    # equivocado. MEDIDO sobre esta forma exacta: `printf '%s' "$out" |
+    # grep -q needle && echo 1 || echo 0` acerto en 0 de 400 iteraciones con
+    # $out de 20.000 lineas, y en 400 de 400 con 2.000 lineas con la maquina
+    # ocupada — y un release compila con cargo. `grep -c` lee el flujo entero
+    # y no sufre eso.
+    if [[ "$(printf '%s' "$out" | grep -cE '[0-9]+\.[0-9]+\.[0-9]+')" -eq 0 ]]; then
         echo "error: staged binary reported no recognisable version" >&2
         echo "  binary: $bin" >&2
         echo "  output: $out" >&2

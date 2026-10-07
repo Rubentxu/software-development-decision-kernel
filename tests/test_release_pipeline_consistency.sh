@@ -370,7 +370,14 @@ fi
 # rather than grep-and-hope, so mutating the pattern changes the outcome.
 # ─────────────────────────────────────────────────────────────────────────
 
-if grep -E "grep -qE '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-pattern.txt" 2>/dev/null; then
+# El extractor sigue al LECTOR, no a una forma literal. MEDIDO (session-91):
+# estaba clavado en `grep -qE '`, y el arreglo INC-DEBT-071 de release.sh cambio
+# ese lector por `grep -cE` —que lee el flujo entero y no cierra en cuanto casa—
+# luego el test se rompio por la FORMA y no por el comportamiento que vigila.
+# Un contrato de forma que se rompe cuando la forma mejora es un contrato que
+# mide la letra. Lo que este test quiere decir es "release.sh comprueba que el
+# binario sea estatico", y el lector es la parte que puede cambiar.
+if grep -E "grep -[a-z]*c[a-z]*E? '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-pattern.txt" 2>/dev/null; then
     ok "release.sh has a staticness pattern to check"
 else
     fail "release.sh has no staticness pattern line to check"
@@ -385,9 +392,12 @@ fi
 # test exists to catch. (Observed while writing it: the first version
 # hardcoded the pattern and a mutation of release.sh survived it.)
 STATIC_PATTERN=""
-if grep -E "grep -qE '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-line.txt" 2>/dev/null; then
+if grep -E "grep -[a-z]*c[a-z]*E? '" scripts/release.sh | grep -E 'statically linked|static-pie linked' > "$TMPD/static-line.txt" 2>/dev/null; then
     # Pull the -E pattern argument out of the real line.
-    STATIC_PATTERN="$( sed -n "s/.*grep -qE '\([^']*\)'.*/\1/p" "$TMPD/static-line.txt" | head -1 )"
+    # El sed tambien seguia al lector (`grep -qE`). Sigue al flag `-c...` que
+    # sea, con el mismo motivo: el patron que hay que extraer es el ARGUMENTO,
+    # y el flag del lector es lo que cambia cuando se arregla el defecto.
+    STATIC_PATTERN="$( sed -n "s/.*grep -[a-z]*c[a-z]*E* '\([^']*\)'.*/\1/p" "$TMPD/static-line.txt" | head -1 )"
 fi
 
 check_static() {

@@ -378,7 +378,11 @@ fi
 LAST_SUBJECT="$(git log -1 --format=%s)"
 ADMISSION="$(release_admission_check_v2 HEAD)" \
     || die "release admission refused: $ADMISSION — release requires a real, monotonic [workspace.package] version bump above the last published release"
-if ! echo "$LAST_SUBJECT" | grep -qE '^chore\(release\): bump version'; then
+# `grep -c` y no `grep -q`: ver la nota de scripts/install.sh. Este es el
+# aviso de convencion de subject, luego un fallo aqui no detiene el release,
+# pero un aviso que aparece o desaparece por el estado de la maquina es un
+# aviso que no informa.
+if [[ "$(echo "$LAST_SUBJECT" | grep -cE '^chore\(release\): bump version')" -eq 0 ]]; then
     warn "HEAD subject does not follow the 'chore(release): bump version' convention: $LAST_SUBJECT"
 fi
 ok "on main, clean tree, release admission: $ADMISSION"
@@ -1011,7 +1015,8 @@ BIN="$TARGET_DIR/$BUILD_TARGET/release/sddk"
 # cualquier "dynamically linked".
 if [ "$BUILD_TARGET" = "x86_64-unknown-linux-musl" ]; then
     FILE_DESC="$(file -b "$BIN")"
-    if printf '%s' "$FILE_DESC" | grep -qE 'statically linked|static-pie linked'; then
+    # `grep -c` y no `grep -q`: ver la nota de scripts/install.sh.
+    if [[ "$(printf '%s' "$FILE_DESC" | grep -cE 'statically linked|static-pie linked')" -gt 0 ]]; then
         ok "binario verificado estatico: $FILE_DESC"
     else
         die "el target de build es musl pero el binario NO es estatico.
@@ -2615,9 +2620,13 @@ step "11/15 — sddk dev doctor --prefix $SDDK_PREFIX"
 DOCTOR_OUT="$("$SDDK_PREFIX/sddk" dev doctor --prefix "$SDDK_PREFIX" --format text)"
 echo "$DOCTOR_OUT" | grep -E "binary\.bundle_coherence|^all_present" \
     || die "doctor output missing expected checks"
-echo "$DOCTOR_OUT" | grep -q "binary\.bundle_coherence: present" \
+# `grep -c` y no `grep -q`: ver la nota de scripts/install.sh. MEDIDO el
+# alcance: `$DOCTOR_OUT` es la salida COMPLETA de `sddk dev doctor`, luego es
+# justo el caso de entrada grande, y esta comprobacion gobierna el paso 11
+# del release —el que decide si el binario y el bundle son coherentes.
+[[ "$(echo "$DOCTOR_OUT" | grep -c "binary\.bundle_coherence: present")" -gt 0 ]] \
     || die "binary.bundle_coherence not present"
-echo "$DOCTOR_OUT" | grep -q "all_present: true" \
+[[ "$(echo "$DOCTOR_OUT" | grep -c "all_present: true")" -gt 0 ]] \
     || die "all_present is not true"
 ok "binary.bundle_coherence: present, all_present: true"
 
