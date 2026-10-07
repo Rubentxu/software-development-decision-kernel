@@ -200,16 +200,18 @@ release_diagnose_exit() {
 # diagnostico sabia nombrar un ENOSPC y una retencion de lock, y no tenia forma
 # de decir "la maquina no tenia memoria".
 release_resources_now() {
-    local avail_mb="?" free_mb="?" swap_mb="?"
+    local avail_mb="?" free_mb="?" swap_mb="?" inode_pct="?"
     if command -v free >/dev/null 2>&1; then
         avail_mb="$(free -m 2>/dev/null | awk '/^Mem:/ {print $7}')"
         swap_mb="$(free -m 2>/dev/null | awk '/^Swap:/ {print $3"/"$2" MiB usados/total"}')"
     fi
     if [ -n "${RELEASE_SCRATCH:-}" ] && [ -d "${RELEASE_SCRATCH:-}" ] && command -v df >/dev/null 2>&1; then
         free_mb="$(df -Pm "$RELEASE_SCRATCH" 2>/dev/null | awk 'NR==2 {print $4}')"
+        inode_pct="$(df -Pi "$RELEASE_SCRATCH" 2>/dev/null | awk 'NR==2 && $2+0 > 0 {printf "%d", $4*100/$2}')"
     fi
-    printf 'memoria disponible=%s MiB (min %s) · swap=%s · disco libre en scratch=%s MiB (min %s)' \
-        "${avail_mb:-?}" "$SDDK_RELEASE_MIN_AVAIL_MB" "${swap_mb:-?}" "${free_mb:-?}" "$SDDK_RELEASE_MIN_FREE_MB"
+    printf 'memoria disponible=%s MiB (min %s) · swap=%s · disco libre en scratch=%s MiB (min %s) · inodos libres en scratch=%s%% (min %s%%)' \
+        "${avail_mb:-?}" "$SDDK_RELEASE_MIN_AVAIL_MB" "${swap_mb:-?}" "${free_mb:-?}" "$SDDK_RELEASE_MIN_FREE_MB" \
+        "${inode_pct:-?}" "$SDDK_RELEASE_MIN_FREE_INODE_PCT"
 }
 
 # SDDK_RELEASE_MIN_FREE_MB — margen minimo en el filesystem del scratch.
@@ -222,6 +224,13 @@ SDDK_RELEASE_MIN_FREE_MB="${SDDK_RELEASE_MIN_FREE_MB:-2048}"
 # SDDK_RELEASE_MIN_AVAIL_MB — memoria disponible minima. 2048 MB cubre el
 # `cargo test --workspace` completo con los binarios de test en ejecucion.
 SDDK_RELEASE_MIN_AVAIL_MB="${SDDK_RELEASE_MIN_AVAIL_MB:-2048}"
+# SDDK_RELEASE_MIN_FREE_INODE_PCT — margen minimo de inodos libres, en PORCENTAJE
+# del total del filesystem. 10: MEDIDO que con 0,14 % libres cualquier `mktemp`
+# puede fallar, y que el sintoma no dice nada del inodo —`mktemp` responde
+# "No queda espacio en el dispositivo" con 29 GiB sin usar, luego el operador
+# ve un error de disco donde no hay problema de disco. Ver el bloque de
+# inodos en `release_check_resources`.
+SDDK_RELEASE_MIN_FREE_INODE_PCT="${SDDK_RELEASE_MIN_FREE_INODE_PCT:-10}"
 
 # release_check_resources [scratch]
 # 0 si el scratch tiene margen de disco y la maquina de memoria; 1 con el
@@ -250,6 +259,31 @@ release_check_resources() {
         if [ -n "$avail_mb" ] && [ "$avail_mb" -lt "$SDDK_RELEASE_MIN_AVAIL_MB" ]; then
             printf '  ! memoria insuficiente: %s MiB disponibles, se necesitan %s MiB\n' \
                 "$avail_mb" "$SDDK_RELEASE_MIN_AVAIL_MB" >&2
+            failed=1
+        fi
+    fi
+
+    # --- INODOS: la otra mitad de "¿puedo crear ficheros aqui?" ---------------
+    #
+    # MEDIDO, y el defecto es que el preflight daba VERDE con el filesystem sin
+    # inodos. `test_release_bump_pointer_sync.sh` fallo `PASS=0 FAIL=7` con el
+    # arbol limpio y sin relacion con ningun cambio: `mktemp -d` devolvia "" por
+    # "No queda espacio en el dispositivo", `$WORK` salia vacio y el test
+    # buscaba `/selfheal`. MEDIDO en `/tmp`: 1 inodo libre de 1.048.576, con
+    # 29 GiB de espacio SIN USAR. Espacio e inodos son dos recursos distintos y
+    # medir uno solo deja ciego al guard justo en el caso que ocurre.
+    #
+    # El umbral es PORCENTAJE y no un numero absoluto, porque el numero
+    # depende del tamano del filesystem: unilion de inodos en un fs de 1 MiB no
+    # es margen. MEDIDO el suelo que decide: con 0,14 % libres cualquier
+    # `mktemp` del 1b puede fallar; el 1b crea ficheros temporales por cada uno
+    # de sus ~100 tests.
+    if [ -n "$target" ] && [ -d "$target" ] && command -v df >/dev/null 2>&1; then
+        local free_pct
+        free_pct="$(df -Pi "$target" 2>/dev/null | awk 'NR==2 && $2+0 > 0 {printf "%d", $4*100/$2}')"
+        if [ -n "$free_pct" ] && [ "$free_pct" -lt "$SDDK_RELEASE_MIN_FREE_INODE_PCT" ]; then
+            printf '  ! inodos insuficientes en el scratch: %s%% libres, se necesitan %s%%; el espacio en MiB puede estar bien y el filesystem no poder crear ficheros\n' \
+                "$free_pct" "$SDDK_RELEASE_MIN_FREE_INODE_PCT" >&2
             failed=1
         fi
     fi
