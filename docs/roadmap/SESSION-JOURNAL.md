@@ -16798,7 +16798,7 @@ que lance el release con
 
 y **`SDDK_ALLOW_UNSIGNED` es lo que el pipeline DERIVA**, no lo que el operador
 declara: `release.sh:2591` la exporta el mismo a partir de `SDDK_SKIP_SIGNING`.
-Exportarlayo preempTa esa decision, y el instalador deja de negarse por si
+Exportarla preempta esa decision, y el instalador deja de negarse por si
 mismo — que es exactamente lo que el check S1 llama «BYPASS UNIVERSAL de la
 verificacion de supply-chain». El control de no-vacuidad tambien cayo, y por el
 mismo motivo: con la bandera ya en el entorno, la entrada y la salida dan lo
