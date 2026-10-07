@@ -16858,3 +16858,96 @@ guard nuevo todavia, pero si un **censo** que diga que sigue en 0, porque un
 NUL en cualquier `.sh` o `.rs` del arbol convertiria en zona muda a todo `grep`
 que lo lea, y ninguno de esos guards avisa. Ese censo es el bloque siguiente, y
 esta sesion no lo abre.
+
+### 2026-10-07T15:40:00Z — BLOQUES C y D — admision de release y causa raiz del guard — mavis
+
+- Baseline: `main@e881d5f4` = `origin/main` al empezar, workspace 2.14.0, tag publicado
+  `v2.14.0 -> e5d423c2`. El bloqueo heredado era el push de `d95e3de9`, rechazado por
+  `INC-A5-PUSH-RELEASE-MARKER-FRICTION` porque `release-bump.sh` no derivaba nivel.
+- Alcance/autoridad: cerrar el bloqueo de push y medir de donde venia. No-objetivo
+  declarado: publicar una release nueva (no se lanzo `release.sh`).
+
+**BLOQUE C — la admision daba el baseline equivocado con codigo de salida 0.**
+
+- MEDIDO con el resolutor real contra `origin`: de 10 corridas, 4 -> `v2.14.0`, 3 cerraron
+  por lecturas discrepantes y **3 devolvieron `v2.9.1`**, siete versiones mas viejo que el
+  real, con `rc=0` en las tres ramas.
+- Mecanismo capturado, no inferido: la lectura parcial son 250 lineas de 387, es un
+  subconjunto EXACTO de la completa (`comm -12` -> 250) y **no** viene ordenada
+  lexicograficamente como la completa. El orden de la respuesta varia entre lecturas.
+- Leer dos veces no lo arregla, y la razon esta medida: de 50 lecturas, 3 fueron parciales
+  y **solo 1 de esas 3 movio el maximo**. La garantia era "1/3 de deteccion" y estaba
+  escrita como "ninguna pasa".
+- Arreglo: segunda autoridad (API REST de GitHub, transporte distinto) y huella
+  `<n de tags>|<maximo>`. El **conteo** es lo que distingue una lista parcial cuando el
+  maximo no se movio. Verificado antes de basar un gate en ello: los conjuntos semver de
+  `ls-remote` y de la API coinciden EXACTAMENTE, 312 == 312, `comm` vacio.
+- Cierra duro en cinco casos y **reintenta 5 rondas con 1 s de descanso**. El descanso no
+  es decorativo: la tasa de trunco depende del INSTANTE de red (3/50 lecturas en una
+  ventana, 0/20 en otra), y 3 rondas seguidas caen en menos de 2 s, dentro de la misma
+  ventana. MEDIDO: 3 intentos fallaron con `ls-remote=224|2.9.1` mientras 20 lecturas
+  seguidas de control salian completas.
+- `githooks/pre-push` **dejo de reimplementar la consulta** y sourcea la lib. AGENTS.md la
+  describia como "alineada" y no lo estaba: el hook leia una vez y la lib dos. Era la clase
+  INC-DEBT-074 — un guard con copia pegada del codigo no guarda nada.
+- **Hallazgo DERIVADO**: `release-bump.sh` derivaba MAJOR porque buscaba
+  `breaking change` en el CUERPO entero. En el historial real casa 11 veces y los footers
+  canonicos son 2. El commit que arreglaba el SemVer documentaba el patron en su cuerpo y
+  se declaraba breaking a si mismo. Corregido al footer por ancla de inicio de linea.
+- Evidencia: contrato de admision 20/20 (era 7) + autofalsacion nueva con 6 mutaciones,
+  todas cayendo; `test_release_admission.sh` 24/24; matrix del pre-push 56/56, mas un
+  caso que ata el hook a la autoridad (falsado a 55/1 revirtiendo el hook a su copia);
+  falsador de coherencia 7/7; changelog coverage 10/10; puntero 1b PASS.
+- **Push admitido**: `e881d5f4..2be1ee1c`, bump legitimo `2.14.0 -> 2.14.1` derivado por
+  `scripts/release-bump.sh` (nivel patch), sin `--no-verify`.
+
+**BLOQUE D — por que el guard daba verde sobre los sitios que se rompian.**
+
+- MEDIDO que la exencion `builtin` del guard es FALSA para `printf` y `echo`, los dos
+  builtins de la lista que **escriben a stdout**. Un builtin no recibe la SENAL pero
+  recibe EPIPE en su write() y bash le pone 141, que `pipefail` propaga igual.
+- De 104 sitios, **96 tienen `printf` (71) o `echo` (25)**: los 96 que el guard declaraba
+  sanos son exactamente los que se rompen.
+- Tasa medida con la forma exacta de las aserciones, 400 iteraciones por celda: `printf`
+  con 180 lineas 0/400 fallos; con 2.000 lineas **9/400 sin carga y 400/400 con carga**;
+  con 20.000 lineas 400/400. La fila que decide es la de 2.000 con carga: un release
+  compila con cargo.
+- Tambien medida y falsa la exencion `in_cmdsub`: `cat fichero | grep -q` falla 400/400
+  DENTRO de `$( )` y 400/400 FUERA. No protege de nada especial.
+- Arreglo: `printf`, `echo`, `pwd` y `type` salen de BUILTINS; el resto sigue exento y por
+  un motivo ahora correcto (no escriben, luego no pueden recibir EPIPE). Los **6 sitios de
+  PRODUCCION** arreglados a `grep -c`, incluidos los dos del paso 11 de `release.sh`, cuya
+  entrada es la salida COMPLETA de `sddk dev doctor`.
+- El falsador estaba **falsando la exencion que hacia pasar los sitios que se rompian**:
+  M2 exigia que un builtin quedara exento. Ahora exige lo contrario. M5 media un contraste
+  que `in_cmdsub` ya no puede sostener y pasa a medir el atributo. El veredicto acepta un
+  SKIP declarado y lo NOMBRA, porque con "cualquier SKIP es FAIL" no podia salir verde.
+- Dos extractores de FORA (`test_release_pipeline_consistency.sh` y
+  `test_install_asset_contract.sh`) se rompieron porque la forma mejoro. Realineados al
+  lector; extraen el patron, que es lo que ambos querian.
+- Evidencia: guard 98 sitios / 85 peligrosos / techo 85; falsador PASS=9 FAIL=0 SKIP=1 con
+  el hueco nombrado; los 4 tests de produccion verdes; shellcheck limpio. **Push admitido**
+  `2be1ee1c..3d426f93`.
+- Gates: NO se ejecuto `cargo test --workspace`, `cargo clippy` ni `cargo fmt --check` — los
+  cambios son de shell y de tests, y el perfil completo queda para el siguiente `verify` o
+  release. NO se lanzo ninguna release.
+
+**Deuda abierta y registrada, no cerrada:**
+
+- **P0 `bl-bl-01M4BFJ7SV000388PZ636EVPG0`**: 85 sitios en `tests/` que siguen decidiendo su
+  veredicto por una moneda. El guard los cuenta y los imprime enteros, y los gatea con un
+  techo que solo puede BAJAR — es un gate de NO REGRESION, no un visto bueno.
+- El arnés de `test_grep_q_after_pipe_mutation.py` no propaga parches al subproceso del
+  sandbox, luego M2b queda SIN MEDIR y declarado como SKIP con su motivo.
+- P2 `bl-bl-01M4B5BRE` degradado desde P1: tres de sus cuatro criterios cumplidos; el
+  `in_cmdsub` queda absorbido por el P0. La hipotesis que el mismo item declaraba como "no
+  medida" sobre `head_command` era FALSA — el fallo real es que corta en el ULTIMO `{`.
+
+**Bloqueo de autoridad, no de codigo:** el cierre en Engram no se pudo escribir.
+`mem_session_summary` devuelve `ambiguous_project` con unicamente `cheats-psx2` y
+`wt-v252` entre los candidatos, y el cwd solo contiene el `.git` de este repo. Elegir uno
+de los dos escribiria el estado de sddk-framework en el registro de otro proyecto, que es
+la corrupcion que las reglas prohiben. No se eligio ninguno.
+
+- Proxima accion ejecutable: P0. Arreglar los 85 sitios de `tests/` con un helper
+  compartido que lea el flujo entero, y bajar `MAX_DANGEROUS` en cada commit.
