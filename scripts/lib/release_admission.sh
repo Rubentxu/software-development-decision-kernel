@@ -113,14 +113,37 @@ release_admission_check() {
 #                                       not be obtained; this MUST
 #                                       trip a fail-closed REJECT, not
 #                                       silently fall back to HEAD^.
+#   $LAST_PUB_OUTCOME = "query_inconsistent:<a>|<b>"  →  the remote answered
+#                                       TWICE and the two answers disagree.
+#                                       See "LA SEGUNDA LECTURA" below: a
+#                                       successful read is not the same as a
+#                                       COMPLETE read, and this is the case
+#                                       that a single `rc -eq 0` check cannot
+#                                       see. MUST also fail closed.
 #
 # Sourceable. Exports $LAST_PUB_OUTCOME for the caller. The previous
 # contract (return-1 on empty) is preserved for back-compat callers that
 # only check the printed value.
+
+# Extrae el maximo semver de una respuesta cruda de `git ls-remote --tags`.
+#
+# Es una FUNCION SEPARADA a proposito: el recorte es la parte que hay que
+# mirar cuando dos lecturas no coinciden, y duplicarlo dentro de las dos
+# ramas seria dos copias que divergen en cuanto una cambia — la misma clase
+# de defecto que este fichero ya registro con la lista de aliases y con las
+# siete filas de frontera de UAT. Una sola extraccion, dos lecturas.
+_max_published_tag_from_refs() {
+    printf '%s\n' "$1" \
+        | awk '{print $2}' \
+        | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+        | sort -V -r \
+        | head -1
+}
+
 last_published_version() {
-    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}" raw
+    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}" raw rc tag raw2 rc2 tag2
     raw="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$remote" 2>&1)"
-    local rc=$?
+    rc=$?
     if [[ $rc -ne 0 ]]; then
         # Capture the error reason (one line if multi-line).
         local err
@@ -129,11 +152,51 @@ last_published_version() {
         return 1
     fi
     local tag
-    tag="$(printf '%s\n' "$raw" \
-        | awk '{print $2}' \
-        | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
-        | sort -V -r \
-        | head -1)"
+    tag="$(_max_published_tag_from_refs "$raw")"
+
+    # ── LA SEGUNDA LECTURA, Y POR QUE ESTA ───────────────────────────────────
+    #
+    # MEDIDO en este repo contra `origin` real: `git ls-remote --tags` devuelve
+    # de forma INTERMITENTE una lista PARCIAL y aun asi sale con codigo 0.
+    # Capturada: 249 lineas donde el mismo comando devolvia 386, y la lista
+    # cortada perdia desde v2.2.12 en adelante — v2.10.0, v2.11.x, v2.12.x y
+    # v2.13.0 fuera. El maximo caia de v2.13.0 a v2.9.1 y NADIE se enteraba.
+    #
+    # Es grave por la DIRECCION, no por la frecuencia, y la falsacion esta
+    # medida sobre el producto real con un remoto truncado de verdad:
+    #
+    #   remoto completo  -> REJECT already-published 2.13.0   (correcto)
+    #   remoto truncado  -> ACCEPT last-publish=2.9.1 -> 2.13.0
+    #
+    # El segundo caso ADMITE republicar una version ya publicada, porque un
+    # baseline mas viejo hace que cualquier version nueva parezca mayor. El
+    # fallo de red se convierte en permiso de publicar, y un release pipeline
+    # cuyo gate de admision depende de una lectura que puede volver incompleta
+    # sin decir nada no esta admitiendo: esta adivinando.
+    #
+    # La lectura unica no podia atraparlo: `rc -eq 0` es exactamente lo que
+    # devuelve la respuesta incompleta. Lo que SI se puede afirmar sin conocer
+    # el total esperado de refs es que DOS lecturas independientes no pueden
+    # truncarse igual por casualidad, luego el desacuerdo es prueba de que al
+    # menos una va mal. No se elige la "mejor" de las dos — elegir seria
+    # adivinar con dos monedas —: se cierra.
+    #
+    # El COSTE son dos viajes de red en vez de uno, y es medido como precio de
+    # un cierre duro, no como coste oculto: el 1b corre esto y el pre-push.
+    raw2="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$remote" 2>&1)"
+    rc2=$?
+    if [[ $rc2 -ne 0 ]]; then
+        local err2
+        err2="$(printf '%s\n' "$raw2" | head -1)"
+        LAST_PUB_OUTCOME="query_failed:${err2:-exit-$rc2}"
+        return 1
+    fi
+    tag2="$(_max_published_tag_from_refs "$raw2")"
+    if [[ "$tag" != "$tag2" ]]; then
+        LAST_PUB_OUTCOME="query_inconsistent:${tag:-<none>}|${tag2:-<none>}"
+        return 1
+    fi
+
     if [[ -z "$tag" ]]; then
         LAST_PUB_OUTCOME="bootstrap"
     else
@@ -158,7 +221,11 @@ _last_published_resolve() {
     fi
     case "$LAST_PUB_OUTCOME" in
         bootstrap|v*) return 0 ;;
-        query_failed:*) return 1 ;;
+        # El remoto respondio DOS VECES y las dos respuestas no coinciden. Se
+        # cierra por la misma razon que un fallo de red, y NO se degrada a la
+        # lista local: una lista local parcial daria el mismo veredicto
+        # equivocado que la respuesta remota parcial.
+        query_failed:*|query_inconsistent:*) return 1 ;;
         *) LAST_PUB_OUTCOME="query_failed:unknown-shape"; return 1 ;;
     esac
 }

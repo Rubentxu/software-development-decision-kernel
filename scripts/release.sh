@@ -443,6 +443,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
             tests/test_release_bump_pointer_sync.sh \
             tests/test_reconcile_pointer_yaml_safety.sh \
             tests/test_release_admission.sh \
+            tests/test_release_admission_truncation.sh \
             tests/test_push_prevention_hook.sh \
             tests/test_push_prevention_coherence_mutation.sh \
             tests/test_release_receipt_authority.sh \
@@ -508,6 +509,7 @@ if [ "$SKIP_TESTS" = "0" ]; then
              tests/test_push_prevention_hook.sh \
              tests/test_push_prevention_coherence_mutation.sh \
              tests/test_release_admission.sh \
+             tests/test_release_admission_truncation.sh \
              tests/test_cargo_target_attribution.sh \
              tests/test_release_receipt_authority.sh \
              tests/test_authority_helper_lockstep.sh \
