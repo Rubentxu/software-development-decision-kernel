@@ -71,6 +71,43 @@ caso_termina() {
     fi
 }
 
+# --- presenta(): la forma correcta de decidir un needle ------------------------
+#
+# `presenta()` usa `grep -c` y no `grep -q`, y no es un detalle. El bloque E0 ya
+# lo decia por escrito desde antes de existir: la razon esta unas lineas mas
+# abajo, en la nota de "NEEDLES ROTOS AL CONSTRUIR ESTOS CASOS".
+#
+# MEDIDO, y por que este helper existe ahora y no antes: el comentario de esa
+# nota nombraba `presenta()` y dizia que "TODOS los needles de este bloque pasan
+# por `codigo()` y por `presenta()`" — pero `presenta()` no estaba escrita en
+# ningun sitio. La ley tenia nombre y no tenia cuerpo, luego los bloques que se
+# escribieron DESPUES (E1..E9) no la pudieron cumplir y Decideiron sus
+# veredictos con `printf ... | grep -q` a pelo, que es exactamente la forma que
+# la ley prohibe.
+#
+# MEDIDO el coste, en este mismo fichero y con este mismo needle:
+#
+#     printf '%s' "$CODIGO_WIRE" | grep -q '...' && echo 1 || echo 0
+#         -> cond=0 en 94 de 400 (23,5 %) sin carga, y 400 de 400 con la
+#            maquina ocupada. Un needle que ACIERTA se reportaba como fallar.
+#     [ "$(presenta ...)" = 1 ]
+#         -> cond=0 en 0 de 400, con y sin carga.
+#
+# La tasa no es estable porque depende de cuando `grep -q` cierra la tuberia
+# respecto al ultimo write de `printf`: es una carrera, y por eso el numero mide
+# una clase y no una ejecucion. Un gate de release no puede depender de ella.
+# `grep -c` lee el flujo entero y no puede salir antes de tiempo.
+#
+# `ausente_texto()` consume a `presenta` por VALOR (`[ ... = 0 ]`) y nunca por
+# su codigo de retorno, que es la QUINTA forma de needle roto que la nota de
+# abajo ya enumera.
+presenta() {
+    [ "$(printf '%s' "$2" | grep -c "$1")" -ge 1 ] && echo 1 || echo 0
+}
+ausente_texto() {
+    [ "$(presenta "$1" "$2")" = "0" ] && echo 1 || echo 0
+}
+
 # --- E0: el codigo dice lo que tiene que decir --------------------------------
 caso_empieza
 
@@ -119,10 +156,10 @@ E0_LIMPIA_PASO5="$(awk '
     END { printf "%s", last }
 ' "$RELEASE")"
 asert "E0: la limpieza del scratch cubre tambien TMP, que se creo en el paso 5" \
-    "$(printf '%s' "$E0_LIMPIA_PASO5" | grep -q 'TMP' && echo 1 || echo 0)" \
+    "$(presenta 'TMP' "$E0_LIMPIA_PASO5")" \
     "definicion: $(printf '%s' "$E0_LIMPIA_PASO5" | tr -d '\n' | cut -c1-60)"
 asert "E0: y es no fatal, o el release sale con el codigo de su propia limpieza" \
-    "$(printf '%s' "$E0_LIMPIA_PASO5" | grep -q '|| true' && echo 1 || echo 0)" \
+    "$(presenta '|| true' "$E0_LIMPIA_PASO5")" \
     "definicion: $(printf '%s' "$E0_LIMPIA_PASO5" | tr -d '\n' | cut -c1-60)"
 
 asert "E0: el marcador de 'ya diagnostique' se crea DENTRO del scratch" \
@@ -471,7 +508,8 @@ asert "E5: y con SKIP_TESTS=0 devuelve 1, que es lo que deja pasar al gate" \
     "$([ "$R_RUN" = "1" ] && echo 1 || echo 0)" "devolvio '$R_RUN'"
 DECLARA="$(printf '%s\n' "$TEST_GATE_FN" | SKIP_TESTS=1 bash -c 'source /dev/stdin; test_gate NOMBRE_DEL_GATE' 2>&1)"
 asert "E5: y lo que declara nombra el flag y el gate, no dice solo 'skipping'" \
-    "$(printf '%s' "$DECLARA" | grep -q 'NO_EJECUTADO (--skip-tests)' && printf '%s' "$DECLARA" | grep -q 'NOMBRE_DEL_GATE' && echo 1 || echo 0)" \
+    "$([ "$(presenta 'NO_EJECUTADO (--skip-tests)' "$DECLARA")" = "1" ] \
+        && [ "$(presenta 'NOMBRE_DEL_GATE' "$DECLARA")" = "1" ] && echo 1 || echo 0)" \
     "declaracion: $(printf '%s' "$DECLARA" | tr -d '\n' | cut -c1-60)"
 caso_termina E5
 
@@ -504,14 +542,14 @@ caso_termina E5
 caso_empieza E6
 CODIGO_WIRE="$(codigo "$RELEASE_WIRE")"
 asert "E6: el test exporta SU marcador, y no hereda el del release" \
-    "$(printf '%s' "$CODIGO_WIRE" | grep -q 'export RELEASE_DIAGNOSED_FILE="\$WIRE_DIAG_MARKER"' && echo 1 || echo 0)"
+    "$(presenta 'export RELEASE_DIAGNOSED_FILE="\$WIRE_DIAG_MARKER"' "$CODIGO_WIRE")"
 asert "E6: y el marcador cuelga de un temporal suyo, no de un caminho heredado" \
-    "$(printf '%s' "$CODIGO_WIRE" | grep -q 'WIRE_DIAG_MARKER="\$WIRE_TMPDIR/' && echo 1 || echo 0)"
+    "$(presenta 'WIRE_DIAG_MARKER="\$WIRE_TMPDIR/' "$CODIGO_WIRE")"
 n_limpia="$(printf '%s' "$CODIGO_WIRE" | grep -c '^limpiar_marcador$')"
 asert "E6: limpia el marcador ANTES de cada dry-run, para que E1 no se lo deje a E2" \
     "$([ "$n_limpia" -ge 3 ] && echo 1 || echo 0)" "llamadas: $n_limpia"
 asert "E6: la propiedad se comprueba por codigo y no relanzando el test (una autorrecursion es la regresion que se arranco)" \
-    "$(printf '%s' "$CODIGO_WIRE" | grep -qE 'bash "\$\{BASH_SOURCE\[0\]\}"' && echo 0 || echo 1)"
+    "$(ausente_texto 'bash "\$\{BASH_SOURCE\[0\]\}"' "$CODIGO_WIRE")"
 caso_termina E6
 
 # --- E7: el codigo que se diagnostica es el del comando, no el de `die` -------
@@ -687,10 +725,10 @@ E8_LIMPIA_FN="$(awk '
 ' "$RELEASE")"
 E8_LIMPIA_PILA="$({ printf '%s\n' ". \"$LIB\""; sed -n '/^die()/,/^}/p' "$RELEASE"; sed -n '/^release_on_exit()/,/^}/p' "$RELEASE"; printf '%s\n' "$E8_LIMPIA_FN"; } | bash -c 'source /dev/stdin; echo OK' 2>&1)"
 asert "E8: el sujeto EXISTE - la composicion arranca y trae las dos piezas reales" \
-    "$(printf '%s' "$E8_LIMPIA_PILA" | grep -c 'OK' >/dev/null && printf '%s' "$E8_LIMPIA_PILA" | grep -q 'OK' && echo 1 || echo 0)" \
+    "$(presenta 'OK' "$E8_LIMPIA_PILA")" \
     "salida: $(printf '%s' "$E8_LIMPIA_PILA" | tr -d '\n' | cut -c1-60)"
 asert "E8: y la limpieza que se compone es la del paso 5, la que reintroduce TMP" \
-    "$(printf '%s' "$E8_LIMPIA_FN" | grep -q 'TMP' && echo 1 || echo 0)" \
+    "$(presenta 'TMP' "$E8_LIMPIA_FN")" \
     "definicion: $(printf '%s' "$E8_LIMPIA_FN" | tr -d '\n' | cut -c1-70)"
 
 # El escenario que se midio, montado de verdad: un scratch con un HIJO dentro,
@@ -782,12 +820,12 @@ E9_HECHO="$(bash -c '. "$1"; release_resources_now' _ "$LIB" 2>/dev/null)"
 asert "E9: release_resources_now existe y devuelve un hecho no vacio" \
     "$([ -n "$E9_HECHO" ] && echo 1 || echo 0)" "hecho: '$E9_HECHO'"
 asert "E9: ese hecho nombra la memoria disponible y su minimo" \
-    "$(printf '%s' "$E9_HECHO" | grep -q 'memoria disponible=' && echo 1 || echo 0)"
+    "$(presenta 'memoria disponible=' "$E9_HECHO")"
 asert "E9: y nombra el swap, que MEDIDO estaba al 100 % en el fallo" \
-    "$(printf '%s' "$E9_HECHO" | grep -q 'swap=' && echo 1 || echo 0)"
+    "$(presenta 'swap=' "$E9_HECHO")"
 
 asert "E9: el paso 1 VUELVE a medir los recursos; el paso 0 solo no basta" \
-    "$(printf '%s\n' "$STEP1" | grep -q 'release_check_resources' && echo 1 || echo 0)"
+    "$(presenta 'release_check_resources' "$STEP1")"
 
 # Y lo mide ANTES de gastar. Una comprobacion DESPUES del cargo que consume es
 # decoracion: llega tarde para impedir nada.
