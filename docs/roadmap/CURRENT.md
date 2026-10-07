@@ -9,7 +9,98 @@
 autoridad del estado operativo es SDDK (`sddk cycle`, ledger) mas el
 proceso; estos ficheros son el rastro, no la fuente.
 
-## Estado a 2026-10-06 (session-89) — dos bloques cerrados, ambos medidos
+## Estado a 2026-10-07 (session-90) — los tres deaths de REL-2.14.0 están cerrados y medidos
+
+- **Release vigente: `v2.13.0`**, publicada `2026-10-06T16:15:13Z`,
+  `isDraft=false`, `isPrerelease=false`, **9 assets**. Tag ligero `v2.13.0` ->
+  `922937c4`. MEDIDO con `gh release view v2.13.0`, no heredado del log.
+  **El bloque de session-89 decía `v2.12.0` y era falso por una release** — la
+  tercera vez que la prosa de este fichero pasa su gate con el valor en false.
+- **Workspace `Cargo.toml` = 2.14.0, declarada y NO publicada.** MEDIDO con
+  `bash scripts/release-bump.sh --dry-run`: `last published: v2.13.0 (remote
+  (origin))`, `no bump to derive: the workspace already declares the pending
+  release (2.14.0)`. Por §2.3 la release **es 2.14.0**, sin minor.
+- **HEAD `603bdf98`, 0 commits sin pushear**, árbol limpio, hook activo
+  (`core.hooksPath=githooks`).
+- **Frescura del binario: `behind`.** Instalado `sddk 2.13.0` / `922937c4`
+  contra el checkout `603bdf98`. Es lo correcto —el workspace bumpea y no
+  publica hasta el release— y es lo que hace que `test_c5_architecture_coverage.sh`
+  en standalone dé `FAIL=1` en D4: el freshness le dice que **no mida**, que es
+  exactamente su trabajo (§2.3.1). En el release se le pasa `SDDK_BIN="$BIN"`
+  recién construido (paso 3q).
+
+### Lo que	session-89 NO vio: REL-2.14.0 lleva TRES intentos muertos, los tres en el 1b
+
+Los tres fueron en el **1b**, luego ninguno dejó artefacto ni tag a medias. Y
+los tres eran gates que ya existían y que fallaban sobre lo que medían:
+
+| Intento | Gate que lo mató | Reparación | Medido ahora |
+|---|---|---|---|
+| 1 | `test_release_state_pointer.sh` — puntero **8** commits atrás (tolerancia 3) | `73ee9ed2` reconcilió a `b860f3d9` | **PASS**, 9 checks verdes |
+| 2 | gate 2b changelog — 2 entradas ausentes de las 10 | `36092da1` las escribió | **PASS=13 FAIL=0**, 10/10 commits representados |
+| 3 | `test_gate_coverage.py` — 3 falsadores `SIN runner y SIN motivo` | `603bdf98` los cableó y arregló su `trap` | **PASS**, `SIN runner y SIN motivo: 0` |
+
+**El intento 3 es el que importa como precedente.** Los tres tests
+`SIN runner` eran falsadores escritos **dos commits antes** por esta misma
+sesión: existían, pasaban a mano, y nadie los ejecutaba. El mismo patrón que
+el guard de citas de `C3n.3`, y la misma lección: *una copia del código no
+vigila el código*. Y el arreglo trajo un hallazgo que el propio falsador
+cobró: al parar uno a mitad de mutación quedaron **dos mutaciones VIVAS** en
+`evaluators.rs`, una de ellas `let at_composition_root = 0;` en ARCH010 — el
+estado que ese falsador existe para detectar, en el árbol, sin commit y sin
+restauración. El `trap` solo borraba el temporal; `restore` estaba escrita con
+verificación por sha y **el trap no la llamaba**.
+
+### El defecto que esta sesión encontró midiendo, no leyendo
+
+`tests/test_c5_architecture_coverage.sh:236` imprime la cifra de ARCH010 con un
+`echo` y un literal escrito a mano:
+
+```bash
+echo "        aristas medidas por ARCH010: 14 (sddk-cli -> sddk-storage)"
+```
+
+Es la **única** línea del guard que dice «medidas» sin medir nada, y no es una
+cifra cualquiera: el commit `3038f5e1` de este mismo bloque estableció que
+`cross_crate_imports` es una lista de **OCURRENCIAS**, no de aristas — 14
+declaraciones son **una** arista (`sddk-cli -> sddk-storage`) repartida en 9
+ficheros. El guard afirma, con la palabra «medidas», lo contrario de lo que el
+propio bloque caracterizó por nombre.
+
+**Lo que NO se ha hecho, y es la parte honesta:** no se ha arreglado, porque
+arreglarlo bien exige **medir** el valor real con un binario de este checkout, y
+esa medición necesita el lock de `CARGO_TARGET_DIR`. Fijar `14` como
+«declarado» sin medirlo sería cambiar un literal por otro literal con dientes
+de guard encima, que es peor: fallaría de forma que parece un defecto del
+producto.
+
+### Lo que sigue abierto
+
+1. **`v2.14.0`** — los tres deaths están cerrados y medidos; no queda ningún
+   gate rojo conocido que la mate.
+2. **La cifra de ARCH010** — la de arriba. Es una línea y una medición.
+3. **Ordenación del 1b, declarada sin arreglar** (session anterior): el guard
+   del puntero va **43 de 88** en la lista y cuesta **0,12 s**, mientras por
+   delante corren los tres falsadores recién cableados a **~5 min cada uno**.
+   La comprobación más barata del paso es la que mide proceso, y es la que más
+   tarde corre. Moverla merece su propia medición.
+4. **Contención de `CARGO_TARGET_DIR`**: `~/.cargo/config.toml` fija
+   `target-dir = /var/home/rubentxu/cargo-targets` **global**, así que cualquier
+   release de cualquier repo compite por el mismo lock. MEDIDO en esta sesión:
+   `agent-secretless` llevaba **18 min** en `cargo test --workspace --release`
+   sobre ese mismo directorio. Es el mecanismo exacto del fallo que session-83
+   grabó como «no reproducible» en la 2.11.0 y resultó ser contención.
+5. **Vault**: 189 errores de `validate`. No es código, es contenido de
+   `~/.sddk-knowledge/sddk-framework`, y no hay subcomando que lo repare.
+6. **INC-DEBT-050 / 061** — decisión del operador. No tocar.
+
+---
+
+## Estado a 2026-10-06 (session-89) — HISTÓRICO
+
+> Este bloque declaraba `v2.12.0` como release vigente. **Era falso por una
+> release**: `v2.12.1` y `v2.13.0` se publicaron después. Se conserva sin
+> reescribir por trazabilidad; el estado vigente es el bloque de arriba.
 
 - **Release vigente: `v2.12.0`**, sin cambios. **Workspace `Cargo.toml` = 2.12.1**,
   declarada y **no publicada** → por §2.3 la siguiente release **es 2.12.1**.
