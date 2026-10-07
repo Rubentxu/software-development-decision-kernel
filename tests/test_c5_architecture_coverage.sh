@@ -72,14 +72,28 @@ DECLARED_STUBS="ARCH013 ARCH014 ARCH015"
 DECLARED_UNNAMED="sddk-gateway sddk-pack-uat"
 # La tercera clase de brecha, y la que el gate NO distingue de las otras dos: una
 # ley que SI se mide y NO se sostiene. MEDIDO: ARCH010 (cli_must_not_import_
-# storage_directly) devuelve FAIL con 14 aristas sddk-cli -> sddk-storage,
-# mientras el waiver de ARCH003 declara solo DOS composition-root edges que
-# sobreviven. La diferencia son 12: ledger.rs x4, telemetry.rs, plan.rs,
-# context_cmd.rs, cycle.rs, backlog.rs, approval.rs, admission.rs, fork_cmd.rs,
-# graph_cmd.rs y lib.rs. El veredicto del gate paso de WAIVED (exit 2) a
-# OPEN_DEBT (exit 1) no porque apareciese deuda nueva, sino porque una ley que
-# nunca se habia medido por fin se midio y no se sostiene.
+# storage_directly) devuelve FAIL con 12 DECLARACIONES fuera del composition
+# root (y 2 en el), mientras el waiver de ARCH003 declara solo esas DOS
+# composition-root edges que sobreviven. El veredicto del gate paso de WAIVED
+# (exit 2) a OPEN_DEBT (exit 1) no porque apareciese deuda nueva, sino porque
+# una ley que nunca se habia medido por fin se midio y no se sostiene.
+#
+# EL SUSTANTIVO, que no es cosmetico. Estas 12 no son 12 aristas: es UNA
+# arista (`sddk-cli -> sddk-storage`) repartida en varios ficheros. El commit
+# 3038f5e1 de este mismo bloque establishedo: `cross_crate_imports` es una lista
+# de OCURRENCIAS, no de aristas — 437 declaraciones `use` son 19 aristas
+# distintas, un factor 23. Un rework no persigue aristas: persigue
+# declaraciones. Y el fallo que acabo de corregir aqui era del mismo genero:
+# la linea de resumen de este guard decia "aristas medidas ... 14" con un `echo`
+# y un literal escrito a mano, cuando la cifra real MEDIDA es 12 y no 14. Un
+# numero que dice "medidas" sin medir nada, y ademas equivocado.
 DECLARED_FAILING="ARCH010"
+# La cifra que se COMPRA al binario y se contrasta. teeth bidireccionales como
+# los de DECLARED_STUBS: si la arista baja a 0 y la deuda se cerro, esta
+# declaracion queda obsoleta y hay que quitarla — que es el mismo criterio que
+# D2 y D3. Un literal informativo no puede caerse en ninguna de las dos
+# direcciones, luego no vigila nada.
+DECLARED_FAILING_DECLARATIONS="12"
 # D5: leyes que salen en verde SIN haber mirado nada. MEDIDO: sddk-domain y
 # sddk-vault no tienen ninguna arista sddk_*, luego ARCH002, ARCH006, ARCH007 y
 # ARCH011 son Pass sobre un conjunto vacio. Que el dominio sea la capa mas
@@ -216,6 +230,16 @@ SDDK_BIN_PATH="${SDDK_BIN:-sddk}"
 FRESHNESS="$(bash "$ROOT/scripts/check_binary_freshness.sh" "$SDDK_BIN_PATH" --format json 2>/dev/null || echo '{"relation":"unknown"}')"
 BIN_RELATION="$(printf '%s' "$FRESHNESS" | sed -n 's/.*"relation"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p')"
 FAILING_IDS="$(cd "$ROOT" && timeout 300 "$SDDK_BIN_PATH" dev check-architecture --root . 2>/dev/null | awk '$1 ~ /^ARCH/ && $2 == "FAIL" {print $1}' | sort | tr '\n' ' ' | sed 's/ *$//')"
+# La CIFRA, medida del mismo binario y de la misma invocacion. Antes esta
+# linea era un `echo` con un 14 escrito a mano y la palabra "medidas" al
+# lado; la cifra real son 12, luego el guard publicaba un numero que no
+# habia medido y que era falso. Se lee el PRIMER token del detail, que es
+# un entero en las dos formas que el evaluador emite: la del resumen
+# ("12 declaration(s) outside the composition root, 2 at it (...)") y la
+# del recuento generico ("12 declaration(s) detected"). Ninguna otra cosa
+# del detail se usa: la tabla lo trunca con puntos suspensivos, luego
+# leer mas alla del numero seria medir sobre una cadena cortada.
+ARCH010_DECLARATIONS="$(cd "$ROOT" && timeout 300 "$SDDK_BIN_PATH" dev check-architecture --root . 2>/dev/null | awk '$1 == "ARCH010" && $2 == "FAIL" {print $3; exit}')"
 
 if ! printf '%s' "$BIN_RELATION" | grep -qE 'matches|ahead'; then
     echo "  [FAIL] D4 no se pudo MEDIR: el binario '$SDDK_BIN_PATH' esta '$BIN_RELATION' respecto a este checkout."
@@ -230,10 +254,34 @@ if ! printf '%s' "$BIN_RELATION" | grep -qE 'matches|ahead'; then
 else
     check "las leyes en FAIL son exactamente las declaradas" \
         "$DECLARED_FAILING" "$FAILING_IDS"
+    # La segunda comprobacion, y la que hace que la cifra sea una MEDIDA.
+    # Sin ella, DECLARED_FAILING_DECLARATIONS seria decoracion con un
+    # numero: cambiarlo no moveria nada y nadie lo notaria, que es
+    # indistinguible de no tenerlo. Con ella, o la cifra medida es la
+    # declarada, o el guard dice que la brecha CRECIO o se CERRO.
+    #
+    # Si la lectura no sale —porque la fila no existe, porque el detail
+    # cambio de forma, porque el binario no imprimio lo que se espera— se
+    # falla CERRADO y se dice que no se pudo leer. Un `0` por defecto
+    # seria lo contrario de honesto: 0 significa "no hay deuda", y aqui
+    # significa "no he leido".
+    if [ -z "$ARCH010_DECLARATIONS" ]; then
+        bad "no se pudo LEER la cifra de ARCH010 del binario"
+        echo "         Se esperaba un entero en el detail de la fila ARCH010."
+        echo "         No se sustituye por 0: 0 significaria 'no hay deuda'"
+        echo "         cuando lo cierto es 'no he leido'."
+    elif ! printf '%s' "$ARCH010_DECLARATIONS" | grep -qE '^[0-9]+$'; then
+        bad "la cifra de ARCH010 no es un entero: '$ARCH010_DECLARATIONS'"
+    else
+        check "las declaraciones en FAIL de ARCH010 son las declaradas" \
+            "$DECLARED_FAILING_DECLARATIONS" "$ARCH010_DECLARATIONS"
+    fi
 fi
 echo "        leyes en FAIL medidas: ${FAILING_IDS:-(ninguna)}"
 echo "        declaradas: $DECLARED_FAILING"
-echo "        aristas medidas por ARCH010: 14 (sddk-cli -> sddk-storage)"
+echo "        declaraciones en FAIL de ARCH010 medidas: ${ARCH010_DECLARATIONS:-<no leidas>}"
+echo "        declaradas: $DECLARED_FAILING_DECLARATIONS"
+echo "        (declaraciones, NO aristas: es UNA arista sddk-cli -> sddk-storage)"
 
 echo
 echo "== por que cada declaracion sigue abierta =="
@@ -319,26 +367,30 @@ echo "    evaluador EMITE el tamano del sujeto, que es lo que evita el verde"
 echo "    mudo. Lo que no mide, porque no puede hacerlo leyendo codigo, es que"
 echo "    la cifra sea la correcta en ejecucion: un evaluador que emitiera"
 echo "    subject_declarations: 999 sobre un sujeto de 2 declaraciones seria"
-    echo "    verde aqui."
+echo "    verde aqui."
 echo "    Lo que cubre ese caso es el falsador de M8."
 echo "  - Que el alcance de ARCH006 sea el que la regla declara. Ahora es un"
 echo "    path EXACTO (crates/sddk-domain/src/graph.rs), no un prefijo, y hay"
 echo "    test de direccionalidad; lo que este guard no hace es ejecutarlo."
 echo "  - Que la arista reportada sea la arista REAL. capture_live solo ve"
-echo "    lineas `use`/`pub use` que llegan hasta `::`. Sigue ABIERTO:"
-echo "      - una llamada con path completo sin `use`, como"
+echo "    lineas use / pub use que llegan hasta '::'. Sigue ABIERTO:"
+echo "      - una llamada con path completo sin use, como"
 echo "        dev/projection.rs llamando a sddk_storage::SqliteEventStore::open(..),"
 echo "        no deja arista. Hay 3 en ese fichero y la medicion no las ve."
-echo "      - un `use` reescrito con alias no deja arista."
+echo "      - un use reescrito con alias no deja arista."
 echo "    Los dos huecos anteriores SI se cerraron, y por eso se listan aparte"
 echo "    para que el cierre sea visible y no se confundan con el que sigue:"
-echo "      - `pub use` no contaba (el composition root re-exporta `Storage` con"
-echo "        `pub use`, y era justo la arista que el waiver de ARCH003 nombra:"
+echo "      - pub use no contaba (el composition root re-exporta Storage con"
+echo "        'pub use', y era justo la arista que el waiver de ARCH003 nombra:"
 echo "        la medicion no podia ver la arista que su propio waiver citaba)."
-echo "      - un `use` dentro de `#[cfg(test)]` contaba como arista de"
+echo "      - un use dentro de #[cfg(test)] contaba como arista de"
 echo "        PRODUCCION (1 sola: crates/sddk-cli/src/ledger.rs:1001)."
 echo "    Falsadores de los dos cerrados en"
 echo "    tests/test_capture_fidelity_mutation.sh."
+echo "  - El DESGLOSE por fichero de las 12 declaraciones de ARCH010. La tabla"
+echo "    lo trunca con puntos suspensivos y el JSON de --out no lleva observed,"
+echo "    luego el numero total se mide y el reparto de ficheros no. Se declara"
+echo "    aqui para que no se lea como ausente lo que no se expone."
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
