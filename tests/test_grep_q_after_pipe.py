@@ -198,6 +198,39 @@ def strip_comment(line: str) -> str:
 
 
 # ── LINEAS LOGICAS ───────────────────────────────────────────────────────────
+def _abre_if(code_line: str) -> bool:
+    """La linea abre un `if`/`elif` y no lo cierra en la misma linea?
+
+    MEDIDO, y el motivo de que exista esta funcion. `logical_lines` unia con la
+    siguiente SOLO cuando la linea acababa en barra invertida. Un comando de
+    varias lineas cuyo PRIMER renglon no acaba en barra se partia en dos, y el
+    `if` que consume el rc de la tuberia se quedaba en el renglon anterior. El
+    caso real esta en `test_c5_architecture_coverage.sh`: la fisica 329 abre
+    `if awk '...` sin cerrar, la 330 sigue con `inside { ... }` y la 331 con la
+    tuberia. La 329 se emitia sola, luego la 330 empezaba por `inside` y no por
+    `if`, luego `rc_consumed` daba False y el sitio quedaba EXENTO.
+
+    No es teorico: el mismo comando, con el mismo programa y el mismo fichero
+    reales, tomo la rama FALSA del `if` 1 vez de 300 con el needle presente en
+    la salida de awk, o sea el guard decidio lo contrario de la verdad. Y la
+    linea 341 del MISMO fichero tiene la forma identica y si se une bien da
+    True: dos construcciones iguales, dos veredictos, y lo unico que las separa
+    es donde cae la barra.
+
+    **POR QUE LA REGLA ES ESTRECHA A PROPOSITO.** MEDIDO: la version amplia,
+    unir cuando la linea deja una comilla sin cerrar, arrastro `release.sh`
+    entero desde la fisica 764 a una linea logica de 101.231 caracteres y sus
+    3 sitios desaparecieron; en `test_release_ci_staging.sh` bajo de 152 lineas
+    logicas a 29 y perdio sus 3 sitios. Causa: un apostrofe dentro de un
+    comentario (`bundle's`). Un arreglo de cobertura que QUITA cobertura es peor
+    que no arreglar. Aqui solo se une un `if` visiblemente abierto, que ni un
+    comentario ni una cadena producen por accidente.
+    """
+    if not re.match(r"\s*(if|elif)\b", code_line):
+        return False
+    return not re.search(r"\bthen\b", code_line)
+
+
 def logical_lines(text: str) -> list[tuple[int, str]]:
     """Une continuaciones de linea. Sin esto, la mitad de los sitios reales se
     escapan, porque la forma del repo es partir el pipe en su propia linea."""
@@ -209,6 +242,13 @@ def logical_lines(text: str) -> list[tuple[int, str]]:
         s = raw.rstrip()
         if s.endswith("\\"):
             buf += s[:-1] + " "
+            continue
+        # MEDIDO: se unen tambien las lineas que ABREN un `if` sin cerrarlo, o
+        # el `if` que consume el rc se queda en el renglon anterior y el sitio
+        # queda EXENTO. Ver `_abre_if`, que explica el caso medido y por que la
+        # regla es estrecha a proposito.
+        if _abre_if(strip_comment(s)):
+            buf += raw
             continue
         buf += raw
         out.append((start, buf))
@@ -230,6 +270,12 @@ def head_command(head: str) -> str:
     """
     h = re.sub(r"'[^']*'", " '\x01' ", head)
     h = re.sub(r'"[^"]*"', ' "\x01" ', h)
+    # MEDIDO: `${V#*|}` lleva una `{` que NO abre un bloque. El bucle de
+    # separadores de abajo corta en el ultimo `{`, luego cortaba DENTRO de la
+    # expansion y devolvia `V#*|}"` como escritor, que no es ningun comando.
+    # Se enmascara la expansion antes de buscar separadores, con el mismo
+    # criterio que usa `mask_dollar` en el llamante.
+    h = re.sub(r"\$\{[^}]*\}", " \x01 ", h)
     opens: list[int] = []
     for idx, ch in enumerate(h):
         if ch == "(":
@@ -250,16 +296,22 @@ def head_command(head: str) -> str:
 
 
 # ── SE CONSUME EL RC ────────────────────────────────────────────────────────
-def rc_consumed(logical: str) -> bool:
+def rc_consumed(logical: str, m=None) -> bool:
     """El rc del pipeline decide algo.
 
     En `if ! sed ... | grep -q X; then` el `if` abre la LINEA, no la tuberia.
     Exigir que `if` estuviera pegado al pipe —que fue la primera redaccion—
     tablero el caso real que motivo esta deuda y marco 2 peligros sobre 91.
+
+    MEDIDO: recibe el match concreto de la tuberia que se esta clasificando. Con
+    la busqueda globalNhuvia confusion cuando una linea lleva VARIAS tuberias:
+    el `&&` que consume el rc de la segunda se leeria como si consumiera el de
+    la primera, y el sitio se clasificaria por el veredicto de otro sitio.
     """
-    m = RE_PIPE_Q.search(logical)
-    if not m:
-        return False
+    if m is None:
+        m = RE_PIPE_Q.search(logical)
+        if not m:
+            return False
     before = logical[: m.start()]
     if re.match(r"\s*(if|while|until|elif)\b", before):
         return True
@@ -289,23 +341,27 @@ def scan_file(path: pathlib.Path, rel: str) -> list[Site]:
         if not code.strip():
             continue
         masked, kinds = mask_dollar(code)
-        m = RE_PIPE_Q.search(masked)
-        if not m:
-            continue
-        writer = head_command(masked[: m.start()])
-        if not writer:
-            continue
-        sites.append(
-            Site(
-                file=rel,
-                line=lineno,
-                writer=writer,
-                builtin=writer in BUILTINS,
-                consumed=rc_consumed(code) or errexit,
-                in_cmdsub="cmdsub" in kinds,
-                snippet=code.strip()[:150],
+        # MEDIDO, y es una perdida de cobertura, no un detalle: `search` solo
+        # devuelve la PRIMERA tuberia de la linea. Al unir lineas logicas (ver
+        # `logical_lines`) una linea puede llevar varias, luego con `search` el
+        # recuento BAJO de 100 a 73 sitios al arreglar el troceado — es decir,
+        # el arreglo habria declarado mas cobertura mientras midia menos. Se
+        # recorren TODAS las ocurrencias de la clase.
+        for m in RE_PIPE_Q.finditer(masked):
+            writer = head_command(masked[: m.start()])
+            if not writer:
+                continue
+            sites.append(
+                Site(
+                    file=rel,
+                    line=lineno,
+                    writer=writer,
+                    builtin=writer in BUILTINS,
+                    consumed=rc_consumed(code, m) or errexit,
+                    in_cmdsub="cmdsub" in kinds,
+                    snippet=code.strip()[:150],
+                )
             )
-        )
     return sites
 
 

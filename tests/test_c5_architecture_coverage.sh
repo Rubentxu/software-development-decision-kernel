@@ -326,9 +326,19 @@ echo "== D5: ninguna ley dice Pass sin haber mirado al menos una arista =="
 # llamado cumple. Delegar no es informar; hay que bajar por la llamada.
 EMPTY_SUBJECTS=""
 HELPER_REPORTS=""
-if awk '/^fn evaluate_forbidden_edge\(/ { inside = 1; next }
-       inside { if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) exit; print }' "$EVALUATORS" \
-     | grep -q '"subject_declarations":'; then
+# MEDIDO: esto era `if awk '...' "$EVALUATORS" | grep -q '...'; then`. `awk` es un
+# escritor EXTERNO y su salida puede ser larga; `grep -q` sale en cuanto casa,
+# `awk` recibe SIGPIPE y, con `set -o pipefail`, la tuberia devuelve 141 y el
+# `if` toma la rama FALSA con el needle presente en la salida. MEDIDO sobre el
+# programa y el fichero REALES: la rama falsa se tomo 1 vez de 300. O sea, un
+# guard que puede dar por ausente lo que el propio codigo acaba de imprimir.
+# Lo descrubrio `tests/test_grep_q_after_pipe.py`, que lo declaraba EXENTO
+# porque su troceador partia el comando y dejaba el `if` en el renglon
+# anterior. El arreglo es que la decision no dependa de una tuberia: la salida
+# de awk se lee a una variable y se busca con here-string.
+HELPER_BODY="$(awk '/^fn evaluate_forbidden_edge\(/ { inside = 1; next }
+       inside { if ($0 ~ /^fn / || $0 ~ /^\/\/ ── /) exit; print }' "$EVALUATORS")"
+if grep -q '"subject_declarations":' <<<"$HELPER_BODY"; then
     HELPER_REPORTS=yes
 fi
 for id in $DISPATCHED; do

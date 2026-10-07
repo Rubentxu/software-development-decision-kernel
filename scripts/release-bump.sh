@@ -203,17 +203,41 @@ if [ -z "$COMMITS" ]; then
 fi
 
 # --- Bump level ---
+#
+# MEDIDO: estas comparaciones eran tuberias `algo | grep -q`. Con `set -o
+# pipefail`, si el LECTOR de una tuberia sale pronto la tuberia devuelve el
+# fallo del ESCRITOR. En la del breaking change, `git log --format=%B` imprime
+# los cuerpos de TODOS los commits: si `grep -q` casa con "breaking change" en
+# las primeras lineas y cierra, `git log` recibe SIGPIPE, la tuberia devuelve
+# 141, el `||` se cumple POR EL MOTIVO EQUIVOCADO y el nivel cae a minor
+# cuando el commit ES breaking. Un release con breaking change publicado como
+# minor es la clase de defecto mas caro de esta clase: no se ve, y el
+# SemVer queda mal.
+#
+# Lo descrubrio `tests/test_grep_q_after_pipe.py`, que barre el repo. Lo
+# declaraba EXENTO, y no por criterio: su troceador de lineas partia el
+# comando y dejaba el `if` en el renglon anterior. Corregido el troceador, lo
+# declara PELIGROSO con el escritor correcto (`git`).
+#
+# EL ARREGLO NO ES CAMBIAR EL NEEDLE: es que la decision no dependa de una
+# tuberia. Los cuerpos se leen UNA vez a un fichero y se buscan sobre el
+# fichero; `$COMMITS` se busca con here-string, que no es tuberia y por tanto
+# no tiene escritor al que mandarle SIGPIPE.
+BODIES_FILE="$(mktemp)"
+git log --format=%B "${LAST_TAG}..HEAD" > "$BODIES_FILE" 2>/dev/null || true
 
 LEVEL="none"
 if [ -n "$FORCE_VERSION" ]; then
     LEVEL="forced"
-elif echo "$COMMITS" | grep -qiE 'breaking change|^[a-z]+!:' || git log --format=%B "${LAST_TAG}..HEAD" | grep -qiE 'breaking change'; then
+elif grep -qiE 'breaking change' "$BODIES_FILE" \
+    || grep -qiE 'breaking change|^[a-z]+!:' <<<"$COMMITS"; then
     LEVEL="major"
-elif echo "$COMMITS" | grep -qE '^[a-f0-9]+ feat'; then
+elif grep -qE '^[a-f0-9]+ feat' <<<"$COMMITS"; then
     LEVEL="minor"
-elif echo "$COMMITS" | grep -qE '^[a-f0-9]+ (fix|refactor|perf|docs|ci|chore|style|test|build)'; then
+elif grep -qE '^[a-f0-9]+ (fix|refactor|perf|docs|ci|chore|style|test|build)' <<<"$COMMITS"; then
     LEVEL="patch"
 fi
+rm -f "$BODIES_FILE"
 
 if [ -z "$FORCE_VERSION" ] && [ "$PENDING_RELEASE_IS_WORKSPACE" = "1" ]; then
     # The workspace already declares the release version. There is nothing to
