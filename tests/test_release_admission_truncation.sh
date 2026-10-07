@@ -68,6 +68,14 @@ for t in v2.8.0 v2.9.0 v2.9.1 v2.10.0 v2.11.0; do
     git push -q --no-verify "$FAKE" "refs/tags/$t:refs/tags/$t" 2>/dev/null
 done
 EXPECTED_MAX="2.11.0"
+# El numero de tags semver que el remoto de fixture expone. Lo cuenta el
+# propio remoto y no una constante escrita a mano: un numero puesto a mano
+# que se desincroniza del fixture haria que el caso "el conteo es lo que
+# difiere" midiera una discrepancia inventada, y pasaria por deteccion.
+EXPECTED_COUNT="$(git ls-remote --tags "$FAKE" 2>/dev/null \
+    | awk '{print $2}' | grep -vF '^{}' \
+    | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+    | sort -u | grep -c .)"
 
 # ── shim: `git ls-remote` que trunca, SOLO si existe el marcador ─────────────
 #
@@ -94,6 +102,39 @@ cat > "$BIN/git" <<'SHIM'
 #     `rc` de la version anterior de la lib, y este test no mediria el
 #     defecto sino el codigo de salida.
 REAL_GIT="${SDDK_TEST_REAL_GIT:?test harness must say where the real git is}"
+# `config --get remote.<n>.url`: la URL CRUDA, que es de donde sale el slug.
+# `remote get-url` devuelve la expandida por `insteadOf`, y con eso el slug
+# decia "no es github" de un remoto que si lo es.
+if [[ "${1:-}" == "config" && "${2:-}" == "--get" && "${3:-}" == remote.*.url ]]; then
+    # `SDDK_TEST_SLUG_LOCAL` devuelve una ruta local, para el caso de "el
+    # remoto no es github". Tiene que ganar TAMBIEN aqui: el slug se resuelve
+    # primero por `config --get`, luego un shim que ignorase la bandera en
+    # esta rama resolveria el caso por la rama equivocada y pasaria.
+    if [[ -n "${SDDK_TEST_SLUG_LOCAL:-}" ]]; then
+        printf '%s\n' "${SDDK_RELEASE_ADMISSION_REMOTE:-$3}"
+    else
+        printf 'git@github.com:%s.git\n' "${SDDK_TEST_SLUG:-acme/widgets}"
+    fi
+    exit 0
+fi
+if [[ "${1:-}" == "remote" && "${2:-}" == "get-url" ]]; then
+    # De aqui sale el owner/repo con el que se consulta la segunda fuente.
+    # Sin esto el remoto de fixture —una ruta local— no es un repositorio de
+    # github y el crosscheck se cerraria SIEMPRE: el guard verde por la razon
+    # equivocada, que es indistinguible de estar roto. `SDDK_TEST_SLUG_LOCAL`
+    # devuelve una ruta local, para el caso de "el remoto no es github".
+    if [[ -n "${SDDK_TEST_SLUG_LOCAL:-}" ]]; then
+        printf '%s\n' "${SDDK_RELEASE_ADMISSION_REMOTE:-$3}"
+    else
+        # `acme/widgets` y no `acme/widgets/sddk-fixture`: el slug son DOS
+        # segmentos, owner/repo, y una version anterior de este shim colgo un
+        # tercer segmento del nombre de fixture. El regex del slug lo
+        # rechazaba, el crosscheck se cerraba siempre y el test quedaba rojo
+        # por una URL mal formada, no por el defecto que dice medir.
+        printf 'git@github.com:%s.git\n' "${SDDK_TEST_SLUG:-acme/widgets}"
+    fi
+    exit 0
+fi
 if [[ "${1:-}" == "ls-remote" && -f "$SDDK_TEST_TRUNCATE_MARKER" ]]; then
     COUNTER="$SDDK_TEST_TRUNCATE_MARKER.counter"
     n=0; [[ -f "$COUNTER" ]] && n="$(cat "$COUNTER")"
@@ -115,6 +156,65 @@ export SDDK_TEST_REAL_GIT
 export SDDK_TEST_TRUNCATE_MARKER="$TMPROOT/truncate"
 export SDDK_RELEASE_ADMISSION_REMOTE="$FAKE"
 export PATH="$BIN:$PATH"
+
+# ── shim: `gh`, la SEGUNDA AUTORIDAD ───────────────────────────────────────
+#
+# MEDIDO en session-91 contra el remoto real: el guard de dos lecturas daba
+# PASS con la respuesta EQUIVOCADA el 30% de las veces (3 de 10 corridas
+# devolvieron v2.9.1 con rc=0 y el tag mas nuevo, v2.14.0, en el remoto). No
+# por casualidades: el orden de `ls-remote` varia entre lecturas, asi que una
+# respuesta parcial de 250 de 387 refs puede dejar fuera los tags recientes sin
+# que el codigo de salida lo diga.
+#
+# Este shim responde con la lista REAL del remoto de fixture, leidas con el
+# git de verdad (`$SDDK_TEST_REAL_GIT`, no el shim truncar): si usara el shim,
+# la segunda fuente se truncaria con la primera y el test no distinguiria "la
+# segunda fuente discrepa" de "las dos dicen lo mismo a medias", que es
+# precisamente el caso que hay que medir.
+cat > "$BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+# Solo `gh api --paginate repos/<slug>/tags?per_page=100`. Cualquier otra
+# invocacion sale con 64 para que un uso inesperado se vea en vez de
+# devolver una lista vacia que pareceria un remoto sin tags.
+spec=""
+for a in "$@"; do
+    case "$a" in repos/*/tags*) spec="$a" ;; esac
+done
+if [[ "${1:-}" != "api" || -z "$spec" ]]; then
+    echo "gh shim: unexpected invocation: $*" >&2
+    exit 64
+fi
+if [[ -n "${SDDK_TEST_API_FAIL:-}" ]]; then
+    exit 1
+fi
+out="$("$SDDK_TEST_REAL_GIT" ls-remote --tags "$SDDK_RELEASE_ADMISSION_REMOTE" 2>/dev/null \
+      | awk '{print $2}' \
+      | grep -vF '^{}' \
+      | sed -n 's|^refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p')"
+if [[ -n "${SDDK_TEST_API_MISMATCH:-}" ]]; then
+    # Quita tags SIN mover el maximo: v2.11.0 sigue siendo el mayor. Un guard
+    # que comparase solo maximos pasaria esto sin pestanear, y esa es la
+    # diferencia que este shim existe para medir. Una version anterior quita
+    # v2.11.0 (el maximo) y con eso se conformaba con medir lo de siempre.
+    out="$(printf '%s\n' "$out" | grep -vE '^v2\.(9\.0|9\.1)$')"
+fi
+if [[ -n "${SDDK_TEST_API_NEWER:-}" ]]; then
+    # El caso SIMETRICO: mismo numero de tags, uno MAS NUEVO. Cuenta igual,
+    # maximo no. Una huella que solo mirase el conteo pasaria esto, que es lo
+    # que hace falta para que el contrato no dependa de una sola mitad de la
+    # huella: los dos casos tienen que caer, y cada uno hunde una mitad
+    # distinta.
+    out="$(printf '%s\n' "$out" | sed 's|^v2\.11\.0$|v2.99.0|')"
+fi
+printf '%s\n' "$out"
+exit 0
+SHIM
+chmod +x "$BIN/gh"
+
+# PATH sin el shim de `gh`, para el caso "la segunda fuente no esta".
+BIN_NOGH="$TMPROOT/bin-nogh"
+mkdir -p "$BIN_NOGH"
+ln -s "$BIN/git" "$BIN_NOGH/git"
 
 # shellcheck source=/dev/null
 # shellcheck disable=SC1091
@@ -181,7 +281,134 @@ SDDK_RELEASE_ADMISSION_REMOTE="$TMPROOT/no-existe.git" bash -c '
 ' && ok "un remoto que no responde se rechaza, no se degrada a local" \
       || bad "un remoto inalcanzable dejo pasar algo"
 
+# ── LA SEGUNDA AUTORIDAD ───────────────────────────────────────────────────
+#
+# El caso de arriba era el que el guard de dos lecturas ya cazaba. Estos son los
+# que NO podia cazar, y son los que mas pesan.
+
+echo
+echo "== la segunda fuente contradice a la primera, aunque el maximo NO se mueva =="
+# Las DOS lecturas de ls-remote coinciden y dan el maximo real. Lo que miente
+# es la API, y miente quitando tags intermedios: el maximo sigue siendo
+# v2.11.0 en las dos fuentes. Comparar maximos — que es lo que hacia el guard
+# anterior — daria verde. El conteo es lo que lo distingue.
+out="$(SDDK_TEST_API_MISMATCH=1 resolve)"; rc=$?
+check "no acepta una segunda fuente incompleta aunque el maximo coincida" "1" "$rc"
+case "$out" in
+    crosscheck_mismatch:*)
+        ok "el motivo declara el cruce de fuentes: $out"
+        if [[ "$out" == *"ls-remote="* && "$out" == *"api="* ]]; then
+            ok "el motivo trae la huella de LAS DOS fuentes"
+        else
+            bad "el motivo no dice que discrepa: $out"
+        fi
+        # La razon de que el conteo este en el motivo: sin el, el lector tiene
+        # que adivinar por que dos fuentes que dicen lo mismo se contradicen.
+        if [[ "$out" == *"ls-remote=${EXPECTED_COUNT}|"* && "$out" == *"api=$((EXPECTED_COUNT - 2))|"* ]]; then
+            ok "las huellas traen conteo y maximo, y el conteo es el que difiere"
+        else
+            bad "las huellas no permiten ver que solo difiere el conteo: $out"
+        fi
+        ;;
+    *)
+        bad "una segunda fuente incompleta no dio el motivo de cierre: $out"
+        ;;
+esac
+unset SDDK_TEST_API_MISMATCH
+
+echo
+echo "== la segunda fuente trae un tag mas nuevo: el conteo no basta =="
+# Simetrico del caso anterior y con el otro reparto: aqui el numero de tags es
+# el mismo y lo que cambia es el maximo. Si la huella se quedara con el
+# conteo, esto pasaria. Los dos casos juntos dicen que la huella usa las dos
+# mitades, y no que una de ellas este de adorno.
+out="$(SDDK_TEST_API_NEWER=1 resolve)"; rc=$?
+check "no acepta un tag mas nuevo que el remoto no tiene" "1" "$rc"
+case "$out" in
+    crosscheck_mismatch:*)
+        ok "el motivo declara el cruce de fuentes: $out"
+        if [[ "$out" == *"ls-remote=${EXPECTED_COUNT}|"* ]]; then
+            ok "el motivo muestra que el conteo es el mismo y lo que no es el maximo"
+        else
+            bad "el motivo no deja ver que el conteo coincidio: $out"
+        fi
+        if [[ "$out" == *"api=${EXPECTED_COUNT}|2.99.0"* ]]; then
+            ok "el motivo declara el maximo que la segunda fuente trayo por suyo"
+        else
+            bad "el motivo no declara el maximo discrepante: $out"
+        fi
+        ;;
+    *)
+        bad "una segunda fuente con un tag mas nuevo dio el motivo equivocado: $out"
+        ;;
+esac
+unset SDDK_TEST_API_NEWER
+
+echo
+echo "== la segunda fuente no esta: se cierra, no se degrada =="
+# Un PATH minimo, no "$BIN_NOGH:$PATH": este empieza por el PATH del sistema y
+# NO vuelve a anadir el del proceso. Con "$BIN_NOGH:$PATH" el `gh` de asdf
+# seguia ahi, el caso pasaba verde con el `gh` de verdad y no midia nada.
+out="$(PATH="$BIN_NOGH:/usr/bin:/bin" bash -c '
+    . "'"$LIB"'"
+    _last_published_resolve
+    echo "$LAST_PUB_OUTCOME"
+')"
+case "$out" in
+    crosscheck_unavailable:gh-not-in-path)
+        # El motivo se imprime. Un caso que lo comprueba pero no lo enseña
+        # deja al falsador sin nada que medir: la mutacion que lo rompe tiene
+        # que hacer desaparecer una ficha del informe, y si el motivo nunca
+        # aparece en el informe no hay ficha. Se vio construir asi.
+        ok "sin gh el motivo dice exactamente que falta: $out"
+        ;;
+    *)
+        bad "sin gh el motivo no nombra la ausencia de la segunda fuente: $out"
+        ;;
+esac
+# El codigo de salida se lee del comando, no del `if` de dentro. Una primera
+# version metia el `if _last_published_resolve; then exit 9; fi` dentro del
+# bash -c y luego miraba el rc del bash -c: un `if` cuyo camino falso no se
+# toma devuelve 0 SIEMPRE, luego "no resolvio" y "resolvio" se leian igual.
+rc2=0
+PATH="$BIN_NOGH:/usr/bin:/bin" bash -c '
+    . "'"$LIB"'"
+    _last_published_resolve
+' >/dev/null || rc2=$?
+check "sin la segunda fuente no se resuelve" "1" "$rc2"
+
+echo
+echo "== la segunda fuente no puede responder: se cierra, no se degrada =="
+out="$(SDDK_TEST_API_FAIL=1 resolve)"; rc=$?
+check "una API que falla da error de codigo" "1" "$rc"
+case "$out" in
+    crosscheck_failed:*)
+        ok "el motivo distingue 'la API fallo' de 'la API discrepo': $out"
+        ;;
+    *)
+        bad "una API caida dio el motivo equivocado: $out"
+        ;;
+esac
+unset SDDK_TEST_API_FAIL
+
+echo
+echo "== un remoto que no es github no puede confirmarse: se cierra =="
+out="$(SDDK_TEST_SLUG_LOCAL=1 SDDK_RELEASE_ADMISSION_REMOTE="$FAKE" bash -c '
+    . "'"$LIB"'"
+    _last_published_resolve
+    echo "$LAST_PUB_OUTCOME"
+')"
+case "$out" in
+    crosscheck_unavailable:remote-is-not-github:*)
+        ok "un remoto no-github se declara, no se resuelve por su cuenta"
+        ;;
+    *)
+        bad "un remoto no-github dio un motivo que no lo nombra: $out"
+        ;;
+esac
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [[ "$FAIL" -eq 0 ]] || exit 1
 echo "RESULT: PASS — una lectura parcial del remoto no puede pasar por una version publicada."
+echo "         Ni aunque la segunda fuente conserve el maximo."

@@ -39,6 +39,52 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# ── shims: la SEGUNDA AUTORIDAD tiene que existir tambien aqui ──────────────
+#
+# `last_published_version` reconcilia la lectura de `git ls-remote` con la API
+# de GitHub antes de devolver un baseline. Sin estos dos shims, TODOS los
+# casos v2 de este fichero —cuatro de ellos esperando ACCEPT— cerrarian con
+# `crosscheck_unavailable:remote-is-not-github`, porque los remotos de aqui son
+# rutas locales. Eso no seria un fallo de la admision: seria un fixture que ya
+# no sabe imitar el mundo en el que la admision corre.
+#
+# `git` solo intercepta `remote get-url`; todo lo demas (init, add, commit,
+# push) sigue yendo al git real, que es lo que hace falta para que los
+# fixtures sigan siendo repos de verdad. `gh` responde con la lista de tags del
+# remoto que cada caso acaba de exportar, leida con el git real.
+BIN="$TMPROOT/bin"
+mkdir -p "$BIN"
+REAL_GIT="$(command -v git)"
+export SDDK_TEST_REAL_GIT="$REAL_GIT"
+cat > "$BIN/git" <<'SHIM'
+#!/usr/bin/env bash
+# `config --get remote.<n>.url`: la URL CRUDA, que es de donde sale el slug.
+# `remote get-url` devuelve la expandida por `insteadOf`, y con eso el slug
+# decia "no es github" de un remoto que si lo es.
+if [[ "${1:-}" == "config" && "${2:-}" == "--get" && "${3:-}" == remote.*.url ]]; then
+    printf 'git@github.com:%s.git\n' "${SDDK_TEST_SLUG:-acme/widgets}"
+    exit 0
+fi
+if [[ "${1:-}" == "remote" && "${2:-}" == "get-url" ]]; then
+    printf 'git@github.com:acme/widgets.git\n'
+    exit 0
+fi
+exec "$SDDK_TEST_REAL_GIT" "$@"
+SHIM
+cat > "$BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+for a in "$@"; do
+    case "$a" in repos/*/tags*) spec="$a" ;; esac
+done
+[[ "${1:-}" == "api" && -n "${spec:-}" ]] || exit 64
+"$SDDK_TEST_REAL_GIT" ls-remote --tags "${SDDK_RELEASE_ADMISSION_REMOTE:-}" 2>/dev/null \
+    | awk '{print $2}' | grep -vF '^{}' \
+    | sed -n 's|^refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p'
+exit 0
+SHIM
+chmod +x "$BIN/git" "$BIN/gh"
+export PATH="$BIN:$PATH"
+
 PASS=0
 FAIL=0
 
@@ -285,7 +331,15 @@ case_v2_run_query_failed() {
     rc=$?
     got="ACCEPT"
     [[ $rc -ne 0 ]] && got="REJECT"
-    if [[ "$got" == "REJECT" ]] && [[ "$out" == *"query-failed"* ]]; then
+    # El motivo se busca por su FORMA, no por el texto exacto. Antes era
+    # `REJECT query-failed last-pub=<motivo>` y se buscaba la cadena
+    # "query-failed"; ahora el prefijo es `unresolved last-pub=` y el motivo
+    # entero va detras, porque los outcomes de la segunda autoridad
+    # (crosscheck_*) no comparten ese nombre y un recorte por `query_failed:`
+    # los imprimia enteros por casualidad. Fijar la cadena exacta hacia que
+    # este test midiera el texto del mensaje, que es justo lo que cambia
+    # cuando se anade un outcome.
+    if [[ "$got" == "REJECT" ]] && [[ "$out" == *"last-pub=query_failed:"* ]]; then
         echo "PASS  [REJECT query-failed] v2: $name  ($out)"
         PASS=$((PASS + 1))
     else

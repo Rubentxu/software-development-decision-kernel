@@ -120,6 +120,14 @@ release_admission_check() {
 #                                       COMPLETE read, and this is the case
 #                                       that a single `rc -eq 0` check cannot
 #                                       see. MUST also fail closed.
+#   $LAST_PUB_OUTCOME = "crosscheck_unavailable:<why>"
+#   $LAST_PUB_OUTCOME = "crosscheck_failed:<slug>"
+#   $LAST_PUB_OUTCOME = "crosscheck_mismatch:<ls>|<api>"
+#                                       →  the SECOND AUTHORITY could not
+#                                       confirm the first one, or contradicted
+#                                       it. See "LA TERCERA FUENTE" below. All
+#                                       three fail closed: an unconfirmed read
+#                                       is not a confirmed one.
 #
 # Sourceable. Exports $LAST_PUB_OUTCOME for the caller. The previous
 # contract (return-1 on empty) is preserved for back-compat callers that
@@ -132,16 +140,130 @@ release_admission_check() {
 # ramas seria dos copias que divergen en cuanto una cambia — la misma clase
 # de defecto que este fichero ya registro con la lista de aliases y con las
 # siete filas de frontera de UAT. Una sola extraccion, dos lecturas.
-_max_published_tag_from_refs() {
+_semver_tags_from_refs() {
     printf '%s\n' "$1" \
         | awk '{print $2}' \
+        | grep -vF '^{}' \
         | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
-        | sort -V -r \
-        | head -1
+        | sort -u
+}
+
+_max_published_tag_from_refs() {
+    _semver_tags_from_refs "$1" | sort -V -r | head -1
+}
+
+# remote_repo_slug <remote> -> "owner/repo" si el remoto es un repositorio de
+# github.com; sale con 1 si no lo es (un remoto local, un fork en otro host).
+#
+# Es la pieza que convierte "el remoto" en algo consultable por la API. No es
+# decorativa: sin ella no hay segunda fuente, y sin segunda fuente la lectura
+# parcial no se puede confirmar (ver LA TERCERA FUENTE).
+_remote_repo_slug() {
+    local remote="$1" url owner_repo
+    # Se lee la URL CRUDA de la configuracion, no `git remote get-url`.
+    # MEDIDO, y no es una preferencia: `get-url` devuelve la URL YA
+    # EXPANDIDA por `url.<x>.insteadOf`, y `ls-remote` expande exactamente la
+    # misma. Preguntar a los dos cosas distintas sobre la misma identidad no
+    # tiene salida —uno tiene que mentir—, y el que miente es el slug, que
+    # acaba diciendo "esto no es un repositorio de github" de un remoto que si
+    # lo es. `insteadOf` es un alias de TRANSPORTE: saber que aqui las
+    # conexiones van a un directorio local no dice a que repositorio pertenece
+    # el proyecto, y la segunda fuente tiene que recibir la identidad real o
+    # no esta mirando el mismo repositorio.
+    url="$(git config --get "remote.$remote.url" 2>/dev/null || true)"
+    if [[ -z "$url" ]]; then
+        # El remoto puede venir dado como ruta (`/ruta/al/repo.git`) en vez de
+        # como nombre. `get-url` no aplica a esos, asi que es el unico que
+        # puede resolverlos, y devolvera algo que no es github — que es la
+        # respuesta correcta para un repo local.
+        url="$(git remote get-url "$remote" 2>/dev/null || true)"
+    fi
+    [[ -z "$url" ]] && return 1
+    case "$url" in
+        git@github.com:*)      owner_repo="${url#git@github.com:}" ;;
+        ssh://git@github.com/*) owner_repo="${url#ssh://git@github.com/}" ;;
+        https://github.com/*)   owner_repo="${url#https://github.com/}" ;;
+        http://github.com/*)    owner_repo="${url#http://github.com/}" ;;
+        *) return 1 ;;
+    esac
+    owner_repo="${owner_repo%/}"
+    owner_repo="${owner_repo%.git}"
+    [[ "$owner_repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || return 1
+    printf '%s\n' "$owner_repo"
+}
+
+# published_tags_via_api <owner/repo> -> una linea por tag semver.
+#
+# MEDIDO: `gh api --paginate repos/<slug>/tags?per_page=100` devuelve exactamente
+# el mismo conjunto de tags semver que `git ls-remote --tags`, sin las refs
+# peeled (`^{}`), que son las 75 lineas de diferencia entre 387 y 312. Verificar
+# eso ANTES de basar un gate en el es lo que separa una autoridad real de una
+# suposicion: si los conjuntos no hubieran coincidido, la reconcil habria
+# estado midiendo dos cosas distintas y habria cerrado siempre, que es la
+# forma educada de no detectar nada.
+_published_tags_via_api() {
+    gh api --paginate "repos/$1/tags?per_page=100" --jq '.[].name' 2>/dev/null \
+        | sed -n 's|^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
+        | sort -u
+}
+
+# tags_fingerprint <lista de versiones> -> "<n>|<max>"
+#
+# El conteo es la parte que hace el trabajo. Comparar solo el maximo deja pasar
+# toda lectura parcial que no se lleve el tag mas nuevo, y MEDIDO en session-91
+# eso son 2 de cada 3 truncos de este repo. El conteo no: una lista a la que le
+# faltan refs tiene menos lineas, y eso no depende de que el maximo se mueva.
+_tags_fingerprint() {
+    local count max
+    count="$(printf '%s\n' "$1" | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+$')"
+    max="$(printf '%s\n' "$1" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+    printf '%s|%s\n' "${count:-0}" "${max:-}"
 }
 
 last_published_version() {
-    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}" raw rc tag raw2 rc2 tag2
+    local remote="${SDDK_RELEASE_ADMISSION_REMOTE:-origin}"
+    local attempt="${SDDK_RELEASE_ADMISSION_ATTEMPTS:-3}" outcome="query_failed:no-attempt" n
+    # Reintentos, y lo que NO son.
+    #
+    # MEDIDO: con el crosscheck ya puesto, el fallo por trunco paso de "el 30%
+    # de las veces daba la respuesta EQUIVOCADA" a "cerraba cerrado". Cerrar
+    # es correcto y no admite, pero un gate que se rinde al primer contraste
+    # se queja cada pocas corridas por un fallo de red que no va a durar, y un
+    # gate que se queja a menudo acaba siendo el que se relaja.
+    #
+    # Reintentar NO baja el liston: cada ronda exige las MISMAS tres
+    # confirmaciones (dos lecturas de git y una de la API, con huellas
+    # iguales). Lo que cambia es cuantas veces se pide antes de declarar que no
+    # se pudo confirmar. Con el trunco medido (~6% por lectura, dos lecturas por
+    # ronda) una ronda sola falla alrededor de 1 de cada 100 y tres rondas
+    # bajan eso a menos de 1 entre 10^5; seguir PRODUCTO y con ruido de red no
+    # es un plan de entrega.
+    #
+    # El motivo que se devuelve al fallar es el de la ULTIMA ronda, no el
+    # primero: el motivo de la ultima es el estado en el que se ha quedado, y
+    # el de la primera puede ser un corte que ya se resolvio.
+    for ((n = 1; n <= attempt; n++)); do
+        # Se llama SIN captura de stdout a proposito. `$(...)` pondria la ronda
+        # en un subshell, y `LAST_PUB_OUTCOME` —lo unico que dice si esta
+        # ronda servo— se modificaria ahi dentro y no volveria: el padre se
+        # quedaria con el motivo de la ronda anterior y leeria un exito o un
+        # fallo de otra ronda. La ronda deja el tag en `_LAST_PUB_TAG` y el
+        # motivo en `LAST_PUB_OUTCOME`, ambos en el shell que llama.
+        _last_published_attempt "$remote"
+        if [[ "$LAST_PUB_OUTCOME" == bootstrap || "$LAST_PUB_OUTCOME" == v* ]]; then
+            printf '%s' "$_LAST_PUB_TAG"
+            return 0
+        fi
+        outcome="$LAST_PUB_OUTCOME"
+    done
+    LAST_PUB_OUTCOME="$outcome"
+    return 1
+}
+
+# Una ronda completa: dos lecturas de `git ls-remote` mas la segunda
+# autoridad. Pone el veredicto en LAST_PUB_OUTCOME y devuelve su codigo.
+_last_published_attempt() {
+    local remote="$1" raw rc tag raw2 rc2 tag2
     raw="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$remote" 2>&1)"
     rc=$?
     if [[ $rc -ne 0 ]]; then
@@ -197,12 +319,68 @@ last_published_version() {
         return 1
     fi
 
+    # ── LA TERCERA FUENTE, Y POR QUE DOS LECTURAS NO ALCANZABAN ──────────────
+    #
+    # MEDIDO en session-91 contra este remoto real, con el resolutor real:
+    #
+    #   4/10 corridas -> v2.14.0   (correcto)
+    #   3/10 corridas -> query_inconsistent   (el guard de dos lecturas CERRA:
+    #                                            hace su trabajo)
+    #   3/10 corridas -> v2.9.1    (PASS FALSO: el guard pasa y la respuesta es
+    #                                 incorrecta)
+    #
+    # Treinta por ciento de PASS incorrecto, con el codigo de salida a 0 en las
+    # tres ramas. Y el motivo esta capturado, no inferido: la lectura parcial
+    # que produce `v2.9.1` tiene 250 lineas donde la completa tiene 387, son un
+    # subconjunto EXACTO de la completa (`comm -12` -> 250), y NO viene ordenada
+    # lexicograficamente como la completa — v2.14.0 ocupa la linea 338 de la
+    # completa y no esta, y v2.9.1 ocupa la ultima. El orden de la respuesta
+    # VARIA entre lecturas, luego el corte de red se lleva el final de ESE
+    # orden y no siempre se lleva los tags recientes.
+    #
+    # Eso deja a las dos lecturas en una posicion que no se salva leyendo dos
+    # veces: dos truncos pueden coincidir, y MEDIDO de 50 lecturas fueron 3
+    # parciales y SOLO 1 de esas 3 movio el maximo — las otras 2 pasaban porque
+    # el maximo no se habia movido. Comparar dos maximos detecta 1 de cada 3
+    # truncos y deja pasar 2 de cada 3. La garantia era "1/3 de deteccion", y se
+    # escribio como si fuera "ninguna pasa".
+    #
+    # Lo que SI separa una respuesta completa de una parcial, sin conocer el
+    # total esperado de antemano, es preguntarle a OTRO sitio. La API REST de
+    # GitHub no habla el protocolo git: es otro transporte, otro host y otro
+    # endpoint, y una respuesta parcial de `info/refs` no tiene por que tocar
+    # `api.github.com`. No es la MISMA lectura dos veces — que es lo que ya no
+    # bastaba —; es una lectura de una fuente que no comparte el modo de
+    # fallo.
+    #
+    # Y si la segunda fuente no esta, no se degrada: se cierra con el motivo
+    # accionable. Un baseline sin confirmar NO es un baseline confirmado.
+    local slug api_tags ls_fp api_fp
+    if ! command -v gh >/dev/null 2>&1; then
+        LAST_PUB_OUTCOME="crosscheck_unavailable:gh-not-in-path"
+        return 1
+    fi
+    if ! slug="$(_remote_repo_slug "$remote")"; then
+        LAST_PUB_OUTCOME="crosscheck_unavailable:remote-is-not-github:$remote"
+        return 1
+    fi
+    if ! api_tags="$(_published_tags_via_api "$slug")"; then
+        LAST_PUB_OUTCOME="crosscheck_failed:$slug"
+        return 1
+    fi
+    ls_fp="$(_tags_fingerprint "$(_semver_tags_from_refs "$raw")")"
+    api_fp="$(_tags_fingerprint "$api_tags")"
+    if [[ "$ls_fp" != "$api_fp" ]]; then
+        LAST_PUB_OUTCOME="crosscheck_mismatch:ls-remote=$ls_fp|api=$api_fp"
+        return 1
+    fi
+
     if [[ -z "$tag" ]]; then
         LAST_PUB_OUTCOME="bootstrap"
     else
         LAST_PUB_OUTCOME="v${tag}"
     fi
-    echo "$tag"
+    _LAST_PUB_TAG="$tag"
     return 0
 }
 
@@ -226,6 +404,10 @@ _last_published_resolve() {
         # lista local: una lista local parcial daria el mismo veredicto
         # equivocado que la respuesta remota parcial.
         query_failed:*|query_inconsistent:*) return 1 ;;
+        # Y lo mismo para la segunda autoridad. "No pude confirmarlo" y "lo
+        # confirme" no pueden leerse igual, y "lo confirme y no cuadra" menos.
+        # Los tres casos se declaran y se rechazan; ninguno degrada.
+        crosscheck_unavailable:*|crosscheck_failed:*|crosscheck_mismatch:*) return 1 ;;
         *) LAST_PUB_OUTCOME="query_failed:unknown-shape"; return 1 ;;
     esac
 }
@@ -255,7 +437,13 @@ release_admission_check_v2() {
     #   - "query_failed:<reason>" → REJECT (fail-closed; do NOT fall back
     #                                  to HEAD^)
     if ! _last_published_resolve; then
-        echo "REJECT query-failed last-pub=${LAST_PUB_OUTCOME#query_failed:}"
+        # El motivo va ENTERO, no recortado por `query_failed:`. Antes se
+        # imprimia `${LAST_PUB_OUTCOME#query_failed:}` y los outcomes mas
+        # nuevos —`crosscheck_mismatch:…`— no tienen ese prefijo, luego el
+        # `${var#prefijo}` no recorta nada y se imprimia entero por casualidad
+        # y no por diseno. Un motivo de rechazo que no se lee es un rechazo
+        # que hay que adivinar.
+        echo "REJECT unresolved last-pub=${LAST_PUB_OUTCOME}"
         return 1
     fi
 
