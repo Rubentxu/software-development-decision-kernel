@@ -50,6 +50,74 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# ── la segunda autoridad tiene que existir tambien en estos fixtures ────────
+#
+# `max_published_version` ya no reimplements la consulta: sourcea
+# `scripts/lib/release_admission.sh` y usa su reconciliacion, que confirma la
+# lectura de `git ls-remote` contra la API de GitHub. Los remotos de estos
+# fixtures son repos bare locales, luego sin el shim de `gh` TODOS los casos de
+# la ruta tag-baseline (A-v2) cerrarian con
+# `crosscheck_unavailable:remote-is-not-github` y el hook rechazaria pushes
+# que tiene que admitir. Eso no es un defecto del hook: es un fixture que ya
+# no sabe imitar el mundo en el que el hook corre.
+#
+# LO QUE NO SE PUEDE HACER, Y POR QUE (MEDIDO, no supuesto)
+# --------------------------------------------------------
+# Un shim de `git` que intercepte `remote get-url` NO sirve aqui. `git remote`,
+# `git config` y `git ls-remote` son BUILT-INS: cuando git ejecuta el hook
+# desde `git push` los resuelve dentro de su propio binario y el PATH no llega
+# a verlo. Medido: con el shim en el PATH, `git remote get-url` devolvia la
+# ruta local igual, y los nueve casos de A-v2 fallaban sin que ninguna traza
+# dijera por que.
+#
+# Lo que si reproduce el mundo de verdad es configurar el remoto para que SEA
+# de github y Translate las conexiones a local con `url.<x>.insteadOf`:
+#
+#   git config remote.origin.url git@github.com:acme/widgets.git   <- identidad
+#   git config url.file://$origin.insteadOf git@github.com:...     <- transporte
+#
+# MEDIDO con las dos lineas: `git config --get remote.origin.url` devuelve la
+# identidad de github —que es de donde sale el slug— y `git ls-remote origin`
+# responde contra el bare local. Es la unica combinacion que deja que las dos
+# cosas sean verdad a la vez, y no es un truco: es exactamente lo que hace un
+# espejo, un fork con alias, o un sandbox.
+BIN="$TMPROOT/bin"
+mkdir -p "$BIN"
+SDDK_TEST_REAL_GIT="$(command -v git)"
+export SDDK_TEST_REAL_GIT
+cat > "$BIN/gh" <<'SHIM'
+#!/usr/bin/env bash
+for a in "$@"; do
+    case "$a" in repos/*/tags*) spec="$a" ;; esac
+done
+[[ "${1:-}" == "api" && -n "${spec:-}" ]] || exit 64
+# `remote get-url` con el git REAL, no el shim: aqui se quiere la URL
+# EXPANDIDA, que es la que `ls-remote` va a usar, no la identidad.
+url="$("$SDDK_TEST_REAL_GIT" remote get-url origin 2>/dev/null)" || exit 1
+[[ -n "$url" ]] || exit 1
+tags="$("$SDDK_TEST_REAL_GIT" ls-remote --tags "$url" 2>/dev/null \
+    | awk '{print $2}' | grep -vF '^{}' \
+    | sed -n 's|^refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p')"
+# `SDDK_TEST_GH_DROP_TAG` deja fuera un tag: la segunda fuente CONTRADICE a la
+# primera y sale con codigo 0, que es el caso que no se distingue del bueno
+# mirando solo el codigo de salida.
+if [[ -n "${SDDK_TEST_GH_DROP_TAG:-}" ]]; then
+    tags="$(printf '%s\n' "$tags" | grep -vE "$SDDK_TEST_GH_DROP_TAG")"
+fi
+printf '%s\n' "$tags"
+exit 0
+SHIM
+chmod +x "$BIN/gh"
+export PATH="$BIN:$PATH"
+
+# Declara el remoto local como un repositorio de github, con las conexiones
+# traducidas al bare local. Se llama DESPUES de cada `git clone`.
+remote_looks_like_github() { # $1 = ruta del origin, $2 = nombre del remoto
+    local origin="$1" name="${2:-origin}"
+    git -C "$3" config "remote.$name.url" "git@github.com:acme/widgets.git"
+    git -C "$3" config "url.file://$origin.insteadOf" "git@github.com:acme/widgets.git"
+}
+
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -79,6 +147,7 @@ run_case() {
 
     git init --bare "$origin" >/dev/null 2>&1
     git clone "file://$origin" "$clone" >/dev/null 2>&1
+    remote_looks_like_github "$origin" origin "$clone"
     (
         cd "$clone" || exit 2
         git config user.email "t@example.com"
@@ -563,6 +632,24 @@ echo "=== tag-baseline admission route (INC-DEBT-040 variant 3) ==="
 # tag, so the push must be admitted via the tag baseline (A-v2).
 run_case "runtime changes, bump already merged, tip > published tag"  ACCEPT s_runtime_after_merged_bump pre_bump_already_on_remote
 run_case "runtime changes, no bump, tip == published tag"             REJECT s_runtime_equal_to_published
+
+# EL CASO QUE ATA EL HOOK A LA LIB.
+#
+# El caso de arriba admite por la ruta tag-baseline (A-v2). Si esa ruta se
+# apoyase en una lectura de `git ls-remote` sin confirmar, este caso SEGUIRIA
+# admitiendo y nadie lo notaria: la matriz mide el veredicto, no de donde sale.
+# MEDIDO: `git ls-remote` devuelve de forma intermitente una lista parcial con
+# codigo de salida 0, y el orden de la respuesta varia entre lecturas, luego una
+# lectura parcial puede devolver un maximo mas viejo sin decir nada. Con un
+# maximo viejo, `semver_gt(tip, maximo)` se cumple antes y el hook ADMITE.
+#
+# Aqui la segunda fuente contradice a la primera: el remoto declara v1.0.0 y la
+# API no lo ve. La ruta A-v2 no se puede confirmar, luego no admite, luego el
+# rango tiene que cumplir (A) o (B) por su cuenta — y este rango solo trae
+# cambios de runtime, luego se rechaza.
+SDDK_TEST_GH_DROP_TAG='^v1\.0\.0$' \
+    run_case "second source contradicts the remote: A-v2 does not admit" REJECT s_runtime_after_merged_bump pre_bump_already_on_remote
+unset SDDK_TEST_GH_DROP_TAG
 run_case "bootstrap: no published tags, any declared version"         ACCEPT s_runtime_bootstrap_no_tags
 run_case "control: real bump in range with tip == published"          ACCEPT s_bump_equal_to_published
 run_case "control: docs-only under merged bump"                       ACCEPT s_docs_after_merged_bump pre_bump_already_on_remote
@@ -586,6 +673,7 @@ res="$(
     mkdir -p "$dir/origin"
     git init --bare "$dir/origin" >/dev/null 2>&1
     git clone "file://$dir/origin" "$dir/clone" >/dev/null 2>&1
+    remote_looks_like_github "file://$dir/origin" origin "$dir/clone"
     # The hook invocation MUST live inside the same shell that cd'd into the
     # fixture. It used to sit in the `if (...)` body *after* that subshell had
     # been closed, so the CWD was the test runner's: the hook was asked about

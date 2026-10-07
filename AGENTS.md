@@ -60,26 +60,68 @@ y se actualiza con `sddk dev install`.
   **(2) session-46b** (ciclo C3k), implementando la variante (3). El INC está
   `status: resolved` desde session-46b.
   La variante (3) **está implementada**: es la ruta `A-v2` de
-  `githooks/pre-push:251-268`, y admite el push cuando la versión del workspace en el
-  **tip pushed** es semver-mayor que el **mayor tag `v*` publicado en el remoto**
-  (consulta `git ls-remote --tags origin`, alineada con
-  `scripts/lib/release_admission.sh:96-122`). El predicado (A) solo no puede ver un bump
+  `githooks/pre-push`, y admite el push cuando la versión del workspace en el
+  **tip pushed** es semver-mayor que el **mayor tag `v*` publicado en el remoto**.
+  El predicado (A) solo no puede ver un bump
   que ya está en `origin/main` — está fuera del rango por construcción—, luego sin esta
   variante el push sería insatisfacible durante toda la ventana
-  *declarada-pero-no-publicada*. Es **fail-closed**: si la consulta de tags no
-  responde, la ruta no admite y el rango tiene que cumplir (A) o (B) por su cuenta.
-  La tiene, y con tests que falsifican el caso: `tests/test_push_prevention_hook.sh`
-  le dedica su propia sección *«tag-baseline admission route (INC-DEBT-040 variant
-  3)»* (línea 553) con ocho casos —admitir con tip por encima del tag, **rechazar** con
+  *declarada-pero-no-publicada*.
+
+  **La consulta ya no es una sola, y no la hace el hook.** MEDIDO en
+  session-91: `git ls-remote --tags` devuelve de forma intermitente una lista
+  **parcial con código de salida 0**, y el **orden de la respuesta varía entre
+  lecturas**, luego una lista parcial puede no llevar el tag más nuevo sin que
+  nada lo diga. Con el resolutor real, **3 de 10 corridas** devolvieron
+  `v2.9.1` como "última versión publicada" con `rc=0` cuando la real era
+  `v2.14.0`. Dos truncos pueden coincidir, así que leer dos veces no lo
+  arregla: de 50 lecturas fueron 3 parciales y solo **1 de esas 3 movió el
+  máximo**, luego comparar dos máximos detectaba un tercio de los truncos y
+  dejaba pasar los otros dos.
+
+  Ahora `githooks/pre-push` **no reimplementa la consulta**: sourcea
+  `scripts/lib/release_admission.sh` y usa su función. Hay **una sola**
+  autoridad y ya no puede divergir de sí misma —la divergencia entre las dos
+  copias era justo lo que AGENTS.md llamaba «alineadas» sin que lo fueran—.
+  La autoridad hace, por ronda: **dos** lecturas de `git ls-remote` **más**
+  una de la API REST de GitHub, y exige que las **huellas** coincidan.
+  La huella es `<nº de tags>|<máximo>`: el **conteo** es la parte que hace el
+  trabajo, porque una lista a la que le faltan refs tiene menos líneas aunque
+  el máximo no se haya movido.
+
+  Es **fail-closed en los cinco casos**: fallo de red, lecturas que
+  discrepan, fuentes que discrepan, segunda fuente no disponible
+  (`gh` ausente, remoto que no es de github) y segunda fuente caída. En
+  ninguno degrada: un baseline sin confirmar no es un baseline. Y **reintenta**
+  hasta `SDDK_RELEASE_ADMISSION_ATTEMPTS` (3 por defecto) rondas antes de
+  declararlo — reintentar no baja el listón, cada ronda exige las mismas tres
+  confirmaciones; sin eso un gate que se rinde al primer corte de red se
+  queja cada pocas corridas y acaba siendo el que se relaja.
+
+  Requisitos operativos que esto añade: **`gh` autenticado** (ya lo exigía el
+  paso 0 del release) y **el remoto tiene que ser un repositorio de
+  github.com**; un remoto local o de otro host cierra la ruta en vez de
+  degradarla. Contrato:
+  `tests/test_release_admission_truncation.sh` (20 casos) y su autofalsación
+  `…_mutation.sh` (6 mutaciones, todas cayendo).
+  Y en el hook, `tests/test_push_prevention_hook.sh` le dedica su propia
+  sección *«tag-baseline admission route (INC-DEBT-040 variant
+  3)»* con nueve casos —admitir con tip por encima del tag, **rechazar** con
   tip igual al tag, bootstrap sin tags, bump real en rango, docs-only bajo bump ya
   fusionado, tres casos «enmendados» de la matriz de renombres mientras la ventana
-  está abierta— más un noveno que falsifica el **fail-closed**: con el remoto
-  renombrado a algo inalcanzable la ruta no admite. Ese último caso tiene su propia
+  está abierta— más un décimo que falsifica el **fail-closed**: con el remoto
+  renombrado a algo inalcanzable la ruta no admite. Ese caso tiene su propia
   nota porque **encontró un defecto en sí mismo**: la invocación del hook vivía en el
   cuerpo de un `if (...)` ya cerrado, así que corría sobre el repo de verdad —cuyo
   rango sí contiene un bump, luego ACCEPT— y la afirmación de fail-closed nunca se
   ejercitaba. TERCERA vez que un test falsador encuentra en sí mismo lo que la
   inspección no.
+
+  Y hay un **undécimo** que no es de esta familia: *«second source
+  contradicts the remote: A-v2 does not admit»*. Existe para atar el hook a
+  la autoridad. Sin él, la matriz mediría el veredicto —que seguiría siendo
+  correcto— y no **de dónde** sale, así que volver a copiar la consulta dentro
+  del hook no rompería ningún caso. Falsado: revirtiendo el hook a su copia de
+  una sola lectura, ese caso pasa a ACCEPT y la matrix da `PASS=55 FAIL=1`.
 
   **Consecuencia operativa, y es la que importa:** durante esa ventana **no se bumpea
   para satisfacer el hook**. Si el workspace declara `X.Y.Z` y el último tag publicado

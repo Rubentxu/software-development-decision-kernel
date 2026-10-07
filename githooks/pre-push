@@ -25,9 +25,12 @@
 #       the remote (INC-DEBT-040 variant 3: a bump already merged into
 #       origin/main is outside the pushed range by construction, so the
 #       range-local check alone is unsatisfiable for a declared-but-
-#       unreleased version). The tag query is FAIL-CLOSED: if the remote
-#       cannot answer, this route does not admit the push and the range
-#       must contain the bump or docs-only paths. OR
+#       unreleased version). The tag query is FAIL-CLOSED and RECONCILED: the
+#       `git ls-remote` read is confirmed against the GitHub API (a different
+#       source AND a different transport) before it is admitted, and if the
+#       remote cannot answer, if the two sources disagree, or if the second
+#       one cannot be reached, this route does not admit the push and the
+#       range must contain the bump or docs-only paths. OR
 #   (B) the pushed range is NON-EMPTY and EVERY changed path lies inside
 #       the closed documentation-only allowlist:
 #         docs/**
@@ -70,20 +73,50 @@ TMP_TAG_OUT="$(mktemp "${TMPDIR:-/tmp}/sddk-prepush-tags.XXXXXX")"
 # stripped of the `v` prefix. Empty output means bootstrap (no v* tags).
 # Fails by returning non-zero when the remote cannot answer — the caller
 # treats that as "route unavailable", never as "no published version".
+#
+# MEDIDO (session-91): esta funcion estaba IMPLEMENTADA aqui con su propia
+# lectura de `git ls-remote --tags`, una sola y sin confirmar. `git ls-remote`
+# devuelve de forma intermitente una lista parcial con codigo de salida 0, y
+# el orden de la respuesta varia entre lecturas, luego una lista parcial puede
+# no llevar el tag mas nuevo y devolver un maximo mas viejo sin decir nada.
+# Con un maximo viejo, `semver_gt(workspace, maximo)` se cumple antes, luego
+# la ruta A-v2 ADMITE mas pushes de los que le tocaba: el fallo hacia la
+# admission, noAway de ella.
+#
+# La razon de que sea un defecto y no una molestia es que aqui la autoridad
+# DUPLICADA podia divergir de la suia: AGENTS.md describia estas dos lineas
+# como "alineadas con scripts/lib/release_admission.sh" y no lo estaban —
+# la lib leia dos veces, esta leia una. Dos respuestas a "que hay publicado" es
+# la clase de defecto que este repo ya ha cerrado mas de una vez, incluida una
+# que se llamaba exactamente asi (INC-DEBT-074: un guard que corre una copia
+# pegada del codigo no guarda nada).
+#
+# Ahora no hay copia: el hook USA la funcion de la lib. Se sourcea desde la
+# ruta del propio hook, no desde el cwd, porque el hook se ejecuta con el
+# directorio de trabajo del repo que se pushea — que no tiene `scripts/`— y
+# porque la autoridad es codigo de este repo, no del que recibe el push.
+#
+# Si la lib no esta, la ruta NO se admite. Sin autoridad no hay veredicto, y
+# un veredicto inventado aqui seria el que el hook mas caro del repo ya ha
+#有过 antes (INC-A5-PUSH-RELEASE-MARKER-FRICTION).
+PREPUSH_ADMISSION_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/scripts/lib/release_admission.sh"
+if [[ -f "$PREPUSH_ADMISSION_LIB" ]]; then
+    # shellcheck source=scripts/lib/release_admission.sh
+    # shellcheck disable=SC1090,SC1091
+    . "$PREPUSH_ADMISSION_LIB"
+    PREPUSH_USES_ADMISSION_LIB=1
+else
+    PREPUSH_USES_ADMISSION_LIB=0
+fi
+
 max_published_version() {
-    local raw rc tag
-    raw="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags origin 2>&1)"
-    rc=$?
-    if [[ $rc -ne 0 ]]; then
-        return 1
-    fi
-    tag="$(printf '%s\n' "$raw" \
-        | awk '{print $2}' \
-        | sed -n 's|^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' \
-        | sort -V -r \
-        | head -1)"
-    printf '%s' "$tag"
-    return 0
+    [[ "$PREPUSH_USES_ADMISSION_LIB" = "1" ]] || return 1
+    _last_published_resolve || return 1
+    case "$LAST_PUB_OUTCOME" in
+        bootstrap) return 0 ;;
+        v*) printf '%s' "${LAST_PUB_OUTCOME#v}"; return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # semver_gt <a> <b>: 0 iff a > b under dotted numeric comparison

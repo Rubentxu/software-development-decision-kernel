@@ -96,6 +96,25 @@ arena_hooks() {
     mkdir -p "$d"
     cp "$BACKUP" "$d/pre-push"
     chmod +x "$d/pre-push"
+    # MEDIDO (session-91): `githooks/pre-push` no reimplements la consulta de
+    # tags —sourcea `scripts/lib/release_admission.sh` desde
+    # `$(dirname "${BASH_SOURCE[0]}")/..`, que es la raiz del REPO. Copiado a
+    # una arena suelta, ese caminho no lleva a ninguna parte, el hook cae en
+    # la rama "sin autoridad" y la matrix da 47/9 sin que ninguna mutacion
+    # tuviera nada que ver con el veto: dos dientes muertos y una lectura
+    # equivocada, las dos cosas que este falsador existe para no confesar.
+    #
+    # MEDIDO Tambien, y por eso va en `$WORK` y no en `$d`: el hook busca
+    # `<directorio-del-hook>/..`, luego la raiz que ve es el PADRE de la arena.
+    # Copiarla dentro de `$d` —que es donde primero se puso— deja al hook
+    # mirando `$WORK/scripts/lib` desde una arena que tiene `$d/scripts/lib`,
+    # y el sintoma es identico: la matrix cae por la autoridad y nadie sabe por
+    # que. La arena tiene que parecerse al repo, no solo al hook.
+    #
+    # Y va una vez y sin mutar porque este falsador muta el HOOK: todos los
+    # dientes se miden contra la autoridad de verdad, no contra una copia.
+    mkdir -p "$WORK/scripts/lib"
+    cp "$ROOT/scripts/lib/release_admission.sh" "$WORK/scripts/lib/release_admission.sh"
 }
 
 # apply <dir> <nombre> <pares old/new...>
@@ -184,7 +203,19 @@ expect_no_fall() {
     out="$(matrix "$d")"
     local res
     res="$(printf '%s' "$out" | grep 'matrix result' | tail -1)"
-    if [ "$res" = "=== matrix result: PASS=55 FAIL=0 ===" ]; then
+    # La comparacion es `FAIL=0` mas `PASS>=1`, NO `PASS=<n>`. MEDIDO: este
+    # falsador fijaba `PASS=55` y en cuanto la matrix gano un caso —el que
+    # ata el hook a la segunda autoridad— M2 dejo de medirse y se reporto
+    # como fallo del hook. No lo era: la matrix estaba VERDE (`PASS=56 FAIL=0`)
+    # y el unico motivo del FAIL era un numero que aqui se hacia cargo de una
+    # verdad que la matrix ya tiene.
+    #
+    # Un numero de casos escrito en el falsador es una copia mas de la
+    # matriz, y las copias divergen. `FAIL=0` es lo que esta mutacion quiere
+    # afirmar; `PASS>=1` evita que "verde" signifique "no se ejecuto nada".
+    local pass_n
+    pass_n="$(printf '%s' "$res" | sed -n 's/.*PASS=\([0-9]*\) FAIL=\([0-9]*\).*/\1 \2/p')"
+    if [ -n "$pass_n" ] && [ "${pass_n% *}" -ge 1 ] && [ "${pass_n#* }" -eq 0 ]; then
         ok "$name — y la matrix sigue verde, que es el hallazgo"
     else
         bad "$name — se esperaba la matrix verde y se obtuvo: $res"
