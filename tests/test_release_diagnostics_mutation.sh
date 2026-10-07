@@ -69,6 +69,36 @@ trap 'restaurar_si_queda; exit 143' TERM
 
 banner() { printf '\n== %s\n' "$*"; }
 
+# --- por que se rompe la base ---------------------------------------------------
+#
+# MEDIDO: esto era `tail -20 "$OUT"`, y la ventana se comia justo lo que
+# importaba. El log del release mostraba
+#
+#     [FATAL] base: test_release_diagnostics_wiring.sh ya esta ROJO
+#     ... (20 lineas de aserciones verdes, E7/E8/E9) ...
+#     PASS=64 FAIL=2
+#     RESULT: FAIL - la libreria existe pero el release no la aprovecha.
+#
+# es decir: el agregado y la cola del log, y NINGUN `[FAIL]`, porque los dos
+# fallos estaban mas arriba. Un informe que enseña la cola de un log largo
+# parece completo y no dice nada. Peor: el texto `RESULT: FAIL - ...` que se
+# leia como de ESTE falsador era del GUARD INVOCADO, no de este script, luego
+# la causa seguia sin estar a la vista ni con la correccion.
+#
+# Ahora se imprimen los `[FAIL]` POR NOMBRE —que es donde vive la causa— y, si
+# no hubiera ninguno, la cola completa: un log sin `[FAIL]` que sale con codigo
+# distinto de cero es un caso mas, y hay que verlo entero.
+base_rota() {
+    local n
+    n="$(grep -c '\[FAIL' "$OUT" 2>/dev/null || true)"
+    printf '  --- por que esta roja la base: %s linea(s) [FAIL] ---\n' "${n:-0}"
+    grep -E '\[FAIL' "$OUT" 2>/dev/null || true
+    if [ "${n:-0}" -eq 0 ]; then
+        printf '  --- no hay [FAIL]: el log entero, que sale con un codigo distinto de cero ---\n'
+        cat "$OUT"
+    fi
+}
+
 # --- base: una autofalsacion sobre una base roja no demuestra nada ------------
 
 banner "BASE — los dos guards tienen que estar verdes antes de quitarles dientes"
@@ -76,14 +106,14 @@ if bash "$TEST" > "$OUT" 2>&1; then
     printf '  [ok]   base: %s verde\n' "$(basename "$TEST")"
 else
     printf '  [FATAL] base: %s ya esta ROJO; no se puede falsar sobre una base rota\n' "$(basename "$TEST")"
-    tail -20 "$OUT"
+    base_rota
     exit 1
 fi
 if bash "$WIRE" > "$OUT" 2>&1; then
     printf '  [ok]   base: %s verde\n' "$(basename "$WIRE")"
 else
     printf '  [FATAL] base: %s ya esta ROJO\n' "$(basename "$WIRE")"
-    tail -20 "$OUT"
+    base_rota
     exit 1
 fi
 
@@ -506,6 +536,60 @@ sentencia = """    cargo fmt --all -- --check \\
 assert sentencia in s, "la sentencia de cargo fmt no tiene la forma que esta mutacion supone"
 s = s.replace(sentencia, sentencia + "    release_check_resources \"$RELEASE_SCRATCH\" || true  # mutacion M28: medir tarde\n", 1)
 open(p, "w").write(s)
+'
+
+# --- M29..M30: E6, que hasta aqui no tenia ninguna --------------------------
+#
+# MEDIDO: E6 cubria E0, E2, E3, E4, E5, E7 y E8, y E6 no. O lo que es peor: E6
+# es el caso que existe para que un fallo YA MEDIDO no vuelva —el marcador que
+# el test hereda del release—, y era el unico sin falsador. Un caso que nadie
+# puede tumbar compra cobertura. Estas dos lo tumban.
+#
+# Ademas se falsan POR SEPARADO, una asercion cada una, porque son dos
+# propiedades distintas: E6a vigila que el test sea dueno de SU marcador y E6b
+# que ese marcador cuelgue de un temporal SUYO. Una mutacion compuesta no
+# podria decir cual de las dos cayo.
+#
+# El needle se ancla en la linea que REALMENTE empieza por el texto, no en la
+# que lo contiene dentro de una asercion: la palabra buscada aparece tambien
+# dentro del propio `asert` de E6, y un needle que casa con esa segunda vez
+# mutaria una linea del needle en vez de la del codigo.
+mutar "M29 el test vuelve a heredar el marcador del release en vez de ser dueno del suyo" "$WIRE" "$WIRE" E6 \
+    "vuelve la clase de fallo que E6 existe para cerrar: RELEASE_DIAGNOSED_FILE pasa a preferir el del release." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "export RELEASE_DIAGNOSED_FILE=\"$WIRE_DIAG_MARKER\""
+nuevo = "export RELEASE_DIAGNOSED_FILE=\"${RELEASE_DIAGNOSED_FILE:-$WIRE_DIAG_MARKER}\""
+lineas = s.split("\n")
+cambiados = 0
+salida = []
+for l in lineas:
+    if l == viejo:                      # la linea REAL de codigo, no la del needle
+        l = nuevo
+        cambiados += 1
+    salida.append(l)
+assert cambiados == 1, "se esperaba 1 linea de codigo real, se encontraron %d" % cambiados
+open(p, "w").write("\n".join(salida))
+'
+
+mutar "M30 el marcador del test cuelga de un temporal heredado en vez de uno suyo" "$WIRE" "$WIRE" E6 \
+    "WIRE_DIAG_MARKER pasa a colgar de TMPDIR, que es el estado que el release exporta." \
+'
+import os
+p = os.environ["MUT_FILE"]; s = open(p).read()
+viejo = "WIRE_DIAG_MARKER=\"$WIRE_TMPDIR/.sddk-diagnosed-wiring\""
+nuevo = "WIRE_DIAG_MARKER=\"${TMPDIR:-/tmp}/.sddk-diagnosed-wiring\""
+lineas = s.split("\n")
+cambiados = 0
+salida = []
+for l in lineas:
+    if l == viejo:
+        l = nuevo
+        cambiados += 1
+    salida.append(l)
+assert cambiados == 1, "se esperaba 1 linea, se encontraron %d" % cambiados
+open(p, "w").write("\n".join(salida))
 '
 
 # --- resumen -----------------------------------------------------------------
