@@ -25,8 +25,10 @@ murio en el 1b con un aserto que, aislado, daba 5 de 5.
 
 LO QUE ESTE GUARD MIDE, Y POR QUE NO ES "CUANTOS HAY"
 -----------------------------------------------------
-`grep -rlE '\\|[[:space:]]*grep[^|]*-q'` cuenta 91 sitios en 32 ficheros. **No
-son 91 defectos.** Un sitio es PELIGROSO solo si se cumplen las cuatro:
+`grep -rlE '\\|[[:space:]]*grep[^|]*-q'` cuenta los FICHEROS que contienen la clase,
+no los sitios, y se queda corto: el recuento que decide es el de sitios, y lo
+hace el parser. **Un sitio de la clase no es un defecto.** Un sitio es PELIGROSO
+solo si se cumplen las cuatro:
 
   1. el fichero activa `pipefail`
   2. hay una tuberia real `<escritor> | grep -q ...`
@@ -34,9 +36,25 @@ son 91 defectos.** Un sitio es PELIGROSO solo si se cumplen las cuatro:
   4. el rc del pipeline se CONSUME: abre un `if`/`while`, encadena con
      `&&`/`||`, se niega con `!`, o queda desnudo bajo `set -e`
 
-MEDIDO: de los 91 sitios, **22 son peligrosos**, en 14 ficheros. Los otros 69
-son estructuralmente inmunes y quedan EXENTOS, y el guard imprime el reparto
-para que la cuenta se pueda falsar a ojo en vez de creerla.
+EL REPARTO SE MIDE, NO SE ESCRIBE AQUI
+--------------------------------------
+Las cifras de este docstring son de una medicion y CADUCAN. El guard las
+imprime en cada corrida precisamente para que no haya que creer a un
+docstring: si el reparto de aqui no coincide con el de la ultima corrida, la
+que manda es la del guard.
+
+Ultima MEDIDA (session-91, sobre el arbol con la segunda autoridad de admision
+en sitio): 104 sitios en 40 ficheros con `pipefail`, **0 peligrosos**.
+
+Lo que paso desde la correccion anterior del guard (session-91, mismo
+bloque): eran 106 sitios en 40 ficheros y 0 peligrosos, y los dos que se
+perdieron son de `githooks/pre-push`, cuya `max_published_version` tenia dos
+tuberias (`printf | awk | sed | sort | head -1` y su `grep -vE`) y ahora usa la
+funcion de `scripts/lib/release_admission.sh`. Bajaron de 106 a 104 al quitar
+dossites, no al afinar el criterio: el criterio no se movio.
+
+Un numero del docstring que ya no se puede reproducir es una deuda silenciosa
+disfrazada de contexto.
 
 LO QUE ESTE GUARD MIDE, Y POR QUE EL TAMANO NO ENTRA
 -----------------------------------------------------
@@ -71,7 +89,8 @@ ROOT = pathlib.Path(os.environ.get("GREP_Q_SCAN_ROOT", "")).resolve() \
 
 SCAN_DIRS = ("tests", "scripts", "githooks")
 
-# Suelo de NO-VACUIDAD. Medido sobre el arbol real: 91 sitios en 32 ficheros.
+# Suelo de NO-VACUIDAD. Ultima MEDIDA (session-91): 104 sitios en 40 ficheros.
+# El suelo existe para que el parser no pueda quedarse mudo y dar verde.
 # Si el parser dejara de encontrar la clase —porque una mutacion rompa el
 # enmascarado, o porque alguien borre el `| grep -q` sin querer— este numero
 # cae y el guard FALLA, en vez de dar un verde que no midio nada.
